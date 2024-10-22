@@ -1,3 +1,8 @@
+---
+slug: /biltong
+sidebar_label: Biltong notes
+sidebar_position: 1
+---
 # Baumy Biltong - Noble Nonsense
 
 ## Equipment
