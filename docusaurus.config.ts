@@ -5,7 +5,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 const config: Config = {
   title: 'Noble Notations',
   tagline: 'The science of cooking',
-  favicon: 'img/favicon.ico',
+  favicon: 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐈‍⬛</text></svg>',
 
   // Set the production url of your site here
   url: 'https://ryry79261.github.io',
