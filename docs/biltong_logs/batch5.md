@@ -1,4 +1,6 @@
-# Biltong batch 5
+---
+title: Biltong Batch 5
+---
 
 8.2 KG Silverside Irish Beef — Gourmet Experts €216.61
 
