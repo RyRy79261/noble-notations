@@ -1,5 +1,5 @@
 ---
-title: The Art of Michelin-Level Beef Wellington: A Modern Refined Approach
+title: The Art of Michelin-Level Beef Wellington - A Modern Refined Approach
 ---
 
 [Read this on Perplexity](https://www.perplexity.ai/search/this-recipe-doesn-t-mention-ho-lYBPLacCTiOroTjc._KsTA)
