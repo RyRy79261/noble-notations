@@ -73,26 +73,26 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| STYLE-01 | - | Pending |
-| STYLE-02 | - | Pending |
-| STYLE-03 | - | Pending |
-| DATA-01 | - | Pending |
-| DATA-02 | - | Pending |
-| DATA-03 | - | Pending |
-| CALC-01 | - | Pending |
-| CALC-02 | - | Pending |
-| CALC-03 | - | Pending |
-| VIZ-01 | - | Pending |
-| VIZ-02 | - | Pending |
-| VIZ-03 | - | Pending |
-| NAV-01 | - | Pending |
-| NAV-02 | - | Pending |
+| STYLE-01 | Phase 1 | Pending |
+| STYLE-02 | Phase 1 | Pending |
+| STYLE-03 | Phase 1 | Pending |
+| NAV-01 | Phase 1 | Pending |
+| NAV-02 | Phase 1 | Pending |
+| DATA-01 | Phase 2 | Pending |
+| DATA-02 | Phase 2 | Pending |
+| DATA-03 | Phase 2 | Pending |
+| CALC-01 | Phase 3 | Pending |
+| CALC-02 | Phase 3 | Pending |
+| CALC-03 | Phase 3 | Pending |
+| VIZ-01 | Phase 4 | Pending |
+| VIZ-02 | Phase 4 | Pending |
+| VIZ-03 | Phase 4 | Pending |
 
 **Coverage:**
 - v1 requirements: 14 total
-- Mapped to phases: 0
-- Unmapped: 14
+- Mapped to phases: 14
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-13*
-*Last updated: 2026-03-13 after initial definition*
+*Last updated: 2026-03-13 after roadmap creation — all requirements mapped*
