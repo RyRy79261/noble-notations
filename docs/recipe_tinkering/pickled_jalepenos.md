@@ -52,4 +52,3 @@ For those looking to experiment, here are some novel additions you can try:
 Remember to adjust the brine quantities if adding extra vegetables to ensure everything is properly covered.
 
 Enjoy your homemade pickled jalapeños!
-

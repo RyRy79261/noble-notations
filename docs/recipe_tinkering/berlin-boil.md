@@ -78,13 +78,12 @@ It's important to note that while crayfish are invasive and their removal is enc
 
 Crayfish are typically most abundant in Berlin's waters during the warmer months, from late spring through early fall. This is when you're most likely to find fresh, locally caught crayfish at markets and restaurants.
 
-
 ## Berlin-Style Crayfish Boil Recipe (Serves 50)
 
 ### Ingredients:
 
 - 50-60 kg live crayfish (approximately 1-1.2 kg per person)
-- 10 kg small red potatoes, halved 
+- 10 kg small red potatoes, halved
 - 20 ears of corn, cut into thirds
 - 5 kg smoked sausage (e.g. kielbasa), cut into 5 cm pieces
 - 5 kg onions, quartered
@@ -95,9 +94,9 @@ Crayfish are typically most abundant in Berlin's waters during the warmer months
 ### For the boil:
 
 - 4-5 large pots (60-80 liter capacity each)
-- 4-5 propane burners 
+- 4-5 propane burners
 - 500 g salt
-- 250 g Old Bay seasoning 
+- 250 g Old Bay seasoning
 - 100 g cayenne pepper
 - 10 bay leaves
 - 5 bottles (330 ml each) German dark beer
@@ -110,7 +109,7 @@ Crayfish are typically most abundant in Berlin's waters during the warmer months
 
 3. Add corn, sausage, onions, garlic, and lemons. Cook for another 5 minutes.
 
-4. Add crayfish and cook for 3-5 minutes until bright red. 
+4. Add crayfish and cook for 3-5 minutes until bright red.
 
 5. Remove from heat and let soak for 15-20 minutes to absorb flavors.
 

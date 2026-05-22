@@ -129,7 +129,6 @@ The pursuit of Wellington perfection ultimately embodies the essence of high-lev
 - Freshly ground black pepper
 - Flaky sea salt
 
-
 ### Method
 
 **Step 1: Rehydrate Dried Porcini**

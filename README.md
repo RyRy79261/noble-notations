@@ -44,18 +44,24 @@ $ pnpm build
 
 This command generates static content into the `build` directory and can be served using any static contents hosting service.
 
+### Quality checks
+
+```
+$ pnpm format        # apply Prettier formatting
+$ pnpm lint          # ESLint
+$ pnpm typecheck     # TypeScript, no emit
+```
+
+GitHub Actions (`.github/workflows/ci.yml`) runs format check, lint,
+typecheck, and a production build on every push and pull request.
+
 ### Deployment
 
-Using SSH:
+Deployment is handled automatically by [Vercel](https://vercel.com/) —
+pushes to `main` are built and published using the settings in
+`vercel.json`. No manual deploy step is required.
 
-```
-$ USE_SSH=true pnpm deploy
-```
+## Contributing
 
-Not using SSH:
-
-```
-$ GIT_USER=<Your GitHub username> pnpm deploy
-```
-
-If you are using GitHub pages for hosting, this command is a convenient way to build the website and push to the `gh-pages` branch.
+See [`AGENTS.md`](./AGENTS.md) for conventions, repository layout, and the
+quality gates contributors (human or AI) are expected to follow.

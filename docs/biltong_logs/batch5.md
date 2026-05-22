@@ -8,9 +8,8 @@ title: Biltong Batch 5
 
 - Need to increase wash by 30%
 - Temperature of meat affects how long the wash is useable due to the fat & myoglobin mixing.
-- Finer the spice grind, the more you need, I would prefer to increase the seasoning volume by 40% 
+- Finer the spice grind, the more you need, I would prefer to increase the seasoning volume by 40%
 - The meat remained spiced in the fridge for 2 evenings, given that its functionally a dry brine, I should actually weight sections before placing in the fridge next time.
-
 
 ## Wash ingredients
 
@@ -58,30 +57,29 @@ Calculated spices for fifth batch (as actually used)
 
 Inspired by professional estimation practices, here is a line-item breakdown of your project costs. Prices are estimated based on typical [German supermarket prices][1].
 
-| Item                          | Quantity | Estimated Cost | Notes                                |
-|-------------------------------|----------|----------------|--------------------------------------|
-| Silverside Irish Beef         | 8.2 kg   | €216.61        | Source: [Gourmet Experts][3]         |
-| Worcestershire sauce          | 70 g     | €1.20          | Estimated from 150g bottle           |
-| Red-wine vinegar              | 27.8 g   | €0.30          | Estimated from 500ml bottle          |
-| Apple-cider vinegar           | 22.5 g   | €0.20          | Based on supermarket prices [2]      |
-| Condimento blanco             | 26.5 g   | €0.20          | Cheapest white condiment vinegar     |
-| Black-malt vinegar            | 21.2 g   | €0.30          | Chinese black vinegar estimate       |
-| Salt                          | 110.5 g  | €0.20          | Estimated from 500g pack             |
-| Black pepper                  | 13.9 g   | €0.60          | Estimated from 50g container         |
-| Coriander (coarse-ground)     | 47.3 g   | €2.40          | Estimated from 50g container         |
-| Star-anise pods               | 9-10     | €1.00          | Estimated from 20g bag               |
-| Garam masala                  | 54 g     | €1.60          | Estimated from 100g bag              |
-| Tandoori masala               | 50 g     | €1.50          | Estimated from 100g bag              |
-| Direct-from-India masala      | 50 g     | €2.00          | Specialty item estimate              |
-| Chipotle + guajillo chilies   | 5 + 3    | €3.00          | Dried chilies estimate               |
-| Piment d'Espelette            | 80 g     | €9.60          | AOP specialty item estimate          |
-| **Total Estimated Cost**      |          | **€240.71**    |                                      |
+| Item                        | Quantity | Estimated Cost | Notes                            |
+| --------------------------- | -------- | -------------- | -------------------------------- |
+| Silverside Irish Beef       | 8.2 kg   | €216.61        | Source: [Gourmet Experts][3]     |
+| Worcestershire sauce        | 70 g     | €1.20          | Estimated from 150g bottle       |
+| Red-wine vinegar            | 27.8 g   | €0.30          | Estimated from 500ml bottle      |
+| Apple-cider vinegar         | 22.5 g   | €0.20          | Based on supermarket prices [2]  |
+| Condimento blanco           | 26.5 g   | €0.20          | Cheapest white condiment vinegar |
+| Black-malt vinegar          | 21.2 g   | €0.30          | Chinese black vinegar estimate   |
+| Salt                        | 110.5 g  | €0.20          | Estimated from 500g pack         |
+| Black pepper                | 13.9 g   | €0.60          | Estimated from 50g container     |
+| Coriander (coarse-ground)   | 47.3 g   | €2.40          | Estimated from 50g container     |
+| Star-anise pods             | 9-10     | €1.00          | Estimated from 20g bag           |
+| Garam masala                | 54 g     | €1.60          | Estimated from 100g bag          |
+| Tandoori masala             | 50 g     | €1.50          | Estimated from 100g bag          |
+| Direct-from-India masala    | 50 g     | €2.00          | Specialty item estimate          |
+| Chipotle + guajillo chilies | 5 + 3    | €3.00          | Dried chilies estimate           |
+| Piment d'Espelette          | 80 g     | €9.60          | AOP specialty item estimate      |
+| **Total Estimated Cost**    |          | **€240.71**    |                                  |
 
 Piece characteristics: Larger individual loins resulted in fewer but bigger sections compared to previous batches.
 
-
 | Index | Gross (g) | Net (g) | Expected 45% (g) | Actual (g) |
-|-------|-----------|---------|------------------|------------|
+| ----- | --------- | ------- | ---------------- | ---------- |
 | 1     | 310       | 297     | 133.7            |            |
 | 2     | 558       | 545     | 245.3            |            |
 | 3     | 567       | 554     | 249.3            |            |
@@ -114,7 +112,9 @@ Expected dried weight = Net × 0.45 (55% loss)
 - Projected drying window: ≈ 13–15 days, based on 4.21% average daily loss observed in Batch 2.
 
 ---
+
 ### References
-[1]: https://www.globalprice.info/en/?p=germany/berlin-supermarket-prices "Supermarket Prices in Berlin, Germany"
-[2]: https://www.nanuko.de/epages/79558993.sf/en_GB/?ObjectPath=/Shops/79558993/Categories/ZUTATEN/OeLESSIGMIRIN/ESSIG "Nanuko.de - Japanese and Korean Food Online Shop"
-[3]: https://gourmet-experts.example.com "Gourmet Experts (placeholder)"
+
+[1]: https://www.globalprice.info/en/?p=germany/berlin-supermarket-prices 'Supermarket Prices in Berlin, Germany'
+[2]: https://www.nanuko.de/epages/79558993.sf/en_GB/?ObjectPath=/Shops/79558993/Categories/ZUTATEN/OeLESSIGMIRIN/ESSIG 'Nanuko.de - Japanese and Korean Food Online Shop'
+[3]: https://gourmet-experts.example.com 'Gourmet Experts (placeholder)'
