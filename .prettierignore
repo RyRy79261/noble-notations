@@ -1,7 +1,7 @@
-build
-.docusaurus
-node_modules
 pnpm-lock.yaml
+.next
+out
+drizzle
 .claude
 .planning
-static
+content/generated
