@@ -21,5 +21,7 @@ const salt = randomBytes(16);
 const hash = scryptSync(password, salt, 64, { N, r, p });
 
 console.log(
-  ['scrypt', N, r, p, salt.toString('base64'), hash.toString('base64')].join('$'),
+  ['scrypt', N, r, p, salt.toString('base64'), hash.toString('base64')].join(
+    '$',
+  ),
 );

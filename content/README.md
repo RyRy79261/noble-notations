@@ -34,7 +34,7 @@ content/
   They are history. Fixing a recipe means creating a revision in the database
   (via the MCP server or the site), which is then re-exported to
   `content/generated/`.
-- Typo fixes and formatting are fine — the point is that the *substance* is
+- Typo fixes and formatting are fine — the point is that the _substance_ is
   preserved.
 - `content/generated/` is written by a script. Anything you type there will be
   overwritten on the next export.

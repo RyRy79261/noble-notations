@@ -4,6 +4,7 @@ kind: research
 archived_from: docs/recipe_tinkering/the_Art_of_Michelin-Level_Beef_Wellington.md
 summary: 'Moisture control, octagon searing and two-stage baking, with the reasoning behind each.'
 ---
+
 [Read this on Perplexity](https://www.perplexity.ai/search/this-recipe-doesn-t-mention-ho-lYBPLacCTiOroTjc._KsTA)
 
 Beef Wellington represents one of the most iconic achievements in culinary artistry, combining precision, technique, and a deep understanding of flavor harmony. This comprehensive guide explores refined methods for creating a Michelin-starred quality Beef Wellington that honors tradition while incorporating contemporary techniques from acclaimed chefs. The classic British masterpiece, featuring succulent beef tenderloin wrapped in mushroom duxelles and golden puff pastry, offers the perfect canvas for culinary excellence when approached with meticulous attention to detail and thoughtful execution.

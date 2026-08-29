@@ -51,7 +51,8 @@ const tsvector = customType<{ data: string; driverData: string }>({
   dataType: () => 'tsvector',
 });
 
-const now = () => timestamp('created_at', { withTimezone: true }).defaultNow().notNull();
+const now = () =>
+  timestamp('created_at', { withTimezone: true }).defaultNow().notNull();
 const touched = () =>
   timestamp('updated_at', { withTimezone: true }).defaultNow().notNull();
 
@@ -158,9 +159,12 @@ export const taxonomyTerms = pgTable(
     label: text('label').notNull(),
     description: text('description'),
     /** Self-referential parent for hierarchy, e.g. Sichuan → Chinese. */
-    parentId: uuid('parent_id').references((): AnyPgColumn => taxonomyTerms.id, {
-      onDelete: 'set null',
-    }),
+    parentId: uuid('parent_id').references(
+      (): AnyPgColumn => taxonomyTerms.id,
+      {
+        onDelete: 'set null',
+      },
+    ),
     createdAt: now(),
     updatedAt: touched(),
   },
@@ -209,7 +213,10 @@ export const ingredients = pgTable(
     densityGPerMl: numeric('density_g_per_ml', { precision: 8, scale: 4 }),
     defaultUnit: text('default_unit'),
     /** Alternate names so search finds "coriander" from "cilantro". */
-    aliases: text('aliases').array().notNull().default(sql`ARRAY[]::text[]`),
+    aliases: text('aliases')
+      .array()
+      .notNull()
+      .default(sql`ARRAY[]::text[]`),
     createdAt: now(),
     updatedAt: touched(),
   },
@@ -389,7 +396,10 @@ export const recipeSteps = pgTable(
     durationMinutes: integer('duration_minutes'),
     durationMaxMinutes: integer('duration_max_minutes'),
     temperatureC: numeric('temperature_c', { precision: 6, scale: 2 }),
-    equipment: text('equipment').array().notNull().default(sql`ARRAY[]::text[]`),
+    equipment: text('equipment')
+      .array()
+      .notNull()
+      .default(sql`ARRAY[]::text[]`),
     /** Links the step to a technique term so "everything I braise" works. */
     techniqueTermId: uuid('technique_term_id').references(
       () => taxonomyTerms.id,

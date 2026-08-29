@@ -66,19 +66,22 @@ export class ConflictError extends Error {}
  * the recipe never gets saved. An auto-created row is a stub with category
  * `other` that `upsert_ingredient` can enrich later.
  */
-async function resolveIngredientId(tx: Tx, name: string): Promise<string> {
+async function resolveIngredient(
+  tx: Tx,
+  name: string,
+): Promise<{ id: string; canonicalName: string }> {
   const trimmed = name.trim();
   const slug = slugify(trimmed);
 
   const bySlug = await tx
-    .select({ id: ingredients.id })
+    .select({ id: ingredients.id, name: ingredients.name })
     .from(ingredients)
     .where(eq(ingredients.slug, slug))
     .limit(1);
-  if (bySlug[0]) return bySlug[0].id;
+  if (bySlug[0]) return { id: bySlug[0].id, canonicalName: bySlug[0].name };
 
   const byNameOrAlias = await tx
-    .select({ id: ingredients.id })
+    .select({ id: ingredients.id, name: ingredients.name })
     .from(ingredients)
     .where(
       sql`lower(${ingredients.name}) = ${trimmed.toLowerCase()}
@@ -88,7 +91,9 @@ async function resolveIngredientId(tx: Tx, name: string): Promise<string> {
           )`,
     )
     .limit(1);
-  if (byNameOrAlias[0]) return byNameOrAlias[0].id;
+  if (byNameOrAlias[0]) {
+    return { id: byNameOrAlias[0].id, canonicalName: byNameOrAlias[0].name };
+  }
 
   const inserted = await tx
     .insert(ingredients)
@@ -99,8 +104,33 @@ async function resolveIngredientId(tx: Tx, name: string): Promise<string> {
       target: ingredients.slug,
       set: { updatedAt: new Date() },
     })
-    .returning({ id: ingredients.id });
-  return inserted[0]!.id;
+    .returning({ id: ingredients.id, name: ingredients.name });
+  return { id: inserted[0]!.id, canonicalName: inserted[0]!.name };
+}
+
+async function resolveIngredientId(tx: Tx, name: string): Promise<string> {
+  return (await resolveIngredient(tx, name)).id;
+}
+
+/**
+ * Look up an ingredient without creating one. Validation paths need this:
+ * creating a row as a side effect of checking a reference would be wrong.
+ */
+async function findIngredientId(tx: Tx, name: string): Promise<string | null> {
+  const trimmed = name.trim();
+  const rows = await tx
+    .select({ id: ingredients.id })
+    .from(ingredients)
+    .where(
+      sql`${ingredients.slug} = ${slugify(trimmed)}
+          OR lower(${ingredients.name}) = ${trimmed.toLowerCase()}
+          OR EXISTS (
+            SELECT 1 FROM unnest(${ingredients.aliases}) AS a
+             WHERE lower(a) = ${trimmed.toLowerCase()}
+          )`,
+    )
+    .limit(1);
+  return rows[0]?.id ?? null;
 }
 
 /** Find (or create) a taxonomy term within a facet. */
@@ -161,11 +191,27 @@ async function writeRevisionBody(
   ingredientLines: IngredientLineInput[],
   steps: StepInput[],
 ): Promise<void> {
-  /** Ingredient-line id keyed by the lowercased name a step would reference. */
+  /**
+   * Ingredient-line id keyed by every name a step might reference it under.
+   *
+   * Both the name as written and the canonical ingredient name are indexed,
+   * because they routinely differ: a line written as "Chinkiang vinegar"
+   * resolves to the ingredient "Black malt vinegar" via its alias. Steps
+   * arriving from a caller use the written name; steps carried forward from
+   * a previous revision come back carrying the canonical one. Keying on only
+   * one of them silently drops the link on the other path.
+   */
   const lineIdByName = new Map<string, string>();
+  const indexLine = (name: string, id: string) => {
+    const key = name.trim().toLowerCase();
+    if (key && !lineIdByName.has(key)) lineIdByName.set(key, id);
+  };
 
   for (const [index, line] of ingredientLines.entries()) {
-    const ingredientId = await resolveIngredientId(tx, line.name);
+    const { id: ingredientId, canonicalName } = await resolveIngredient(
+      tx,
+      line.name,
+    );
     const unit = normaliseUnit(line.unit);
     const rawText =
       line.rawText ??
@@ -195,7 +241,8 @@ async function writeRevisionBody(
       })
       .returning({ id: recipeIngredients.id });
 
-    lineIdByName.set(line.name.trim().toLowerCase(), inserted[0]!.id);
+    indexLine(line.name, inserted[0]!.id);
+    indexLine(canonicalName, inserted[0]!.id);
   }
 
   for (const [index, step] of steps.entries()) {
@@ -288,7 +335,9 @@ async function applyLinks(
 ): Promise<string[]> {
   if (!links) return [];
   const unresolved: string[] = [];
-  await tx.delete(recipeLinks).where(eq(recipeLinks.fromRecipeId, fromRecipeId));
+  await tx
+    .delete(recipeLinks)
+    .where(eq(recipeLinks.fromRecipeId, fromRecipeId));
 
   for (const link of links) {
     const target = await tx
@@ -344,7 +393,12 @@ export async function createRecipe(
         );
       }
     }
-    const slug = input.slug ?? uniqueSlug(desired, taken.map((r) => r.slug));
+    const slug =
+      input.slug ??
+      uniqueSlug(
+        desired,
+        taken.map((r) => r.slug),
+      );
 
     const recipeRow = await tx
       .insert(recipes)
@@ -354,6 +408,7 @@ export async function createRecipe(
         subtitle: input.subtitle ?? null,
         summary: input.summary ?? null,
         kind: input.kind ?? 'recipe',
+        status: input.status ?? 'active',
         originNote: input.originNote ?? null,
         heroImageUrl: input.heroImageUrl ?? null,
         heroImageAlt: input.heroImageAlt ?? null,
@@ -430,14 +485,18 @@ export async function reviseRecipe(
       : undefined;
 
     const maxRow = await tx
-      .select({ max: sql<number>`COALESCE(MAX(${recipeRevisions.revisionNumber}), 0)` })
+      .select({
+        max: sql<number>`COALESCE(MAX(${recipeRevisions.revisionNumber}), 0)`,
+      })
       .from(recipeRevisions)
       .where(eq(recipeRevisions.recipeId, recipe.id));
     const revisionNumber = Number(maxRow[0]?.max ?? 0) + 1;
 
     /** Omitted fields carry forward from the revision being superseded. */
-    const carry = <T>(next: T | null | undefined, prev: T | null | undefined) =>
-      next === undefined ? (prev ?? null) : (next ?? null);
+    const carry = <T>(
+      next: T | null | undefined,
+      prev: T | null | undefined,
+    ) => (next === undefined ? (prev ?? null) : (next ?? null));
 
     const title = input.title ?? previous?.title ?? recipe.title;
 
@@ -450,13 +509,21 @@ export async function reviseRecipe(
         summary: carry(input.summary, previous?.summary),
         rationale: input.rationale,
         yieldQuantity: carry(
-          input.yieldQuantity === undefined ? undefined : num(input.yieldQuantity),
+          input.yieldQuantity === undefined
+            ? undefined
+            : num(input.yieldQuantity),
           previous?.yieldQuantity,
         ),
         yieldUnit: carry(input.yieldUnit, previous?.yieldUnit),
         servings: carry(input.servings, previous?.servings),
-        totalTimeMinutes: carry(input.totalTimeMinutes, previous?.totalTimeMinutes),
-        activeTimeMinutes: carry(input.activeTimeMinutes, previous?.activeTimeMinutes),
+        totalTimeMinutes: carry(
+          input.totalTimeMinutes,
+          previous?.totalTimeMinutes,
+        ),
+        activeTimeMinutes: carry(
+          input.activeTimeMinutes,
+          previous?.activeTimeMinutes,
+        ),
         source,
       })
       .returning({ id: recipeRevisions.id });
@@ -475,15 +542,30 @@ export async function reviseRecipe(
     // ingredient list to check against), so validate here where the
     // carried-forward lines are in hand.
     if (input.steps && !input.ingredients) {
-      const known = new Set(ingredientLines.map((l) => l.name.trim().toLowerCase()));
+      // Compare by resolved ingredient identity rather than by spelling. The
+      // carried-forward lines carry canonical names while the caller writes
+      // whatever they call it, and "Chinkiang vinegar" and "Black malt
+      // vinegar" are the same ingredient.
+      const knownNames = new Set(
+        ingredientLines.map((l) => l.name.trim().toLowerCase()),
+      );
+      const knownIds = new Set(
+        (
+          await Promise.all(
+            ingredientLines.map((l) => findIngredientId(tx, l.name)),
+          )
+        ).filter((id): id is string => id !== null),
+      );
+
       for (const [i, step] of stepList.entries()) {
         for (const used of step.uses ?? []) {
-          if (!known.has(used.trim().toLowerCase())) {
-            throw new ConflictError(
-              `Step ${i + 1} uses "${used}", which is not in this recipe's ` +
-                'ingredient list. Send `ingredients` alongside `steps` to change both.',
-            );
-          }
+          if (knownNames.has(used.trim().toLowerCase())) continue;
+          const usedId = await findIngredientId(tx, used);
+          if (usedId && knownIds.has(usedId)) continue;
+          throw new ConflictError(
+            `Step ${i + 1} uses "${used}", which is not in this recipe's ` +
+              'ingredient list. Send `ingredients` alongside `steps` to change both.',
+          );
         }
       }
     }
@@ -499,8 +581,12 @@ export async function reviseRecipe(
       .update(recipes)
       .set({
         title,
-        ...(input.subtitle !== undefined ? { subtitle: input.subtitle ?? null } : {}),
-        ...(input.summary !== undefined ? { summary: input.summary ?? null } : {}),
+        ...(input.subtitle !== undefined
+          ? { subtitle: input.subtitle ?? null }
+          : {}),
+        ...(input.summary !== undefined
+          ? { summary: input.summary ?? null }
+          : {}),
         ...(input.heroImageUrl !== undefined
           ? { heroImageUrl: input.heroImageUrl ?? null }
           : {}),
@@ -620,17 +706,23 @@ async function copySteps(tx: Tx, revisionId: string): Promise<StepInput[]> {
 // Notes, ingredients, experiments
 // ─────────────────────────────────────────────────────────────────────────
 
-export async function addNote(input: AddNoteInput): Promise<{ noteId: string }> {
+export async function addNote(
+  input: AddNoteInput,
+): Promise<{ noteId: string }> {
   return withTransaction(async (tx) => {
     const subject: Parameters<typeof writeNotes>[1] = {};
 
     if (input.recipeSlug) {
       const found = await tx
-        .select({ id: recipes.id, currentRevisionId: recipes.currentRevisionId })
+        .select({
+          id: recipes.id,
+          currentRevisionId: recipes.currentRevisionId,
+        })
         .from(recipes)
         .where(eq(recipes.slug, input.recipeSlug))
         .limit(1);
-      if (!found[0]) throw new NotFoundError(`No recipe "${input.recipeSlug}".`);
+      if (!found[0])
+        throw new NotFoundError(`No recipe "${input.recipeSlug}".`);
 
       if (input.revisionNumber != null) {
         const rev = await tx
@@ -716,7 +808,10 @@ export async function upsertIngredient(
           .set(values)
           .where(eq(ingredients.id, existing[0].id))
           .returning({ id: ingredients.id })
-      : await tx.insert(ingredients).values(values).returning({ id: ingredients.id });
+      : await tx
+          .insert(ingredients)
+          .values(values)
+          .returning({ id: ingredients.id });
 
     const ingredientId = row[0]!.id;
 
@@ -731,7 +826,11 @@ export async function upsertIngredient(
       ] as const) {
         await tx
           .insert(ingredientRelations)
-          .values({ fromIngredientId: from, toIngredientId: to, kind: 'substitute' })
+          .values({
+            fromIngredientId: from,
+            toIngredientId: to,
+            kind: 'substitute',
+          })
           .onConflictDoNothing();
       }
     }
@@ -745,17 +844,26 @@ export async function logExperiment(
 ): Promise<{ slug: string; itemCount: number; observationCount: number }> {
   return withTransaction(async (tx) => {
     const taken = await tx.select({ slug: experiments.slug }).from(experiments);
-    const slug = input.slug ?? uniqueSlug(input.title, taken.map((e) => e.slug));
+    const slug =
+      input.slug ??
+      uniqueSlug(
+        input.title,
+        taken.map((e) => e.slug),
+      );
 
     let recipeId: string | null = null;
     let revisionId: string | null = null;
     if (input.recipeSlug) {
       const found = await tx
-        .select({ id: recipes.id, currentRevisionId: recipes.currentRevisionId })
+        .select({
+          id: recipes.id,
+          currentRevisionId: recipes.currentRevisionId,
+        })
         .from(recipes)
         .where(eq(recipes.slug, input.recipeSlug))
         .limit(1);
-      if (!found[0]) throw new NotFoundError(`No recipe "${input.recipeSlug}".`);
+      if (!found[0])
+        throw new NotFoundError(`No recipe "${input.recipeSlug}".`);
       recipeId = found[0].id;
       revisionId = found[0].currentRevisionId;
 
@@ -806,7 +914,10 @@ export async function logExperiment(
           .set(values)
           .where(eq(experiments.id, existing[0].id))
           .returning({ id: experiments.id })
-      : await tx.insert(experiments).values(values).returning({ id: experiments.id });
+      : await tx
+          .insert(experiments)
+          .values(values)
+          .returning({ id: experiments.id });
     const experimentId = row[0]!.id;
 
     // Re-logging an experiment replaces its measurements rather than

@@ -4,6 +4,7 @@ kind: recipe
 archived_from: docs/recipe_tinkering/pickled_jalepenos.md
 summary: 'Refrigerator pickle in a 1:1 vinegar/water brine, with variation notes.'
 ---
+
 # Pickled Jalapeños Recipe
 
 ## Ingredients

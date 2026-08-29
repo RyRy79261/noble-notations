@@ -7,7 +7,8 @@
  * expressed in grams also carries a gram value so ratios stay computable.
  */
 
-export type UnitKind = 'mass' | 'volume' | 'count' | 'length' | 'time' | 'other';
+export type UnitKind =
+  'mass' | 'volume' | 'count' | 'length' | 'time' | 'other';
 
 interface UnitDef {
   canonical: string;
@@ -18,28 +19,113 @@ interface UnitDef {
 }
 
 const UNITS: UnitDef[] = [
-  { canonical: 'g', kind: 'mass', toBase: 1, aliases: ['g', 'gram', 'grams', 'gr'] },
-  { canonical: 'kg', kind: 'mass', toBase: 1000, aliases: ['kg', 'kilo', 'kilos', 'kilogram', 'kilograms'] },
-  { canonical: 'mg', kind: 'mass', toBase: 0.001, aliases: ['mg', 'milligram', 'milligrams'] },
-  { canonical: 'oz', kind: 'mass', toBase: 28.3495, aliases: ['oz', 'ounce', 'ounces'] },
-  { canonical: 'lb', kind: 'mass', toBase: 453.592, aliases: ['lb', 'lbs', 'pound', 'pounds'] },
+  {
+    canonical: 'g',
+    kind: 'mass',
+    toBase: 1,
+    aliases: ['g', 'gram', 'grams', 'gr'],
+  },
+  {
+    canonical: 'kg',
+    kind: 'mass',
+    toBase: 1000,
+    aliases: ['kg', 'kilo', 'kilos', 'kilogram', 'kilograms'],
+  },
+  {
+    canonical: 'mg',
+    kind: 'mass',
+    toBase: 0.001,
+    aliases: ['mg', 'milligram', 'milligrams'],
+  },
+  {
+    canonical: 'oz',
+    kind: 'mass',
+    toBase: 28.3495,
+    aliases: ['oz', 'ounce', 'ounces'],
+  },
+  {
+    canonical: 'lb',
+    kind: 'mass',
+    toBase: 453.592,
+    aliases: ['lb', 'lbs', 'pound', 'pounds'],
+  },
 
-  { canonical: 'ml', kind: 'volume', toBase: 1, aliases: ['ml', 'millilitre', 'millilitres', 'milliliter', 'milliliters'] },
-  { canonical: 'l', kind: 'volume', toBase: 1000, aliases: ['l', 'litre', 'litres', 'liter', 'liters'] },
-  { canonical: 'tsp', kind: 'volume', toBase: 4.92892, aliases: ['tsp', 'teaspoon', 'teaspoons'] },
-  { canonical: 'tbsp', kind: 'volume', toBase: 14.7868, aliases: ['tbsp', 'tablespoon', 'tablespoons', 'tbs'] },
-  { canonical: 'cup', kind: 'volume', toBase: 236.588, aliases: ['cup', 'cups'] },
-  { canonical: 'fl oz', kind: 'volume', toBase: 29.5735, aliases: ['fl oz', 'floz', 'fluid ounce', 'fluid ounces'] },
+  {
+    canonical: 'ml',
+    kind: 'volume',
+    toBase: 1,
+    aliases: ['ml', 'millilitre', 'millilitres', 'milliliter', 'milliliters'],
+  },
+  {
+    canonical: 'l',
+    kind: 'volume',
+    toBase: 1000,
+    aliases: ['l', 'litre', 'litres', 'liter', 'liters'],
+  },
+  {
+    canonical: 'tsp',
+    kind: 'volume',
+    toBase: 4.92892,
+    aliases: ['tsp', 'teaspoon', 'teaspoons'],
+  },
+  {
+    canonical: 'tbsp',
+    kind: 'volume',
+    toBase: 14.7868,
+    aliases: ['tbsp', 'tablespoon', 'tablespoons', 'tbs'],
+  },
+  {
+    canonical: 'cup',
+    kind: 'volume',
+    toBase: 236.588,
+    aliases: ['cup', 'cups'],
+  },
+  {
+    canonical: 'fl oz',
+    kind: 'volume',
+    toBase: 29.5735,
+    aliases: ['fl oz', 'floz', 'fluid ounce', 'fluid ounces'],
+  },
 
-  { canonical: 'piece', kind: 'count', toBase: 1, aliases: ['piece', 'pieces', 'pc', 'pcs', 'whole', 'each'] },
-  { canonical: 'clove', kind: 'count', toBase: 1, aliases: ['clove', 'cloves'] },
+  {
+    canonical: 'piece',
+    kind: 'count',
+    toBase: 1,
+    aliases: ['piece', 'pieces', 'pc', 'pcs', 'whole', 'each'],
+  },
+  {
+    canonical: 'clove',
+    kind: 'count',
+    toBase: 1,
+    aliases: ['clove', 'cloves'],
+  },
   { canonical: 'pod', kind: 'count', toBase: 1, aliases: ['pod', 'pods'] },
   { canonical: 'head', kind: 'count', toBase: 1, aliases: ['head', 'heads'] },
-  { canonical: 'bunch', kind: 'count', toBase: 1, aliases: ['bunch', 'bunches'] },
-  { canonical: 'sprig', kind: 'count', toBase: 1, aliases: ['sprig', 'sprigs'] },
+  {
+    canonical: 'bunch',
+    kind: 'count',
+    toBase: 1,
+    aliases: ['bunch', 'bunches'],
+  },
+  {
+    canonical: 'sprig',
+    kind: 'count',
+    toBase: 1,
+    aliases: ['sprig', 'sprigs'],
+  },
   { canonical: 'leaf', kind: 'count', toBase: 1, aliases: ['leaf', 'leaves'] },
-  { canonical: 'pinch', kind: 'count', toBase: 1, aliases: ['pinch', 'pinches'] },
-  { canonical: 'bottle', kind: 'count', toBase: 1, aliases: ['bottle', 'bottles'] },
+  {
+    canonical: 'pinch',
+    kind: 'count',
+    toBase: 1,
+    aliases: ['pinch', 'pinches'],
+  },
+  {
+    canonical: 'bottle',
+    kind: 'count',
+    toBase: 1,
+    aliases: ['bottle', 'bottles'],
+  },
   { canonical: 'ear', kind: 'count', toBase: 1, aliases: ['ear', 'ears'] },
 ];
 

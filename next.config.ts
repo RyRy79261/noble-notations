@@ -25,6 +25,15 @@ const csp = [
 const nextConfig: NextConfig = {
   reactStrictMode: true,
 
+  // The archive is read off disk at request time. Vercel traces only the
+  // modules a function imports, so the Markdown itself has to be named
+  // explicitly or /archive renders empty in production.
+  outputFileTracingIncludes: {
+    '/archive': ['./content/**/*.md'],
+    '/archive/[...slug]': ['./content/**/*.md'],
+    '/sitemap.xml': ['./content/**/*.md'],
+  },
+
   async rewrites() {
     // RFC 8414 and RFC 9728 require these documents to live under
     // /.well-known/. The App Router will not route a dot-prefixed folder, so

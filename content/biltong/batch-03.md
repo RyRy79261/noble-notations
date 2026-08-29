@@ -4,6 +4,7 @@ kind: batch-log
 archived_from: docs/biltong_logs/batch3.md
 summary: '6.02 kg silverside. Tandoori and garam masala introduced.'
 ---
+
 6.02 Kg - Gourment Experts 157.88 EUR
 
 ### Wash ingredients

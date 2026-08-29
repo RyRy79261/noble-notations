@@ -27,6 +27,8 @@ export const TAXONOMY_FACETS = [
 ] as const;
 export type TaxonomyFacet = (typeof TAXONOMY_FACETS)[number];
 
+export const RECIPE_STATUSES = ['draft', 'active', 'archived'] as const;
+
 export const RECIPE_KINDS = [
   'recipe',
   'preparation',
@@ -86,12 +88,14 @@ export const noteSourceSchema = z.object({
 });
 
 export const noteSchema = z.object({
-  kind: z.enum(NOTE_KINDS).describe(
-    'observation = what happened; research = sourced background; ' +
-      'substitution = what was swapped and why; warning = a trap; ' +
-      'result = how it turned out; idea = untried; correction = fixes an ' +
-      'earlier claim',
-  ),
+  kind: z
+    .enum(NOTE_KINDS)
+    .describe(
+      'observation = what happened; research = sourced background; ' +
+        'substitution = what was swapped and why; warning = a trap; ' +
+        'result = how it turned out; idea = untried; correction = fixes an ' +
+        'earlier claim',
+    ),
   title: z.string().max(200).optional(),
   body: z.string().min(1).max(20000).describe('Markdown'),
   sources: z.array(noteSourceSchema).max(100).optional(),
@@ -111,7 +115,11 @@ export const ingredientLineSchema = z.object({
   unit: z.string().max(40).nullish(),
   /** Sub-list heading this line belongs under: "Wash", "Dredge". */
   component: z.string().max(120).nullish(),
-  preparation: z.string().max(200).nullish().describe('"deseeded", "coarsely ground"'),
+  preparation: z
+    .string()
+    .max(200)
+    .nullish()
+    .describe('"deseeded", "coarsely ground"'),
   optional: z.boolean().optional().default(false),
   note: z.string().max(2000).nullish(),
   /** Overrides the rendered line if the original wording matters. */
@@ -146,9 +154,16 @@ export const recipeLinkSchema = z.object({
   note: z.string().max(1000).optional(),
 });
 
-/** Taxonomy as a record keyed by facet — the shape easiest to fill in. */
+/**
+ * Taxonomy as a record keyed by facet — the shape easiest to fill in.
+ * `partialRecord` rather than `record`: every facet is optional, and a plain
+ * record would type all ten as required.
+ */
 export const taxonomySchema = z
-  .record(z.enum(TAXONOMY_FACETS), z.array(z.string().min(1).max(120)).max(30))
+  .partialRecord(
+    z.enum(TAXONOMY_FACETS),
+    z.array(z.string().min(1).max(120)).max(30),
+  )
   .optional();
 export type TaxonomyInput = z.infer<typeof taxonomySchema>;
 
@@ -156,11 +171,18 @@ export type TaxonomyInput = z.infer<typeof taxonomySchema>;
 // Recipe body — the part a revision snapshots
 // ─────────────────────────────────────────────────────────────────────────
 
-const recipeBodyShape = {
+export const recipeBodyShape = {
   title: z.string().min(1).max(200),
   subtitle: z.string().max(300).nullish(),
   summary: z.string().max(4000).nullish(),
   kind: z.enum(RECIPE_KINDS).optional().default('recipe'),
+  status: z
+    .enum(RECIPE_STATUSES)
+    .optional()
+    .default('active')
+    .describe(
+      'draft hides it from listings; archived keeps the URL but retires it',
+    ),
   taxonomy: taxonomySchema,
   yieldQuantity: z.number().finite().positive().nullish(),
   yieldUnit: z.string().max(60).nullish(),
@@ -204,19 +226,36 @@ function checkStepReferences(
   });
 }
 
+/**
+ * Raw shapes are exported alongside the schemas because the MCP SDK's
+ * `registerTool` takes a Zod *shape* (a plain object of field schemas) to
+ * derive its JSON Schema, while validation inside the handler needs the
+ * assembled object schema with its cross-field refinements. Deriving both
+ * from one shape keeps the advertised tool signature and the enforced
+ * contract from drifting apart.
+ */
+export const createRecipeShape = {
+  ...recipeBodyShape,
+  /** Defaults to a slug of the title; must be unique. */
+  slug: z
+    .string()
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Lowercase words separated by hyphens')
+    .max(120)
+    .optional(),
+  /** Why this recipe exists at all — recorded on revision 1. */
+  rationale: z.string().max(4000).optional(),
+};
+
 export const createRecipeSchema = z
-  .object({
-    ...recipeBodyShape,
-    /** Defaults to a slug of the title; must be unique. */
-    slug: z
-      .string()
-      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Lowercase words separated by hyphens')
-      .max(120)
-      .optional(),
-    /** Why this recipe exists at all — recorded on revision 1. */
-    rationale: z.string().max(4000).optional(),
-  })
+  .object(createRecipeShape)
   .superRefine(checkStepReferences);
+
+/**
+ * `Input` is what a caller sends (defaults not yet applied); `CreateRecipeInput`
+ * is what comes out of `parse`. Seed data and MCP arguments are written
+ * against the former, the write layer consumes the latter.
+ */
+export type CreateRecipeArgs = z.input<typeof createRecipeSchema>;
 export type CreateRecipeInput = z.infer<typeof createRecipeSchema>;
 
 /**
@@ -229,52 +268,59 @@ export type CreateRecipeInput = z.infer<typeof createRecipeSchema>;
  * ambiguous in exactly the cases that matter (reordering, renaming), so the
  * contract is explicit instead of clever.
  */
+export const reviseRecipeShape = {
+  slug: z.string().min(1).max(120),
+  rationale: z
+    .string()
+    .min(1)
+    .max(4000)
+    .describe(
+      'What changed and why. Required — this is the point of a revision.',
+    ),
+  title: recipeBodyShape.title.optional(),
+  subtitle: recipeBodyShape.subtitle,
+  summary: recipeBodyShape.summary,
+  taxonomy: recipeBodyShape.taxonomy,
+  yieldQuantity: recipeBodyShape.yieldQuantity,
+  yieldUnit: recipeBodyShape.yieldUnit,
+  servings: recipeBodyShape.servings,
+  totalTimeMinutes: recipeBodyShape.totalTimeMinutes,
+  activeTimeMinutes: recipeBodyShape.activeTimeMinutes,
+  ingredients: recipeBodyShape.ingredients,
+  steps: recipeBodyShape.steps,
+  notes: recipeBodyShape.notes,
+  links: recipeBodyShape.links,
+  heroImageUrl: recipeBodyShape.heroImageUrl,
+  heroImageAlt: recipeBodyShape.heroImageAlt,
+};
+
 export const reviseRecipeSchema = z
-  .object({
-    slug: z.string().min(1).max(120),
-    rationale: z
-      .string()
-      .min(1)
-      .max(4000)
-      .describe('What changed and why. Required — this is the point of a revision.'),
-    title: recipeBodyShape.title.optional(),
-    subtitle: recipeBodyShape.subtitle,
-    summary: recipeBodyShape.summary,
-    taxonomy: recipeBodyShape.taxonomy,
-    yieldQuantity: recipeBodyShape.yieldQuantity,
-    yieldUnit: recipeBodyShape.yieldUnit,
-    servings: recipeBodyShape.servings,
-    totalTimeMinutes: recipeBodyShape.totalTimeMinutes,
-    activeTimeMinutes: recipeBodyShape.activeTimeMinutes,
-    ingredients: recipeBodyShape.ingredients,
-    steps: recipeBodyShape.steps,
-    notes: recipeBodyShape.notes,
-    links: recipeBodyShape.links,
-    heroImageUrl: recipeBodyShape.heroImageUrl,
-    heroImageAlt: recipeBodyShape.heroImageAlt,
-  })
+  .object(reviseRecipeShape)
   .superRefine((value, ctx) => {
     // Only cross-check when both lists are being replaced together; a
     // steps-only revision is checked against the carried-forward ingredients
     // at write time, where the previous revision is in hand.
     if (value.ingredients && value.steps) checkStepReferences(value, ctx);
   });
+export type ReviseRecipeArgs = z.input<typeof reviseRecipeSchema>;
 export type ReviseRecipeInput = z.infer<typeof reviseRecipeSchema>;
 
 // ─────────────────────────────────────────────────────────────────────────
 // Notes, ingredients, experiments
 // ─────────────────────────────────────────────────────────────────────────
 
+export const addNoteShape = {
+  ...noteSchema.shape,
+  /** Exactly one target must be given. */
+  recipeSlug: z.string().max(120).optional(),
+  ingredientSlug: z.string().max(120).optional(),
+  experimentSlug: z.string().max(120).optional(),
+  /** Attach to a specific revision of `recipeSlug` instead of the recipe. */
+  revisionNumber: z.number().int().positive().optional(),
+};
+
 export const addNoteSchema = z
-  .object({
-    ...noteSchema.shape,
-    /** Exactly one target must be given. */
-    recipeSlug: z.string().max(120).optional(),
-    ingredientSlug: z.string().max(120).optional(),
-    experimentSlug: z.string().max(120).optional(),
-    /** Attach to a specific revision of `recipeSlug` instead of the recipe. */
-    revisionNumber: z.number().int().positive().optional(),
-  })
+  .object(addNoteShape)
   .superRefine((value, ctx) => {
     const targets = [
       value.recipeSlug,
@@ -298,7 +344,7 @@ export const addNoteSchema = z
   });
 export type AddNoteInput = z.infer<typeof addNoteSchema>;
 
-export const upsertIngredientSchema = z.object({
+export const upsertIngredientShape = {
   name: z.string().min(1).max(200),
   slug: z.string().max(120).optional(),
   plural: z.string().max(200).nullish(),
@@ -312,7 +358,10 @@ export const upsertIngredientSchema = z.object({
     .max(50)
     .optional()
     .describe('Names of ingredients that can stand in for this one'),
-});
+};
+
+export const upsertIngredientSchema = z.object(upsertIngredientShape);
+export type UpsertIngredientArgs = z.input<typeof upsertIngredientSchema>;
 export type UpsertIngredientInput = z.infer<typeof upsertIngredientSchema>;
 
 export const observationSchema = z.object({
@@ -320,11 +369,14 @@ export const observationSchema = z.object({
   metric: z.string().min(1).max(80).describe('"initial_weight", "days_to_cut"'),
   value: z.number().finite().nullish(),
   unit: z.string().max(40).nullish(),
-  recordedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
+  recordedAt: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullish(),
   note: z.string().max(1000).nullish(),
 });
 
-export const logExperimentSchema = z.object({
+export const logExperimentShape = {
   slug: z
     .string()
     .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
@@ -334,8 +386,14 @@ export const logExperimentSchema = z.object({
   recipeSlug: z.string().max(120).optional(),
   revisionNumber: z.number().int().positive().optional(),
   summary: z.string().max(4000).nullish(),
-  startedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
-  completedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
+  startedAt: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullish(),
+  completedAt: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullish(),
   scaleFactor: z.number().positive().nullish(),
   outcome: z.string().max(8000).nullish(),
   costTotal: z.number().nonnegative().nullish(),
@@ -351,15 +409,22 @@ export const logExperimentSchema = z.object({
     .optional(),
   observations: z.array(observationSchema).max(5000).optional(),
   notes: z.array(noteSchema).max(100).optional(),
-});
+};
+
+export const logExperimentSchema = z.object(logExperimentShape);
+export type LogExperimentArgs = z.input<typeof logExperimentSchema>;
 export type LogExperimentInput = z.infer<typeof logExperimentSchema>;
 
 // ─────────────────────────────────────────────────────────────────────────
 // Search
 // ─────────────────────────────────────────────────────────────────────────
 
-export const searchRecipesSchema = z.object({
-  query: z.string().max(300).optional().describe('Free text; matches title, summary, terms and ingredients'),
+export const searchRecipesShape = {
+  query: z
+    .string()
+    .max(300)
+    .optional()
+    .describe('Free text; matches title, summary, terms and ingredients'),
   /** Facet → term slugs. All listed terms must be present (AND). */
   taxonomy: taxonomySchema,
   /** Ingredient slugs or names that must all appear. */
@@ -369,5 +434,7 @@ export const searchRecipesSchema = z.object({
   kind: z.enum(RECIPE_KINDS).optional(),
   limit: z.number().int().min(1).max(100).optional().default(20),
   offset: z.number().int().min(0).max(10000).optional().default(0),
-});
+};
+
+export const searchRecipesSchema = z.object(searchRecipesShape);
 export type SearchRecipesInput = z.infer<typeof searchRecipesSchema>;

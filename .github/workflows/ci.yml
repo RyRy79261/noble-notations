@@ -1,7 +1,9 @@
 name: CI
 
-# Regression gate: every push and PR must format-check, lint, typecheck,
-# and produce a clean production build (broken links fail the build).
+# Regression gate: every push and PR must format-check, lint, typecheck, and
+# produce a clean production build. The build deliberately needs no database
+# — every DB-backed page degrades to a notice when DATABASE_URL is unset, so
+# CI does not need Neon credentials.
 on:
   push:
     branches: [main]
@@ -26,7 +28,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
 
       - name: Install dependencies

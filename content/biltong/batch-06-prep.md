@@ -4,6 +4,7 @@ kind: batch-log
 archived_from: docs/biltong_logs/batch6_prep.md
 summary: '10 kg scaled recipe derived from five batches of ratios, plus shopping list.'
 ---
+
 # Biltong Batch 6 — Prep & Shopping List
 
 A comprehensive preparation guide for a 10kg batch, built from five batches of accumulated learnings.

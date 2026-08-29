@@ -14,10 +14,10 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "tsx scripts/migrate.ts",
+    "db:migrate": "NODE_OPTIONS=--conditions=react-server tsx scripts/migrate.ts",
     "db:studio": "drizzle-kit studio",
-    "ingest": "tsx scripts/ingest-archive.ts",
-    "export": "tsx scripts/export-markdown.ts"
+    "ingest": "NODE_OPTIONS=--conditions=react-server tsx scripts/ingest-archive.ts",
+    "export": "NODE_OPTIONS=--conditions=react-server tsx scripts/export-markdown.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
@@ -26,16 +26,20 @@
     "gray-matter": "^4.0.3",
     "mcp-handler": "^1.1.0",
     "next": "16.3.3",
+    "pg": "^8.23.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "server-only": "^0.0.1",
     "ws": "^8.21.3",
     "zod": "^4.5.4"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
-    "@tailwindcss/postcss": "^4.3.3",
+    "@next/eslint-plugin-next": "16.3.3",
     "@types/node": "^22.10.0",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@types/ws": "^8.18.1",
@@ -43,14 +47,14 @@
     "eslint": "^9.18.0",
     "eslint-config-next": "16.3.3",
     "globals": "^15.14.0",
+    "playwright-core": "^1.62.1",
     "prettier": "^3.4.2",
-    "tailwindcss": "^4.3.3",
     "tsx": "^4.19.2",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.20.0"
   },
   "engines": {
-    "node": ">=20.0",
+    "node": ">=20.12",
     "pnpm": ">=8.0.0"
   },
   "pnpm": {

@@ -232,7 +232,10 @@ export async function listRecipes(options?: {
   const rows = await db
     .select(recipeSummaryColumns)
     .from(recipes)
-    .leftJoin(recipeRevisions, eq(recipeRevisions.id, recipes.currentRevisionId))
+    .leftJoin(
+      recipeRevisions,
+      eq(recipeRevisions.id, recipes.currentRevisionId),
+    )
     .where(
       options?.kind
         ? and(
@@ -311,9 +314,18 @@ export async function searchRecipes(
   }
 
   const where = sql.join(conditions, sql` AND `);
-  const rank = input.query?.trim()
-    ? sql`ts_rank_cd(r.search_vector, websearch_to_tsquery('english', ${input.query.trim()}))`
-    : sql`0`;
+
+  // A bare integer in ORDER BY is an ordinal position in Postgres, so the
+  // no-query case must drop the rank term from the ordering entirely rather
+  // than ordering by a constant `0` — which fails with "ORDER BY position 0
+  // is not in select list".
+  const trimmedQuery = input.query?.trim();
+  const rank = trimmedQuery
+    ? sql`ts_rank_cd(r.search_vector, websearch_to_tsquery('english', ${trimmedQuery}))`
+    : sql`0::float4`;
+  const ordering = trimmedQuery
+    ? sql`${rank} DESC, r.updated_at DESC`
+    : sql`r.updated_at DESC`;
 
   const result = await db.execute<{
     id: string;
@@ -337,7 +349,7 @@ export async function searchRecipes(
       FROM recipes r
       LEFT JOIN recipe_revisions rev ON rev.id = r.current_revision_id
      WHERE ${where}
-     ORDER BY ${rank} DESC, r.updated_at DESC
+     ORDER BY ${ordering}
      LIMIT ${input.limit ?? 20}
     OFFSET ${input.offset ?? 0}
   `);
@@ -461,7 +473,10 @@ export async function getRecipeBySlug(
         techniqueLabel: taxonomyTerms.label,
       })
       .from(recipeSteps)
-      .leftJoin(taxonomyTerms, eq(taxonomyTerms.id, recipeSteps.techniqueTermId))
+      .leftJoin(
+        taxonomyTerms,
+        eq(taxonomyTerms.id, recipeSteps.techniqueTermId),
+      )
       .where(eq(recipeSteps.revisionId, revision.id))
       .orderBy(asc(recipeSteps.position)),
     // Notes on the recipe itself and on the revision being displayed.
@@ -492,7 +507,10 @@ export async function getRecipeBySlug(
           recipeIngredients,
           eq(recipeIngredients.id, recipeStepIngredients.recipeIngredientId),
         )
-        .leftJoin(ingredients, eq(ingredients.id, recipeIngredients.ingredientId))
+        .leftJoin(
+          ingredients,
+          eq(ingredients.id, recipeIngredients.ingredientId),
+        )
         .where(
           inArray(
             recipeStepIngredients.stepId,
@@ -540,13 +558,19 @@ export async function getRecipeBySlug(
       })
       .from(recipeLinks)
       .innerJoin(recipes, eq(recipes.id, recipeLinks.toRecipeId))
-      .leftJoin(recipeRevisions, eq(recipeRevisions.id, recipes.currentRevisionId))
+      .leftJoin(
+        recipeRevisions,
+        eq(recipeRevisions.id, recipes.currentRevisionId),
+      )
       .where(eq(recipeLinks.fromRecipeId, recipe.id)),
     db
       .select({ linkKind: recipeLinks.kind, ...recipeSummaryColumns })
       .from(recipeLinks)
       .innerJoin(recipes, eq(recipes.id, recipeLinks.fromRecipeId))
-      .leftJoin(recipeRevisions, eq(recipeRevisions.id, recipes.currentRevisionId))
+      .leftJoin(
+        recipeRevisions,
+        eq(recipeRevisions.id, recipes.currentRevisionId),
+      )
       .where(eq(recipeLinks.toRecipeId, recipe.id)),
     db
       .select({
@@ -688,7 +712,10 @@ export async function listTaxonomy(
       taxonomyTerms.label,
       taxonomyTerms.description,
     )
-    .orderBy(desc(sql`COUNT(${recipeTerms.recipeId})`), asc(taxonomyTerms.label));
+    .orderBy(
+      desc(sql`COUNT(${recipeTerms.recipeId})`),
+      asc(taxonomyTerms.label),
+    );
 
   return rows.map((r) => ({
     id: r.id,
@@ -716,7 +743,10 @@ export async function getTerm(
     .select(recipeSummaryColumns)
     .from(recipeTerms)
     .innerJoin(recipes, eq(recipes.id, recipeTerms.recipeId))
-    .leftJoin(recipeRevisions, eq(recipeRevisions.id, recipes.currentRevisionId))
+    .leftJoin(
+      recipeRevisions,
+      eq(recipeRevisions.id, recipes.currentRevisionId),
+    )
     .where(and(eq(recipeTerms.termId, term.id), eq(recipes.status, 'active')))
     .orderBy(desc(recipes.updatedAt));
 
@@ -813,7 +843,10 @@ export async function getIngredient(slug: string): Promise<{
         recipes,
         eq(recipes.currentRevisionId, recipeIngredients.revisionId),
       )
-      .leftJoin(recipeRevisions, eq(recipeRevisions.id, recipes.currentRevisionId))
+      .leftJoin(
+        recipeRevisions,
+        eq(recipeRevisions.id, recipes.currentRevisionId),
+      )
       .where(
         and(
           eq(recipeIngredients.ingredientId, row.id),
@@ -840,7 +873,10 @@ export async function getIngredient(slug: string): Promise<{
         note: ingredientRelations.note,
       })
       .from(ingredientRelations)
-      .innerJoin(ingredients, eq(ingredients.id, ingredientRelations.toIngredientId))
+      .innerJoin(
+        ingredients,
+        eq(ingredients.id, ingredientRelations.toIngredientId),
+      )
       .where(
         and(
           eq(ingredientRelations.fromIngredientId, row.id),
@@ -986,7 +1022,10 @@ export async function getExperiment(
         eq(experimentItems.id, experimentObservations.itemId),
       )
       .where(eq(experimentObservations.experimentId, row.id))
-      .orderBy(asc(experimentItems.position), asc(experimentObservations.metric)),
+      .orderBy(
+        asc(experimentItems.position),
+        asc(experimentObservations.metric),
+      ),
     db
       .select({
         id: notes.id,
@@ -1010,7 +1049,9 @@ export async function getExperiment(
     outcome: row.outcome,
     costTotal: n(row.costTotal),
     currency: row.currency,
-    recipe: row.recipeSlug ? { slug: row.recipeSlug, title: row.recipeTitle! } : null,
+    recipe: row.recipeSlug
+      ? { slug: row.recipeSlug, title: row.recipeTitle! }
+      : null,
     items: itemRows,
     observations: observationRows.map((o) => ({ ...o, value: n(o.value) })),
     notes: noteRows.map((x) => ({

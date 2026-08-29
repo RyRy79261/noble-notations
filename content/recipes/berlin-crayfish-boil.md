@@ -4,6 +4,7 @@ kind: recipe
 archived_from: docs/recipe_tinkering/berlin-boil.md
 summary: 'Where to buy crayfish in Berlin, plus a 50-person Berlin-style crayfish boil.'
 ---
+
 # Berlin Boil: Where to Buy Crayfish in Berlin
 
 ## Local Restaurants and Markets
