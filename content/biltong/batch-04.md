@@ -1,7 +1,9 @@
 ---
-title: Biltong Batch 4
+title: 'Biltong Batch 4'
+kind: batch-log
+archived_from: docs/biltong_logs/batch4.md
+summary: '7.98 kg. Wash properly scaled; dredge ran short on 1.6 kg.'
 ---
-
 7.98 KG Silverside Irish beef- Gourmet Experts 209.26 EUR
 
 ### Wash ingredients

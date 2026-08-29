@@ -1,3 +1,9 @@
+---
+title: 'Biltong Batch 2'
+kind: batch-log
+archived_from: docs/biltong_logs/batch2.md
+summary: 'Per-piece weights, cutting dates and the 4.21%/day drying-rate analysis.'
+---
 Start date 19.09.24 - 15h00
 hook weight 13g
 Cost 185,36€

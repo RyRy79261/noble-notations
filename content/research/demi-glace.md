@@ -1,3 +1,9 @@
+---
+title: 'Crafting Michelin-Star Demi-Glace'
+kind: research
+archived_from: docs/recipe_tinkering/demi-glaze-research.md
+summary: 'Bone selection, triple clarification, staged reduction and storage protocol.'
+---
 # Crafting Michelin-Star Demi-Glace: Elevating Tradition with Precision Technique
 
 The pursuit of a Michelin-caliber demi-glace demands an uncompromising commitment to foundational French technique, amplified by meticulous attention to detail at every stage. This 10,000-word guide synthesizes centuries-old methods with modern culinary insights, drawing from professional kitchens and authoritative sources[1][3][6], to create a demi-glace of unparalleled depth, clarity, and versatility. Through optimized bone selection, layered roasting techniques, and precision reduction strategies, we transform humble ingredients into a culinary cornerstone worthy of haute cuisine applications.

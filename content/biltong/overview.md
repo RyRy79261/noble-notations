@@ -1,9 +1,9 @@
 ---
-slug: /biltong
-sidebar_label: Biltong notes
-sidebar_position: 1
+title: 'Baumy Biltong — running notes'
+kind: batch-log
+archived_from: docs/Biltong.md
+summary: 'Equipment, batch 1-3 spice measures and the wash ratios as originally recorded.'
 ---
-
 # Baumy Biltong - Noble Nonsense
 
 ## Equipment

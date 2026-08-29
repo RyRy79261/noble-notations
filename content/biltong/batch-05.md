@@ -1,7 +1,9 @@
 ---
-title: Biltong Batch 5
+title: 'Biltong Batch 5'
+kind: batch-log
+archived_from: docs/biltong_logs/batch5.md
+summary: '8.2 kg. Substitutions throughout; +30% wash and +40% seasoning locked in as learnings.'
 ---
-
 8.2 KG Silverside Irish Beef — Gourmet Experts €216.61
 
 ## Main notes
