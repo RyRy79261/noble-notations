@@ -19,7 +19,12 @@ import {
   WRITE_SCOPE,
   type Scope,
 } from '@/lib/mcp/scopes';
-import { getAdminUser, isAdminConfigured } from '@/lib/mcp/admin-session';
+import {
+  getAdminUser,
+  getSignedInUser,
+  isAdminConfigured,
+} from '@/lib/mcp/admin-session';
+import { SIGN_IN_PATH } from '@/lib/auth-routes';
 import { getPublicOrigin } from '@/lib/mcp/origin';
 
 export const dynamic = 'force-dynamic';
@@ -191,8 +196,9 @@ function scopeDescription(scopes: Scope[]): string {
 export async function GET(req: NextRequest) {
   if (!isAdminConfigured()) {
     return renderError(
-      'This deployment has no administrator credentials configured. Set ' +
-        'ADMIN_PASSWORD_HASH and ADMIN_SESSION_SECRET before connecting.',
+      'This deployment has no administrator identity configured. Set ' +
+        'NEON_AUTH_BASE_URL, NEON_AUTH_COOKIE_SECRET and ALLOWED_EMAILS ' +
+        'before connecting.',
       503,
     );
   }
@@ -203,10 +209,22 @@ export async function GET(req: NextRequest) {
 
   const user = await getAdminUser();
   if (!user) {
+    // Signed in as somebody who is not on the allow-list is a dead end —
+    // bouncing them back to sign in would loop forever, so say so plainly.
+    const signedIn = await getSignedInUser();
+    if (signedIn) {
+      return renderError(
+        `Signed in as ${signedIn.email ?? signedIn.userId}, which is not ` +
+          'permitted to approve connectors for this repository. Sign out ' +
+          'and sign in with an address on ALLOWED_EMAILS.',
+        403,
+      );
+    }
+
     // Bounce through the sign-in page, which forwards back here once a
     // session cookie exists.
     const origin = getPublicOrigin(req);
-    const signIn = new URL('/auth', origin);
+    const signIn = new URL(SIGN_IN_PATH, origin);
     signIn.searchParams.set(
       'callbackURL',
       `/api/mcp/oauth/authorize?${req.nextUrl.searchParams.toString()}`,
@@ -260,7 +278,7 @@ export async function POST(req: NextRequest) {
       params.redirect_uri,
       params.state,
       'access_denied',
-      'Administrator session expired',
+      'No authorised administrator session',
     );
   }
 

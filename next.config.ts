@@ -25,6 +25,12 @@ const csp = [
 const nextConfig: NextConfig = {
   reactStrictMode: true,
 
+  // `next dev` otherwise appends a generated block to AGENTS.md on every
+  // run. That file is hand-written and is this repository's source of
+  // truth, so the advice it wanted to add lives there in our own words
+  // instead.
+  agentRules: false,
+
   // The archive is read off disk at request time. Vercel traces only the
   // modules a function imports, so the Markdown itself has to be named
   // explicitly or /archive renders empty in production.

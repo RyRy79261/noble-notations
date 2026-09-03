@@ -45,24 +45,44 @@ claude.ai                         noble-notations
 
 ## Identity
 
-The authorize endpoint has to know who is approving a connector. This
-repository has one author, so identity is a single password-gated admin
-session (`src/lib/mcp/admin-session.ts`) rather than a hosted identity
-provider — nothing external to provision before the connector works.
+The authorize endpoint has to know who is approving a connector. Identity
+comes from **Neon Auth** — the same provider that backs the database — so
+there is no second account system to provision. `src/lib/neon-auth.ts` holds
+the server instance; `src/lib/mcp/admin-session.ts` answers "is an
+authorised administrator present?" and is the only thing the OAuth stack
+consults.
 
-- `ADMIN_PASSWORD_HASH` — scrypt hash, format
-  `scrypt$N$r$p$salt-b64$hash-b64`. Generate with
-  `pnpm tsx scripts/hash-password.ts 'your password'`.
-- `ADMIN_SESSION_SECRET` — HMAC key for the session cookie, 32+ characters.
+- `NEON_AUTH_BASE_URL` — injected by Vercel's Neon Auth integration. Older
+  provisionings named it `NEON_AUTH_URL`; either is accepted.
+- `NEON_AUTH_COOKIE_SECRET` — session cookie signing key, 32+ characters.
+  **Not** injected by Vercel: set it yourself in every environment.
   `openssl rand -base64 48`. Rotating it signs everyone out.
+- `ALLOWED_EMAILS` — comma-separated allow-list of addresses that may
+  approve connectors.
 
-The cookie is HttpOnly, `SameSite=Lax` (the OAuth return trip is a top-level
-GET navigation, which Lax permits), Secure in production, and expires after
-12 hours.
+Being signed in is necessary but not sufficient. Neon Auth will create an
+account for anyone who reaches its hosted sign-in page, so `ALLOWED_EMAILS`
+is the control that matters; an empty list means nobody can approve
+anything. A signed-in address that is not on the list gets a 403 explaining
+why, rather than being bounced back to sign in forever.
 
-Swapping in a real identity provider later means reimplementing
-`getAdminUser()` and the sign-in form. Nothing else in the OAuth stack looks
-at how the answer was obtained.
+### Two traps in the sign-in round trip
+
+**The verifier exchange lives in the middleware.** Neon Auth's hosted
+sign-in returns the browser with `?neon_auth_session_verifier=…` and no
+cookie yet. Exchanging that token for a real session cookie happens inside
+`auth.middleware()` — it is _not_ part of `auth.handler()` and cannot be
+triggered from a route handler. `src/middleware.ts` exists for that alone
+and is scoped to two paths; nothing else on this site is behind a login.
+
+**`loginUrl` is skipped before the exchange runs.**
+`processAuthMiddleware` early-returns `allow` for any path at or under the
+configured `loginUrl` _before_ it reaches the verifier step. With
+`loginUrl: '/auth'`, a return trip landing on `/auth?…verifier=…` would be
+served as an ordinary page and no cookie would ever be minted. The hosted
+flow is therefore pointed at `/oauth-return`, a sibling path, which
+forwards to the real destination once the cookie exists. See
+`src/lib/auth-routes.ts`.
 
 ## Scopes
 

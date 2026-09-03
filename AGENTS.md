@@ -122,9 +122,10 @@ without one.
 ## Environment
 
 See `.env.example`. `DATABASE_URL` is required for content;
-`ADMIN_PASSWORD_HASH` and `ADMIN_SESSION_SECRET` are required for the MCP
-connector; `MCP_PUBLIC_URL` should be set in production (see the
-`VERCEL_URL` gotcha in `docs/mcp-connector.md`).
+`NEON_AUTH_BASE_URL`, `NEON_AUTH_COOKIE_SECRET` and `ALLOWED_EMAILS` are
+required for the MCP connector's consent screen (Vercel injects the first,
+you set the other two); `MCP_PUBLIC_URL` should be set in production (see
+the `VERCEL_URL` gotcha in `docs/mcp-connector.md`).
 
 ## Quality gates
 
@@ -144,3 +145,9 @@ The build does not need a database.
   rebuild and describes the old static-site architecture; treat this file as
   authoritative where they disagree.
 - Do not commit `.next/` or `build/` (git-ignored).
+- This is Next.js 16. Several conventions moved: `middleware.ts` is now
+  `proxy.ts`, and route params are Promises. The version's own docs ship in
+  `node_modules/next/dist/docs/` — read those rather than trusting memory.
+  `next dev` offers to append that advice to this file automatically;
+  `agentRules: false` in `next.config.ts` turns it off so this file stays
+  hand-written.
