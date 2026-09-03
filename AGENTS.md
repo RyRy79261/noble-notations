@@ -136,9 +136,10 @@ the `VERCEL_URL` gotcha in `docs/mcp-connector.md`).
 ## Quality gates
 
 `.github/workflows/ci.yml` runs on every push and PR and must stay green:
-format check → lint → typecheck → production build. The build step needs no
-database — the migration it now runs skips itself when `DATABASE_URL` is
-absent. Before pushing:
+format check → lint → typecheck → production build, plus an end-to-end job
+against a throwaway Postgres. The build step needs no database — the
+migration it runs skips itself when `DATABASE_URL` is absent. Before
+pushing:
 
 ```bash
 pnpm format && pnpm lint && pnpm typecheck && pnpm build
@@ -146,6 +147,35 @@ pnpm format && pnpm lint && pnpm typecheck && pnpm build
 
 The build does not need a database: its migration step skips when
 `DATABASE_URL` is absent.
+
+## End-to-end tests
+
+`pnpm test:e2e` runs Playwright against a real production build and a real
+Postgres. There are no mocks: the suite exercises the lifecycle the project
+exists for — an MCP client writes a recipe, tags it, describes those tags,
+then _revises_ rather than duplicating, and the site serves each state.
+
+```bash
+createdb noble_test
+DATABASE_URL=postgresql://localhost/noble_test pnpm test:e2e
+```
+
+**`DATABASE_URL` is destroyed on every run.** `e2e/global-setup.ts` drops
+both the `public` and `drizzle` schemas — the second matters, since leaving
+the migration journal behind makes the migrator skip work it has not done —
+then migrates and seeds through the real `pnpm ingest`. Point it at a
+scratch database.
+
+The interactive half of OAuth needs a browser, a Neon Auth session and a
+human clicking Approve, so the suite mints bearer tokens with
+`pnpm mcp:token` and drives the real MCP endpoint with them. Everything
+downstream of consent — transport, tool registry, per-call scope checks — is
+the real path. `pnpm mcp:token` is also the quickest way to get a token for
+curl.
+
+Set `PLAYWRIGHT_CHROMIUM_PATH` when the machine's Chromium is a different
+revision from the one Playwright expects; unset, Playwright resolves its
+own.
 
 ## Do not touch
 

@@ -390,6 +390,96 @@ a.tag:hover {
   color: var(--accent);
 }
 
+.term-hierarchy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.6rem 0 0;
+}
+
+.term-hierarchy .row {
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+}
+
+.term-hierarchy .faint {
+  font-size: 0.78rem;
+}
+
+/* ── Taxonomy term tooltips ──────────────────────────────────────────────
+   The blurb that explains what a tag means. Shown on hover and on keyboard
+   focus (:focus-within), so it is reachable without a pointer. Positioned
+   above the tag and pinned to its left edge; `max-width` in a viewport unit
+   keeps it inside the screen on narrow displays without needing JS.
+
+   `visibility` rather than `display` so the transition has something to
+   animate, and `pointer-events: none` so the tooltip can never sit between
+   the cursor and the link it describes. */
+.tag-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.tag-tooltip {
+  position: absolute;
+  /* Below the tag, not above it. Tag rows sit directly under a heading, and
+     an upward tooltip lands on top of the title it belongs to. */
+  top: calc(100% + 0.45rem);
+  left: 0;
+  z-index: 20;
+  width: max-content;
+  max-width: min(22rem, 78vw);
+  padding: 0.6rem 0.75rem;
+  /* Must be fully opaque: this floats over body text, and an undefined or
+     translucent token here makes the page legible straight through it. */
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgb(0 0 0 / 55%);
+  color: var(--text);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  white-space: normal;
+  text-align: left;
+  visibility: hidden;
+  opacity: 0;
+  transition:
+    opacity 120ms ease,
+    visibility 120ms ease;
+  pointer-events: none;
+}
+
+.tag-wrap:hover .tag-tooltip,
+.tag-wrap:focus-within .tag-tooltip {
+  visibility: visible;
+  opacity: 1;
+}
+
+.tag-tooltip-facet {
+  display: block;
+  margin-bottom: 0.2rem;
+  color: var(--accent);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Coarse pointers have no hover, and a tooltip that only appears on tap
+   would fight the link. Tapping the tag navigates to the term page, which
+   shows the same blurb as body text. */
+@media (hover: none) {
+  .tag-tooltip {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tag-tooltip {
+    transition: none;
+  }
+}
+
 .tag .facet {
   color: var(--text-faint);
   font-size: 0.72rem;

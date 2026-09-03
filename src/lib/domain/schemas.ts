@@ -159,6 +159,37 @@ export const recipeLinkSchema = z.object({
  * `partialRecord` rather than `record`: every facet is optional, and a plain
  * record would type all ten as required.
  */
+// ─────────────────────────────────────────────────────────────────────────
+// Taxonomy term authoring
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Terms are created on demand whenever a recipe is tagged, which gets the
+ * slug right but leaves the label as written and the description empty.
+ * This is the pass that gives a term its display label, its explanatory
+ * blurb, and its place in a hierarchy.
+ */
+export const upsertTaxonomyTermShape = {
+  facet: z.enum(TAXONOMY_FACETS),
+  /** Display label. The slug is derived from it unless `slug` is given. */
+  label: z.string().min(1).max(120),
+  slug: z.string().min(1).max(120).optional(),
+  /**
+   * One or two sentences explaining what the term means, shown to readers
+   * on hover. Say what distinguishes it, not just what it is.
+   */
+  description: z.string().max(1000).nullish(),
+  /**
+   * Slug of a broader term in the *same* facet, e.g. "cajun" under
+   * "american". Terms never cross facets, so a parent in another facet is
+   * rejected rather than silently ignored.
+   */
+  parentSlug: z.string().min(1).max(120).nullish(),
+};
+export const upsertTaxonomyTermSchema = z.object(upsertTaxonomyTermShape);
+export type UpsertTaxonomyTermArgs = z.input<typeof upsertTaxonomyTermSchema>;
+export type UpsertTaxonomyTermInput = z.infer<typeof upsertTaxonomyTermSchema>;
+
 export const taxonomySchema = z
   .partialRecord(
     z.enum(TAXONOMY_FACETS),

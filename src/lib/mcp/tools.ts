@@ -30,6 +30,8 @@ import {
   TAXONOMY_FACETS,
   upsertIngredientSchema,
   upsertIngredientShape,
+  upsertTaxonomyTermSchema,
+  upsertTaxonomyTermShape,
   type TaxonomyFacet,
 } from '@/lib/domain/schemas';
 import {
@@ -50,6 +52,7 @@ import {
   NotFoundError,
   reviseRecipe,
   upsertIngredient,
+  upsertTaxonomyTerm,
 } from '@/lib/queries/write';
 import { writeMcpAudit } from '@/lib/mcp/audit';
 import { hasScope, WRITE_SCOPE } from '@/lib/mcp/scopes';
@@ -480,6 +483,40 @@ export function registerTools(server: McpServer): void {
           requireWrite(principal);
           const input = upsertIngredientSchema.parse(args);
           return upsertIngredient(input);
+        },
+      ),
+  );
+
+  server.registerTool(
+    'upsert_taxonomy_term',
+    {
+      title: 'Describe a taxonomy term',
+      description:
+        'Give a tag its display label, its explanatory blurb and its place ' +
+        'in the hierarchy. Tagging a recipe auto-creates any term it names, ' +
+        'so terms usually exist already but with no explanation attached; ' +
+        'this is how one gets described.\n\n' +
+        'The `description` is shown to readers on hover, so write the ' +
+        'sentence a curious reader needs: what distinguishes this term, not ' +
+        'just a restatement of its name. "Cajun" should explain that it is ' +
+        'Louisiana country cooking built on a dark roux, not that it is a ' +
+        'kind of cuisine.\n\n' +
+        '`parentSlug` nests a narrower term under a broader one in the same ' +
+        'facet ("cajun" under "american"). Facets never mix: a cuisine ' +
+        'cannot be parented to a technique.\n\n' +
+        'Use this after creating a recipe that introduced new tags, so the ' +
+        'repository does not accumulate bare, unexplained labels.',
+      inputSchema: upsertTaxonomyTermShape,
+    },
+    async (args, extra) =>
+      runTool(
+        extra as AuthCtx,
+        'upsert_taxonomy_term',
+        { facet: args.facet, label: args.label },
+        async (principal) => {
+          requireWrite(principal);
+          const input = upsertTaxonomyTermSchema.parse(args);
+          return upsertTaxonomyTerm(input);
         },
       ),
   );

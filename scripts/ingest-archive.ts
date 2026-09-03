@@ -18,8 +18,13 @@ async function main() {
   const { db } = await import('@/db/client');
   const { recipes, experiments: experimentsTable } =
     await import('@/db/schema');
-  const { createRecipe, reviseRecipe, upsertIngredient, logExperiment } =
-    await import('@/lib/queries/write');
+  const {
+    createRecipe,
+    reviseRecipe,
+    upsertIngredient,
+    upsertTaxonomyTerm,
+    logExperiment,
+  } = await import('@/lib/queries/write');
   const { withTransaction } = await import('@/db/client');
   const { recipeLinks } = await import('@/db/schema');
   const { eq } = await import('drizzle-orm');
@@ -28,13 +33,40 @@ async function main() {
     logExperimentSchema,
     reviseRecipeSchema,
     upsertIngredientSchema,
+    upsertTaxonomyTermSchema,
   } = await import('@/lib/domain/schemas');
   const { INGREDIENTS, RECIPES, RECIPE_LINKS, EXPERIMENTS } =
     await import('./seed-data');
+  const { TAXONOMY } = await import('./taxonomy-seed');
 
   const force = process.argv.includes('--force');
 
-  console.log('Ingredients…');
+  // Taxonomy first: recipes auto-create any term they name, and a term
+  // created that way has no blurb. Describing them up front means the
+  // recipe pass finds them already labelled and explained. Parents are
+  // resolved by slug, so a child listed before its parent would fail —
+  // the seed is ordered parent-first and sorted here as a backstop.
+  console.log('Taxonomy…');
+  const orderedTaxonomy = [
+    ...TAXONOMY.filter((t) => !t.parent),
+    ...TAXONOMY.filter((t) => t.parent),
+  ];
+  for (const term of orderedTaxonomy) {
+    const result = await upsertTaxonomyTerm(
+      upsertTaxonomyTermSchema.parse({
+        facet: term.facet,
+        slug: term.slug,
+        label: term.label,
+        description: term.description,
+        parentSlug: term.parent ?? null,
+      }),
+    );
+    console.log(
+      `  ${result.created ? 'created' : 'described'} ${result.facet}/${result.slug}`,
+    );
+  }
+
+  console.log('\nIngredients…');
   for (const ingredient of INGREDIENTS) {
     const result = await upsertIngredient(
       upsertIngredientSchema.parse(ingredient),

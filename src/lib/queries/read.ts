@@ -730,7 +730,14 @@ export async function listTaxonomy(
 export async function getTerm(
   facet: TaxonomyFacet,
   slug: string,
-): Promise<{ term: TermView; recipes: RecipeSummaryView[] } | null> {
+): Promise<{
+  term: TermView;
+  /** The broader term this one sits under, e.g. Cajun → American. */
+  parent: TermView | null;
+  /** Narrower terms under this one. */
+  children: TermView[];
+  recipes: RecipeSummaryView[];
+} | null> {
   const found = await db
     .select()
     .from(taxonomyTerms)
@@ -751,14 +758,39 @@ export async function getTerm(
     .orderBy(desc(recipes.updatedAt));
 
   const terms = await attachTerms(rows);
+
+  const toTermView = (row: {
+    id: string;
+    facet: string;
+    slug: string;
+    label: string;
+    description: string | null;
+  }): TermView => ({
+    id: row.id,
+    facet: row.facet as TaxonomyFacet,
+    slug: row.slug,
+    label: row.label,
+    description: row.description,
+  });
+
+  const parentRows = term.parentId
+    ? await db
+        .select()
+        .from(taxonomyTerms)
+        .where(eq(taxonomyTerms.id, term.parentId))
+        .limit(1)
+    : [];
+
+  const childRows = await db
+    .select()
+    .from(taxonomyTerms)
+    .where(eq(taxonomyTerms.parentId, term.id))
+    .orderBy(taxonomyTerms.label);
+
   return {
-    term: {
-      id: term.id,
-      facet: term.facet as TaxonomyFacet,
-      slug: term.slug,
-      label: term.label,
-      description: term.description,
-    },
+    term: toTermView(term),
+    parent: parentRows[0] ? toTermView(parentRows[0]) : null,
+    children: childRows.map(toTermView),
     recipes: rows.map((r) => toSummary(r, terms.get(r.id) ?? [])),
   };
 }

@@ -19,3 +19,8 @@ next-env.d.ts
 .vercel
 
 npm-debug.log*
+
+# Playwright
+/e2e/.results/
+/playwright-report/
+/test-results/

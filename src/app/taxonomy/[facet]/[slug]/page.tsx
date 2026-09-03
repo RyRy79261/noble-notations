@@ -5,6 +5,7 @@ import { getTerm } from '@/lib/queries/read';
 import { safeRead } from '@/lib/safe';
 import { RecipeGrid } from '@/components/recipe-card';
 import { DatabaseNotice } from '@/components/database-notice';
+import { TermHierarchy } from '@/components/term-hierarchy';
 import { FACET_LABELS, site } from '@/lib/site';
 import { TAXONOMY_FACETS, type TaxonomyFacet } from '@/lib/domain/schemas';
 
@@ -77,6 +78,7 @@ export default async function TermPage({ params }: Params) {
         <span className="badge">{FACET_LABELS[facet] ?? facet}</span>
         <h1>{data.term.label}</h1>
         {data.term.description ? <p>{data.term.description}</p> : null}
+        <TermHierarchy parent={data.parent} narrower={data.children} />
         <p className="faint">
           <span className="num">{data.recipes.length}</span> recipe
           {data.recipes.length === 1 ? '' : 's'}

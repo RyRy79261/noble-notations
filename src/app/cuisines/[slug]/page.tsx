@@ -5,6 +5,7 @@ import { getTerm } from '@/lib/queries/read';
 import { safeRead } from '@/lib/safe';
 import { RecipeGrid } from '@/components/recipe-card';
 import { DatabaseNotice } from '@/components/database-notice';
+import { TermHierarchy } from '@/components/term-hierarchy';
 import { site } from '@/lib/site';
 
 export const dynamic = 'force-dynamic';
@@ -58,6 +59,7 @@ export default async function CuisinePage({ params }: Params) {
       <header className="hero">
         <h1>{data.term.label}</h1>
         {data.term.description ? <p>{data.term.description}</p> : null}
+        <TermHierarchy parent={data.parent} narrower={data.children} />
         <p className="faint">
           <span className="num">{data.recipes.length}</span> recipe
           {data.recipes.length === 1 ? '' : 's'}

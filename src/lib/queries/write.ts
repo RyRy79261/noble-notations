@@ -41,6 +41,7 @@ import type {
   TaxonomyFacet,
   TaxonomyInput,
   UpsertIngredientInput,
+  UpsertTaxonomyTermInput,
 } from '@/lib/domain/schemas';
 
 type Tx = TransactionClient;
@@ -776,6 +777,86 @@ export async function addNote(
     ]);
 
     return { noteId: noteId! };
+  });
+}
+
+/**
+ * Give a taxonomy term its display label, blurb and place in the hierarchy.
+ *
+ * Creates the term when it does not exist, so this is also how a term is
+ * authored ahead of any recipe using it. `description` and `parentSlug` are
+ * only written when supplied — passing just a label will not blank out a
+ * blurb that is already there. Pass an explicit `null` to clear one.
+ */
+export async function upsertTaxonomyTerm(
+  input: UpsertTaxonomyTermInput,
+): Promise<{ facet: TaxonomyFacet; slug: string; created: boolean }> {
+  return withTransaction(async (tx) => {
+    const slug = input.slug ? slugify(input.slug) : slugify(input.label);
+    if (!slug) throw new Error('Term label does not produce a usable slug.');
+
+    let parentId: string | null | undefined;
+    if (input.parentSlug !== undefined) {
+      if (input.parentSlug === null) {
+        parentId = null;
+      } else {
+        const parentSlug = slugify(input.parentSlug);
+        if (parentSlug === slug) {
+          throw new Error('A term cannot be its own parent.');
+        }
+        // Scoped to the same facet on purpose: a cuisine parented to a
+        // technique would make the hierarchy meaningless, and silently
+        // dropping it would hide the mistake.
+        const parent = await tx
+          .select({ id: taxonomyTerms.id })
+          .from(taxonomyTerms)
+          .where(
+            and(
+              eq(taxonomyTerms.facet, input.facet),
+              eq(taxonomyTerms.slug, parentSlug),
+            ),
+          )
+          .limit(1);
+        if (!parent[0]) {
+          throw new Error(
+            `No term "${parentSlug}" in facet "${input.facet}" to use as parent.`,
+          );
+        }
+        parentId = parent[0].id;
+      }
+    }
+
+    const existing = await tx
+      .select({ id: taxonomyTerms.id })
+      .from(taxonomyTerms)
+      .where(
+        and(eq(taxonomyTerms.facet, input.facet), eq(taxonomyTerms.slug, slug)),
+      )
+      .limit(1);
+
+    if (existing[0]) {
+      await tx
+        .update(taxonomyTerms)
+        .set({
+          label: input.label,
+          ...(input.description !== undefined
+            ? { description: input.description ?? null }
+            : {}),
+          ...(parentId !== undefined ? { parentId } : {}),
+          updatedAt: new Date(),
+        })
+        .where(eq(taxonomyTerms.id, existing[0].id));
+      return { facet: input.facet, slug, created: false };
+    }
+
+    await tx.insert(taxonomyTerms).values({
+      facet: input.facet,
+      slug,
+      label: input.label,
+      description: input.description ?? null,
+      parentId: parentId ?? null,
+    });
+    return { facet: input.facet, slug, created: true };
   });
 }
 

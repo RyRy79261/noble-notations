@@ -18,6 +18,9 @@
     "db:migrate:deploy": "NODE_OPTIONS=--conditions=react-server tsx scripts/migrate.ts --if-configured",
     "db:studio": "drizzle-kit studio",
     "ingest": "NODE_OPTIONS=--conditions=react-server tsx scripts/ingest-archive.ts",
+    "mcp:token": "NODE_OPTIONS=--conditions=react-server tsx scripts/mint-mcp-token.ts",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
     "export": "NODE_OPTIONS=--conditions=react-server tsx scripts/export-markdown.ts"
   },
   "dependencies": {
@@ -40,6 +43,7 @@
   "devDependencies": {
     "@eslint/js": "^9.18.0",
     "@next/eslint-plugin-next": "16.3.3",
+    "@playwright/test": "^1.62.1",
     "@types/node": "^22.10.0",
     "@types/pg": "^8.23.1",
     "@types/react": "^19.2.0",
