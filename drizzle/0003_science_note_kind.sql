@@ -1,0 +1,1 @@
+ALTER TYPE "public"."note_kind" ADD VALUE 'science' BEFORE 'substitution';

@@ -15,6 +15,7 @@ import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { NextResponse } from 'next/server';
 import { lookupAccessToken } from '@/lib/mcp/oauth';
 import { registerTools } from '@/lib/mcp/tools';
+import { SERVER_INSTRUCTIONS } from '@/lib/mcp/guide';
 import { withCors } from '@/lib/mcp/cors';
 
 export const maxDuration = 60;
@@ -24,7 +25,13 @@ const baseHandler = createMcpHandler(
   (server) => {
     registerTools(server);
   },
-  { serverInfo: { name: 'noble-notations', version: '1.0.0' } },
+  {
+    serverInfo: { name: 'noble-notations', version: '1.0.0' },
+    // Surfaced by clients that read `instructions`, so the revision rule
+    // lands before the first tool call rather than after the first mistake.
+    // The full guide is behind `get_started`; this is the short version.
+    instructions: SERVER_INSTRUCTIONS,
+  },
   {
     basePath: '/api/mcp',
     disableSse: true,

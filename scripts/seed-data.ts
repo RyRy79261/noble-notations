@@ -1132,7 +1132,7 @@ const DEMI_GLACE: RecipeSeed = {
     ],
     notes: [
       {
-        kind: 'research',
+        kind: 'science',
         title: 'Why each layer exists',
         body:
           'The dual bone foundation is doing three separate jobs: marrow for fat and mouthfeel, ' +
@@ -1186,7 +1186,7 @@ const BEEF_WELLINGTON: RecipeSeed = {
     rationale: 'Transcribed from the archive research note.',
     notes: [
       {
-        kind: 'research',
+        kind: 'science',
         title: 'The octagon sear',
         body:
           'Treating the tenderloin as eight flat faces plus two ends gives even caramelisation ' +
@@ -1194,7 +1194,7 @@ const BEEF_WELLINGTON: RecipeSeed = {
           'and drives heat further into the centre, which is then overcooked by the bake.',
       },
       {
-        kind: 'research',
+        kind: 'science',
         title: 'Duxelles as a moisture barrier, not a flavour layer',
         body:
           'Mushrooms are 80–90% water. The 25–30 minute cook removes about 90% of it; dry-sauté ' +
@@ -1203,7 +1203,7 @@ const BEEF_WELLINGTON: RecipeSeed = {
           'migrating into the pastry.',
       },
       {
-        kind: 'research',
+        kind: 'science',
         title: 'Two barriers, two mechanisms',
         body:
           'Prosciutto works by fat solidifying during the chill into a semi-impermeable layer. ' +
@@ -1211,7 +1211,7 @@ const BEEF_WELLINGTON: RecipeSeed = {
           'collapsing. They are not interchangeable, and using both is not redundant.',
       },
       {
-        kind: 'research',
+        kind: 'science',
         title: 'Temperature and carryover',
         body:
           'Start at 220 °C so the butter layers in the pastry expand and set structure before the ' +

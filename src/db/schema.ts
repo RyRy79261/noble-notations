@@ -139,6 +139,14 @@ export const recipeLinkKind = pgEnum('recipe_link_kind', [
 export const noteKind = pgEnum('note_kind', [
   'observation',
   'research',
+  /**
+   * Why a thing works, mechanically. Distinct from `research`, which had
+   * been carrying both "duxelles is a moisture barrier, not a flavour
+   * layer" and "where to buy crayfish in Berlin" — sourcing and mechanism
+   * are different questions and only one of them belongs under a heading
+   * called science.
+   */
+  'science',
   'substitution',
   'warning',
   'result',

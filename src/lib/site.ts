@@ -85,6 +85,7 @@ export const KIND_LABELS: Record<string, string> = {
   preparation: 'Preparation',
   process: 'Process',
   research: 'Research',
+  science: 'Science',
 };
 
 export const NOTE_KIND_LABELS: Record<string, string> = {

@@ -279,6 +279,30 @@ hr {
   margin-left: auto;
 }
 
+/* On a phone the wrapped nav took three rows before any recipe was
+   visible. One scrollable row instead: every destination stays reachable,
+   and the content starts near the top where it belongs. */
+@media (max-width: 700px) {
+  .site-nav {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    margin-left: 0;
+    width: 100%;
+    padding-bottom: 0.15rem;
+  }
+
+  .site-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .site-nav a,
+  .site-nav button {
+    white-space: nowrap;
+  }
+}
+
 .site-nav a {
   color: var(--text-muted);
   text-decoration: none;
@@ -745,10 +769,69 @@ th.numeric {
   align-items: start;
 }
 
+/* The tab strip is a mobile affordance only: above the breakpoint both
+   panels show side by side and the tabs are hidden, so there is one DOM at
+   every width and a deep link or Ctrl-F still finds the method. */
+.recipe-tabs {
+  display: none;
+}
+
 @media (max-width: 900px) {
   .recipe-layout {
     grid-template-columns: 1fr;
+    gap: 1.25rem;
   }
+
+  .recipe-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.35rem;
+    padding: 0.3rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    position: sticky;
+    top: 0.5rem;
+    z-index: 5;
+    background: var(--bg-elevated);
+  }
+
+  .recipe-tabs button {
+    font: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    padding: 0.5rem 0.75rem;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+
+  .recipe-tabs button[aria-selected='true'] {
+    background: var(--accent-dim);
+    color: var(--accent);
+  }
+
+  /* Hidden, not unmounted: ticked checkboxes and the chosen ordering
+     survive switching tabs. */
+  .recipe-layout[data-active='ingredients'] [data-tab='method'],
+  .recipe-layout[data-active='method'] [data-tab='ingredients'] {
+    display: none;
+  }
+
+  .recipe-aside {
+    position: static;
+  }
+}
+
+/* ── The science ─────────────────────────────────────────────────────── */
+.science-section {
+  border-top: 1px solid var(--border-strong);
+  padding-top: 1.5rem;
+}
+
+.science-section .note[data-kind='science'] {
+  border-left-color: var(--accent);
 }
 
 .recipe-aside {

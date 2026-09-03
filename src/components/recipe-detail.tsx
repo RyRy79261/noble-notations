@@ -7,6 +7,7 @@ import { NoteList } from './notes';
 import { Markdown } from './markdown';
 import { IngredientChecklist } from './ingredient-checklist';
 import { AddToBasket } from './shopping-basket';
+import { RecipeTabs } from './recipe-tabs';
 
 const LINK_LABELS: Record<string, string> = {
   derived_from: 'Derived from',
@@ -52,6 +53,12 @@ export function RecipeDetail({
 }) {
   const phases = groupByPhase(recipe.steps);
   const rev = recipe.revision;
+
+  // Science gets its own section at the bottom: it explains what is
+  // happening in the dish, which is a different question from the running
+  // commentary of observations, results and corrections above it.
+  const science = recipe.notes.filter((note) => note.kind === 'science');
+  const otherNotes = recipe.notes.filter((note) => note.kind !== 'science');
 
   return (
     <div className="page">
@@ -104,263 +111,279 @@ export function RecipeDetail({
         ) : null}
       </header>
 
-      <div className="recipe-layout">
-        <aside className="recipe-aside">
-          {(rev.yieldQuantity ||
-            rev.servings ||
-            rev.totalTimeMinutes ||
-            rev.activeTimeMinutes) && (
-            <section className="panel">
-              <h2>At a glance</h2>
-              <table>
-                <tbody>
-                  {rev.yieldQuantity ? (
-                    <tr>
-                      <td>Yield</td>
-                      <td className="numeric">
-                        {formatQuantity(rev.yieldQuantity)}{' '}
-                        {rev.yieldUnit ?? ''}
-                      </td>
-                    </tr>
-                  ) : null}
-                  {rev.servings ? (
-                    <tr>
-                      <td>Servings</td>
-                      <td className="numeric">{rev.servings}</td>
-                    </tr>
-                  ) : null}
-                  {rev.totalTimeMinutes ? (
-                    <tr>
-                      <td>Total time</td>
-                      <td className="numeric">
-                        {formatDuration(rev.totalTimeMinutes, null)}
-                      </td>
-                    </tr>
-                  ) : null}
-                  {rev.activeTimeMinutes ? (
-                    <tr>
-                      <td>Active time</td>
-                      <td className="numeric">
-                        {formatDuration(rev.activeTimeMinutes, null)}
-                      </td>
-                    </tr>
-                  ) : null}
-                </tbody>
-              </table>
-            </section>
-          )}
+      <RecipeTabs
+        ingredients={
+          <>
+            {(rev.yieldQuantity ||
+              rev.servings ||
+              rev.totalTimeMinutes ||
+              rev.activeTimeMinutes) && (
+              <section className="panel">
+                <h2>At a glance</h2>
+                <table>
+                  <tbody>
+                    {rev.yieldQuantity ? (
+                      <tr>
+                        <td>Yield</td>
+                        <td className="numeric">
+                          {formatQuantity(rev.yieldQuantity)}{' '}
+                          {rev.yieldUnit ?? ''}
+                        </td>
+                      </tr>
+                    ) : null}
+                    {rev.servings ? (
+                      <tr>
+                        <td>Servings</td>
+                        <td className="numeric">{rev.servings}</td>
+                      </tr>
+                    ) : null}
+                    {rev.totalTimeMinutes ? (
+                      <tr>
+                        <td>Total time</td>
+                        <td className="numeric">
+                          {formatDuration(rev.totalTimeMinutes, null)}
+                        </td>
+                      </tr>
+                    ) : null}
+                    {rev.activeTimeMinutes ? (
+                      <tr>
+                        <td>Active time</td>
+                        <td className="numeric">
+                          {formatDuration(rev.activeTimeMinutes, null)}
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </section>
+            )}
 
-          {recipe.ingredients.length > 0 ? (
-            <section className="panel">
-              <h2>Ingredients</h2>
-              <IngredientChecklist
-                slug={recipe.slug}
-                revisionNumber={rev.revisionNumber}
-                lines={recipe.ingredients}
-              />
-              <div className="basket-cta">
-                <AddToBasket slug={recipe.slug} title={recipe.title} />
-              </div>
-            </section>
-          ) : null}
+            {recipe.ingredients.length > 0 ? (
+              <section className="panel">
+                <h2>Ingredients</h2>
+                <IngredientChecklist
+                  slug={recipe.slug}
+                  revisionNumber={rev.revisionNumber}
+                  lines={recipe.ingredients}
+                />
+                <div className="basket-cta">
+                  <AddToBasket slug={recipe.slug} title={recipe.title} />
+                </div>
+              </section>
+            ) : null}
 
-          {recipe.revisions.length > 1 ? (
-            <section className="panel">
-              <h2>Revisions</h2>
-              <ol className="timeline">
-                {recipe.revisions.map((entry) => (
-                  <li
-                    key={entry.revisionNumber}
-                    data-current={entry.revisionNumber === rev.revisionNumber}
-                  >
-                    <Link
-                      href={
-                        entry.revisionNumber === recipe.revisionNumber &&
-                        !isHistorical
-                          ? `/recipes/${recipe.slug}`
-                          : `/recipes/${recipe.slug}/revisions/${entry.revisionNumber}`
-                      }
-                      className="rev-label"
+            {recipe.revisions.length > 1 ? (
+              <section className="panel">
+                <h2>Revisions</h2>
+                <ol className="timeline">
+                  {recipe.revisions.map((entry) => (
+                    <li
+                      key={entry.revisionNumber}
+                      data-current={entry.revisionNumber === rev.revisionNumber}
                     >
-                      Revision {entry.revisionNumber}
-                    </Link>
-                    <p className="rev-rationale">
-                      {entry.rationale ?? (
-                        <span className="faint">No rationale recorded.</span>
-                      )}
-                    </p>
-                  </li>
-                ))}
-              </ol>
-            </section>
-          ) : null}
-        </aside>
+                      <Link
+                        href={
+                          entry.revisionNumber === recipe.revisionNumber &&
+                          !isHistorical
+                            ? `/recipes/${recipe.slug}`
+                            : `/recipes/${recipe.slug}/revisions/${entry.revisionNumber}`
+                        }
+                        className="rev-label"
+                      >
+                        Revision {entry.revisionNumber}
+                      </Link>
+                      <p className="rev-rationale">
+                        {entry.rationale ?? (
+                          <span className="faint">No rationale recorded.</span>
+                        )}
+                      </p>
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            ) : null}
+          </>
+        }
+        method={
+          <>
+            {rev.rationale ? (
+              <section>
+                <h2>Why this revision</h2>
+                <p className="lede">{rev.rationale}</p>
+              </section>
+            ) : null}
 
-        <div>
-          {rev.rationale ? (
-            <section>
-              <h2>Why this revision</h2>
-              <p className="lede">{rev.rationale}</p>
-            </section>
-          ) : null}
-
-          {recipe.steps.length > 0 ? (
-            <section className={rev.rationale ? 'section' : undefined}>
-              <div className="section-head">
-                <h2>Method</h2>
-                <span className="faint">{recipe.steps.length} steps</span>
-              </div>
-              <div className="method">
-                {phases.map((group, index) => (
-                  <div key={`${group.phase}-${index}`}>
-                    {group.phase ? (
-                      <h3 className="phase-head">{group.phase}</h3>
-                    ) : null}
-                    <ol className="steps">
-                      {group.steps.map((step) => (
-                        <li key={step.id}>
-                          <div className="step-body">
-                            <p>{step.instruction}</p>
-                            {step.note ? (
-                              <p className="faint">{step.note}</p>
-                            ) : null}
-                            {step.imageUrl ? (
-                              <figure className="step-image">
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                  src={step.imageUrl}
-                                  alt={step.imageAlt ?? ''}
-                                  loading="lazy"
-                                  decoding="async"
-                                />
-                                {step.imageAlt ? (
-                                  <figcaption>{step.imageAlt}</figcaption>
+            {recipe.steps.length > 0 ? (
+              <section className={rev.rationale ? 'section' : undefined}>
+                <div className="section-head">
+                  <h2>Method</h2>
+                  <span className="faint">{recipe.steps.length} steps</span>
+                </div>
+                <div className="method">
+                  {phases.map((group, index) => (
+                    <div key={`${group.phase}-${index}`}>
+                      {group.phase ? (
+                        <h3 className="phase-head">{group.phase}</h3>
+                      ) : null}
+                      <ol className="steps">
+                        {group.steps.map((step) => (
+                          <li key={step.id}>
+                            <div className="step-body">
+                              <p>{step.instruction}</p>
+                              {step.note ? (
+                                <p className="faint">{step.note}</p>
+                              ) : null}
+                              {step.imageUrl ? (
+                                <figure className="step-image">
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={step.imageUrl}
+                                    alt={step.imageAlt ?? ''}
+                                    loading="lazy"
+                                    decoding="async"
+                                  />
+                                  {step.imageAlt ? (
+                                    <figcaption>{step.imageAlt}</figcaption>
+                                  ) : null}
+                                </figure>
+                              ) : null}
+                              <div className="step-meta">
+                                {formatDuration(
+                                  step.durationMinutes,
+                                  step.durationMaxMinutes,
+                                ) ? (
+                                  <span className="badge">
+                                    {formatDuration(
+                                      step.durationMinutes,
+                                      step.durationMaxMinutes,
+                                    )}
+                                  </span>
                                 ) : null}
-                              </figure>
-                            ) : null}
-                            <div className="step-meta">
-                              {formatDuration(
-                                step.durationMinutes,
-                                step.durationMaxMinutes,
-                              ) ? (
-                                <span className="badge">
-                                  {formatDuration(
-                                    step.durationMinutes,
-                                    step.durationMaxMinutes,
-                                  )}
-                                </span>
-                              ) : null}
-                              {step.temperatureC != null ? (
-                                <span className="badge">
-                                  {step.temperatureC} °C
-                                </span>
-                              ) : null}
-                              {step.technique ? (
-                                <Link
-                                  className="tag"
-                                  href={`/taxonomy/technique/${step.technique.slug}`}
-                                >
-                                  {step.technique.label}
-                                </Link>
-                              ) : null}
-                              {step.equipment.map((item) => (
-                                <span className="badge" key={item}>
-                                  {item}
-                                </span>
-                              ))}
+                                {step.temperatureC != null ? (
+                                  <span className="badge">
+                                    {step.temperatureC} °C
+                                  </span>
+                                ) : null}
+                                {step.technique ? (
+                                  <Link
+                                    className="tag"
+                                    href={`/taxonomy/technique/${step.technique.slug}`}
+                                  >
+                                    {step.technique.label}
+                                  </Link>
+                                ) : null}
+                                {step.equipment.map((item) => (
+                                  <span className="badge" key={item}>
+                                    {item}
+                                  </span>
+                                ))}
+                              </div>
                             </div>
-                          </div>
-                        </li>
-                      ))}
-                    </ol>
-                  </div>
-                ))}
-              </div>
-            </section>
-          ) : null}
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
 
-          {recipe.notes.length > 0 ? (
-            <section className="section">
-              <div className="section-head">
-                <h2>Notes</h2>
-                <span className="faint">{recipe.notes.length}</span>
-              </div>
-              <NoteList notes={recipe.notes} />
-            </section>
-          ) : null}
+            {otherNotes.length > 0 ? (
+              <section className="section">
+                <div className="section-head">
+                  <h2>Notes</h2>
+                  <span className="faint">{otherNotes.length}</span>
+                </div>
+                <NoteList notes={otherNotes} />
+              </section>
+            ) : null}
 
-          {recipe.originNote ? (
-            <section className="section">
-              <div className="section-head">
-                <h2>Provenance</h2>
-              </div>
-              <Markdown>{recipe.originNote}</Markdown>
-            </section>
-          ) : null}
+            {recipe.originNote ? (
+              <section className="section">
+                <div className="section-head">
+                  <h2>Provenance</h2>
+                </div>
+                <Markdown>{recipe.originNote}</Markdown>
+              </section>
+            ) : null}
 
-          {recipe.links.length > 0 || recipe.backlinks.length > 0 ? (
-            <section className="section">
-              <div className="section-head">
-                <h2>Related</h2>
-              </div>
-              <div className="grid">
-                {recipe.links.map((link) => (
-                  <article
-                    className="card"
-                    key={`out-${link.recipe.slug}-${link.kind}`}
-                  >
-                    <span className="badge">
-                      {LINK_LABELS[link.kind] ?? link.kind}
-                    </span>
-                    <h3>
-                      <Link href={`/recipes/${link.recipe.slug}`}>
-                        {link.recipe.title}
+            {recipe.links.length > 0 || recipe.backlinks.length > 0 ? (
+              <section className="section">
+                <div className="section-head">
+                  <h2>Related</h2>
+                </div>
+                <div className="grid">
+                  {recipe.links.map((link) => (
+                    <article
+                      className="card"
+                      key={`out-${link.recipe.slug}-${link.kind}`}
+                    >
+                      <span className="badge">
+                        {LINK_LABELS[link.kind] ?? link.kind}
+                      </span>
+                      <h3>
+                        <Link href={`/recipes/${link.recipe.slug}`}>
+                          {link.recipe.title}
+                        </Link>
+                      </h3>
+                      {link.note ? <p>{link.note}</p> : null}
+                    </article>
+                  ))}
+                  {recipe.backlinks.map((link) => (
+                    <article
+                      className="card"
+                      key={`in-${link.recipe.slug}-${link.kind}`}
+                    >
+                      <span className="badge">
+                        Referenced by ({LINK_LABELS[link.kind] ?? link.kind})
+                      </span>
+                      <h3>
+                        <Link href={`/recipes/${link.recipe.slug}`}>
+                          {link.recipe.title}
+                        </Link>
+                      </h3>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {recipe.experiments.length > 0 ? (
+              <section className="section">
+                <div className="section-head">
+                  <h2>Recorded runs</h2>
+                  <span className="faint">{recipe.experiments.length}</span>
+                </div>
+                <ul>
+                  {recipe.experiments.map((experiment) => (
+                    <li key={experiment.slug}>
+                      <Link href={`/experiments/${experiment.slug}`}>
+                        {experiment.title}
                       </Link>
-                    </h3>
-                    {link.note ? <p>{link.note}</p> : null}
-                  </article>
-                ))}
-                {recipe.backlinks.map((link) => (
-                  <article
-                    className="card"
-                    key={`in-${link.recipe.slug}-${link.kind}`}
-                  >
-                    <span className="badge">
-                      Referenced by ({LINK_LABELS[link.kind] ?? link.kind})
-                    </span>
-                    <h3>
-                      <Link href={`/recipes/${link.recipe.slug}`}>
-                        {link.recipe.title}
-                      </Link>
-                    </h3>
-                  </article>
-                ))}
-              </div>
-            </section>
-          ) : null}
-
-          {recipe.experiments.length > 0 ? (
-            <section className="section">
-              <div className="section-head">
-                <h2>Recorded runs</h2>
-                <span className="faint">{recipe.experiments.length}</span>
-              </div>
-              <ul>
-                {recipe.experiments.map((experiment) => (
-                  <li key={experiment.slug}>
-                    <Link href={`/experiments/${experiment.slug}`}>
-                      {experiment.title}
-                    </Link>
-                    {experiment.startedAt ? (
-                      <span className="faint"> — {experiment.startedAt}</span>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
-        </div>
-      </div>
+                      {experiment.startedAt ? (
+                        <span className="faint"> — {experiment.startedAt}</span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+            {science.length > 0 ? (
+              <section className="section science-section">
+                <div className="section-head">
+                  <h2>The science</h2>
+                  <span className="faint">{science.length}</span>
+                </div>
+                <p className="faint">
+                  What is actually happening in the dish, and why the techniques
+                  work.
+                </p>
+                <NoteList notes={science} />
+              </section>
+            ) : null}
+          </>
+        }
+      />
     </div>
   );
 }

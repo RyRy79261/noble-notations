@@ -57,6 +57,7 @@ import {
   upsertIngredient,
   upsertTaxonomyTerm,
 } from '@/lib/queries/write';
+import { GUIDE } from '@/lib/mcp/guide';
 import { writeMcpAudit } from '@/lib/mcp/audit';
 import { hasScope, WRITE_SCOPE } from '@/lib/mcp/scopes';
 
@@ -174,6 +175,25 @@ export function registerTools(server: McpServer): void {
   // ───────────────────────────────────────────────────────────────────────
   // Read
   // ───────────────────────────────────────────────────────────────────────
+
+  server.registerTool(
+    'get_started',
+    {
+      title: 'How this repository works',
+      description:
+        'Read this first. Explains how the pieces fit together — the ' +
+        'revision rule, which note kind means what, how the faceted ' +
+        'taxonomy works, and the expected order of operations.\n\n' +
+        'Every other tool description explains one tool; this explains the ' +
+        'system. Worth one call at the start of any session that intends ' +
+        'to write, because the most common mistake — creating a second ' +
+        'recipe for a dish that already exists — comes from not knowing ' +
+        'the repository is revision-first.',
+      inputSchema: {},
+    },
+    async (_args, extra) =>
+      runTool(extra as AuthCtx, 'get_started', {}, async () => GUIDE),
+  );
 
   server.registerTool(
     'search_recipes',
@@ -464,8 +484,14 @@ export function registerTools(server: McpServer): void {
         'Attach a note to a recipe, an ingredient or an experiment — exactly ' +
         'one of them. Notes are how the repository accumulates judgement ' +
         'rather than just instructions.\n\n' +
-        'Pick the kind honestly: `research` for sourced background (give ' +
-        '`sources`), `observation` for what was noticed, `result` for how it ' +
+        'Pick the kind honestly. The two that get confused:\n' +
+        '- `science` explains what is happening *in the dish* — the ' +
+        'mechanism, why a technique works. "Duxelles is a moisture ' +
+        'barrier, not a flavour layer" is science.\n' +
+        '- `research` is what was learned around it afterwards: ' +
+        'alternatives, hacks, sourcing, background. "Where to buy crayfish ' +
+        'in Berlin" is research. Give `sources` where you have them.\n\n' +
+        'The rest: `observation` for what was noticed, `result` for how it ' +
         'turned out, `substitution` for what was swapped and why, `warning` ' +
         'for a trap worth flagging, `idea` for something untried, ' +
         '`correction` when an earlier claim was wrong.\n\n' +

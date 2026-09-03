@@ -148,6 +148,29 @@ pnpm format && pnpm lint && pnpm typecheck && pnpm build
 The build does not need a database: its migration step skips when
 `DATABASE_URL` is absent.
 
+## Note kinds
+
+`science` and `research` are the two that get confused, and the split is
+deliberate:
+
+- **science** — what is physically or chemically happening _in the dish_,
+  and why a technique works. "Duxelles is a moisture barrier, not a flavour
+  layer." Rendered in its own section at the bottom of a recipe.
+- **research** — what was learned _around_ the dish afterwards:
+  alternatives, hacks, sourcing, background. "Where to buy crayfish in
+  Berlin."
+
+`research` originally carried both, which is why "The science" needed a
+kind of its own rather than a filter over the existing one.
+
+## Agent onboarding
+
+`src/lib/mcp/guide.ts` is the single source for both the MCP server's
+`instructions` (the short version, surfaced by clients that read it) and
+the `get_started` tool (the full guide). They live together so they cannot
+drift. Tool descriptions explain one tool each; the guide explains how the
+pieces fit — most importantly that the repository is revision-first.
+
 ## Shopping lists and filtering
 
 `buildShoppingList(slugs)` combines several recipes' _current_ revisions

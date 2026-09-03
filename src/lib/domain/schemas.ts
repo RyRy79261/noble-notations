@@ -39,6 +39,7 @@ export const RECIPE_KINDS = [
 export const NOTE_KINDS = [
   'observation',
   'research',
+  'science',
   'substitution',
   'warning',
   'result',
@@ -91,10 +92,12 @@ export const noteSchema = z.object({
   kind: z
     .enum(NOTE_KINDS)
     .describe(
-      'observation = what happened; research = sourced background; ' +
-        'substitution = what was swapped and why; warning = a trap; ' +
-        'result = how it turned out; idea = untried; correction = fixes an ' +
-        'earlier claim',
+      'science = what is physically or chemically happening in the dish, ' +
+        'and why a technique works; research = what was learned after ' +
+        'making it — alternatives, hacks, sourcing, background (give ' +
+        '`sources`); observation = what happened; substitution = what was ' +
+        'swapped and why; warning = a trap; result = how it turned out; ' +
+        'idea = untried; correction = fixes an earlier claim',
     ),
   title: z.string().max(200).optional(),
   body: z.string().min(1).max(20000).describe('Markdown'),
