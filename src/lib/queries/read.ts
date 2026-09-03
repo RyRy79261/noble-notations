@@ -69,6 +69,8 @@ export interface StepView {
   temperatureC: number | null;
   equipment: string[];
   technique: { slug: string; label: string } | null;
+  imageUrl: string | null;
+  imageAlt: string | null;
   note: string | null;
   uses: string[];
 }
@@ -468,6 +470,8 @@ export async function getRecipeBySlug(
         durationMaxMinutes: recipeSteps.durationMaxMinutes,
         temperatureC: recipeSteps.temperatureC,
         equipment: recipeSteps.equipment,
+        imageUrl: recipeSteps.imageUrl,
+        imageAlt: recipeSteps.imageAlt,
         note: recipeSteps.note,
         techniqueSlug: taxonomyTerms.slug,
         techniqueLabel: taxonomyTerms.label,
@@ -641,6 +645,8 @@ export async function getRecipeBySlug(
       durationMaxMinutes: row.durationMaxMinutes,
       temperatureC: n(row.temperatureC),
       equipment: row.equipment,
+      imageUrl: row.imageUrl,
+      imageAlt: row.imageAlt,
       technique: row.techniqueSlug
         ? { slug: row.techniqueSlug, label: row.techniqueLabel! }
         : null,

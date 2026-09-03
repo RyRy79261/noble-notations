@@ -390,6 +390,49 @@ a.tag:hover {
   color: var(--accent);
 }
 
+/* ── Optional imagery ────────────────────────────────────────────────────
+   Every image on a recipe is optional and arrives as a URL, so nothing here
+   may depend on knowing the dimensions in advance. `aspect-ratio` plus
+   `object-fit: cover` reserves the space and prevents layout shift when a
+   picture of unknown shape finally loads. */
+.recipe-hero-image,
+.step-image {
+  margin: 1rem 0 0;
+}
+
+.recipe-hero-image img,
+.step-image img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.recipe-hero-image img {
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  max-height: 26rem;
+}
+
+.step-image {
+  max-width: 26rem;
+}
+
+.step-image img {
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+
+.recipe-hero-image figcaption,
+.step-image figcaption {
+  margin-top: 0.4rem;
+  color: var(--text-faint);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
 .term-hierarchy {
   display: flex;
   flex-direction: column;

@@ -116,6 +116,24 @@ export function RecipeDetail({
         <h1>{recipe.title}</h1>
         {recipe.subtitle ? <p className="lede">{recipe.subtitle}</p> : null}
         {recipe.summary ? <p>{recipe.summary}</p> : null}
+        {recipe.heroImageUrl ? (
+          <figure className="recipe-hero-image">
+            {/* Plain <img>, not next/image: these URLs come from arbitrary
+                hosts via the MCP, and pointing the image optimiser at
+                attacker-supplied origins is a request-forgery surface that
+                buys nothing here. Sized by CSS, lazy below the fold. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={recipe.heroImageUrl}
+              alt={recipe.heroImageAlt ?? ''}
+              loading="lazy"
+              decoding="async"
+            />
+            {recipe.heroImageAlt ? (
+              <figcaption>{recipe.heroImageAlt}</figcaption>
+            ) : null}
+          </figure>
+        ) : null}
         <TermList terms={recipe.terms} showFacet />
 
         {isHistorical ? (
@@ -251,6 +269,20 @@ export function RecipeDetail({
                             <p>{step.instruction}</p>
                             {step.note ? (
                               <p className="faint">{step.note}</p>
+                            ) : null}
+                            {step.imageUrl ? (
+                              <figure className="step-image">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={step.imageUrl}
+                                  alt={step.imageAlt ?? ''}
+                                  loading="lazy"
+                                  decoding="async"
+                                />
+                                {step.imageAlt ? (
+                                  <figcaption>{step.imageAlt}</figcaption>
+                                ) : null}
+                              </figure>
                             ) : null}
                             <div className="step-meta">
                               {formatDuration(

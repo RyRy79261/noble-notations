@@ -143,6 +143,13 @@ export const stepSchema = z.object({
    * an ingredient the recipe does not have is always a mistake.
    */
   uses: z.array(z.string().max(200)).max(50).optional(),
+  /**
+   * Optional picture of what this stage should look like. Images are
+   * referenced by URL rather than uploaded — the repository stores notes,
+   * not binaries, and a link survives being exported back out to Markdown.
+   */
+  imageUrl: z.url().nullish(),
+  imageAlt: z.string().max(300).nullish(),
   note: z.string().max(2000).nullish(),
 });
 export type StepInput = z.infer<typeof stepSchema>;

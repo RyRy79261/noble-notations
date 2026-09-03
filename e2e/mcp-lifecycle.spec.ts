@@ -9,6 +9,14 @@ import { mcpClient, tokens } from './helpers';
 
 const SLUG = 'dan-dan-noodles-tofu-sauce-base';
 
+// Inline PNGs so the image assertions need no network and no fixture
+// server. `data:` is permitted by the app's img-src CSP and passes the
+// URL validator, so this exercises the same path a real hosted image takes.
+const HERO_IMAGE =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAJCAIAAAC0SDtlAAAAFElEQVR4nGPI9VpBEmIY1TAoNAAA+WjFcZFbUrAAAAAASUVORK5CYII=';
+const STEP_IMAGE =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAJCAIAAAC0SDtlAAAAE0lEQVR4nGOw0IohCTGMahgUGgAAzWrhGwLJ7wAAAABJRU5ErkJggg==';
+
 interface CreateResult {
   slug: string;
   revisionNumber: number;
@@ -27,6 +35,13 @@ interface RecipeResult {
     slug: string;
     label: string;
     description: string | null;
+  }[];
+  heroImageUrl: string | null;
+  heroImageAlt: string | null;
+  steps: {
+    instruction: string;
+    imageUrl: string | null;
+    imageAlt: string | null;
   }[];
   revisions: { revisionNumber: number; rationale: string | null }[];
 }
@@ -70,6 +85,8 @@ test.describe('MCP write lifecycle', () => {
       kind: 'recipe',
       status: 'active',
       rationale: 'First working version.',
+      heroImageUrl: HERO_IMAGE,
+      heroImageAlt: 'The finished bowl, sauce clinging to the noodles',
       taxonomy: {
         cuisine: ['Sichuan'],
         course: ['main'],
@@ -90,6 +107,8 @@ test.describe('MCP write lifecycle', () => {
         {
           instruction: 'Blend the silken tofu with the toasted spice.',
           uses: ['Silken tofu'],
+          imageUrl: STEP_IMAGE,
+          imageAlt: 'The sauce mid-blend, just before it emulsifies',
         },
       ],
     });
@@ -156,6 +175,14 @@ test.describe('MCP write lifecycle', () => {
     // The rationale is the reason the schema exists — it must survive.
     expect(fetched.revisions[0]?.rationale).toBeTruthy();
 
+    // The step photo has to survive being carried forward. A revision that
+    // silently drops imagery would lose the record of what a stage looked
+    // like, which is the whole reason for attaching it.
+    const blendStep = fetched.steps.find((step) =>
+      /blend/i.test(step.instruction),
+    );
+    expect(blendStep?.imageUrl).toBe(STEP_IMAGE);
+
     // Crucially: still one recipe, not two.
     const search = await mcp.call<SearchResult>('search_recipes', {
       query: 'dan dan noodles',
@@ -207,6 +234,24 @@ test.describe('the website serves what the MCP wrote', () => {
     await expect(tooltip).toBeHidden();
     await tag.hover();
     await expect(tooltip).toBeVisible();
+  });
+
+  test('renders the optional hero and step images', async ({ page }) => {
+    await page.goto(`/recipes/${SLUG}`);
+
+    const hero = page.locator('.recipe-hero-image img');
+    await expect(hero).toBeVisible();
+    await expect(hero).toHaveAttribute('alt', /finished bowl/i);
+
+    const stepImage = page.locator('.step-image img');
+    await expect(stepImage).toBeVisible();
+    await expect(stepImage).toHaveAttribute('alt', /mid-blend/i);
+
+    // Both are optional: a recipe without them renders no figure at all
+    // rather than an empty frame or a broken-image icon.
+    await page.goto('/recipes/pickled-jalapenos');
+    await expect(page.locator('.recipe-hero-image')).toHaveCount(0);
+    await expect(page.locator('.step-image')).toHaveCount(0);
   });
 
   test('the revision history lists why each revision exists', async ({

@@ -405,6 +405,13 @@ export const recipeSteps = pgTable(
       () => taxonomyTerms.id,
       { onDelete: 'set null' },
     ),
+    /**
+     * Optional picture of what this stage should look like. Belongs to the
+     * step, and therefore to the revision, so a photo taken of batch four
+     * does not silently reattach itself to batch six's method.
+     */
+    imageUrl: text('image_url'),
+    imageAlt: text('image_alt'),
     note: text('note'),
     createdAt: now(),
   },

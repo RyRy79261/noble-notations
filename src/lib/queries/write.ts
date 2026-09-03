@@ -263,6 +263,8 @@ async function writeRevisionBody(
         temperatureC: num(step.temperatureC),
         equipment: step.equipment ?? [],
         techniqueTermId,
+        imageUrl: step.imageUrl ?? null,
+        imageAlt: step.imageAlt ?? null,
         note: step.note ?? null,
       })
       .returning({ id: recipeSteps.id });
@@ -655,6 +657,8 @@ async function copySteps(tx: Tx, revisionId: string): Promise<StepInput[]> {
       durationMaxMinutes: recipeSteps.durationMaxMinutes,
       temperatureC: recipeSteps.temperatureC,
       equipment: recipeSteps.equipment,
+      imageUrl: recipeSteps.imageUrl,
+      imageAlt: recipeSteps.imageAlt,
       note: recipeSteps.note,
       technique: taxonomyTerms.label,
     })
@@ -699,6 +703,8 @@ async function copySteps(tx: Tx, revisionId: string): Promise<StepInput[]> {
     equipment: r.equipment,
     technique: r.technique,
     uses: usesByStep.get(r.id) ?? [],
+    imageUrl: r.imageUrl,
+    imageAlt: r.imageAlt,
     note: r.note,
   }));
 }
