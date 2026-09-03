@@ -29,6 +29,8 @@ export const metadata: Metadata = {
   robots: { index: true, follow: true },
 };
 
+import { BasketButton } from '@/components/shopping-basket';
+
 const NAV = [
   { href: '/recipes', label: 'Recipes' },
   { href: '/cuisines', label: 'Cuisines' },
@@ -61,6 +63,7 @@ export default function RootLayout({
                     {item.label}
                   </Link>
                 ))}
+                <BasketButton />
               </nav>
             </div>
           </header>

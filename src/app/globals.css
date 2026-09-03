@@ -1195,3 +1195,167 @@ input::placeholder {
 .breadcrumb a:hover {
   color: var(--accent);
 }
+
+/* ── Ingredient checklist ────────────────────────────────────────────────
+   The recipe page's ingredient list is tickable and re-orderable, so it
+   needs a checkbox column the plain list did not have. */
+.checklist-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.checklist-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.checklist-toggle button {
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 0.25rem 0.6rem;
+  background: transparent;
+  color: var(--text-muted);
+  border: 0;
+  cursor: pointer;
+}
+
+.checklist-toggle button[aria-pressed='true'] {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.ingredient-list.checklist li {
+  display: grid;
+  /* The amount track sizes to its content rather than a fixed width: a
+     fixed one is either wasteful for "5 kg" or too narrow for "50-60 kg",
+     and too narrow means the amount overruns the ingredient name. */
+  grid-template-columns: auto minmax(2.5rem, max-content) 1fr;
+  align-items: baseline;
+  gap: 0.1rem 0.55rem;
+}
+
+.ingredient-list.checklist .amount {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.ingredient-list.checklist .what {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ingredient-list.checklist .check {
+  display: flex;
+  align-items: center;
+  padding-top: 0.15rem;
+  cursor: pointer;
+}
+
+/* Ticked lines fade rather than vanish: you still want to see what you
+   already have when checking the list a second time. */
+.ingredient-list.checklist li[data-checked] .what,
+.ingredient-list.checklist li[data-checked] .amount {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
+.checklist-note {
+  font-size: 0.85rem;
+}
+
+.basket-cta {
+  margin-top: 1rem;
+}
+
+/* ── Shopping basket ─────────────────────────────────────────────────── */
+.basket-button {
+  font: inherit;
+  font-size: 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  background: var(--accent-dim);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.basket-count {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  background: rgb(0 0 0 / 62%);
+}
+
+.modal {
+  width: min(30rem, 100%);
+  max-height: 80vh;
+  overflow: auto;
+  padding: 1.25rem;
+  border-radius: 14px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  box-shadow: 0 24px 60px rgb(0 0 0 / 55%);
+}
+
+.basket-list {
+  list-style: none;
+  margin: 0.5rem 0 1rem;
+  padding: 0;
+}
+
+.basket-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.basket-remove {
+  font: inherit;
+  font-size: 1.1rem;
+  line-height: 1;
+  background: transparent;
+  border: 0;
+  color: var(--text-faint);
+  cursor: pointer;
+  padding: 0 0.3rem;
+}
+
+.basket-remove:hover {
+  color: var(--text);
+}
+
+.modal-actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 34rem) {
+  .ingredient-list.checklist li {
+    grid-template-columns: auto 1fr;
+  }
+
+  .ingredient-list.checklist .amount {
+    grid-column: 2;
+  }
+}

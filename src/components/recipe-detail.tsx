@@ -1,14 +1,12 @@
 import Link from 'next/link';
 import { KIND_LABELS } from '@/lib/site';
-import type {
-  IngredientLineView,
-  RecipeView,
-  StepView,
-} from '@/lib/queries/read';
+import type { RecipeView, StepView } from '@/lib/queries/read';
 import { formatQuantity } from '@/lib/domain/units';
 import { TermList } from './tags';
 import { NoteList } from './notes';
 import { Markdown } from './markdown';
+import { IngredientChecklist } from './ingredient-checklist';
+import { AddToBasket } from './shopping-basket';
 
 const LINK_LABELS: Record<string, string> = {
   derived_from: 'Derived from',
@@ -17,18 +15,6 @@ const LINK_LABELS: Record<string, string> = {
   pairs_with: 'Pairs with',
   references: 'References',
 };
-
-/** Preserve the order components first appeared in rather than sorting them. */
-function groupByComponent(lines: IngredientLineView[]) {
-  const groups = new Map<string, IngredientLineView[]>();
-  for (const line of lines) {
-    const key = line.component ?? '';
-    const list = groups.get(key) ?? [];
-    list.push(line);
-    groups.set(key, list);
-  }
-  return [...groups.entries()];
-}
 
 function groupByPhase(steps: StepView[]) {
   const groups: { phase: string; steps: StepView[] }[] = [];
@@ -57,35 +43,6 @@ function formatDuration(
     : render(minutes);
 }
 
-function IngredientLine({ line }: { line: IngredientLineView }) {
-  const amount = formatQuantity(line.quantity, line.quantityMax);
-  const label = line.ingredient?.name ?? line.rawText;
-
-  return (
-    <li>
-      <span className="amount">
-        {amount ? `${amount}${line.unit ? ` ${line.unit}` : ''}` : ''}
-      </span>
-      <span className="what">
-        {line.ingredient ? (
-          <Link href={`/ingredients/${line.ingredient.slug}`}>{label}</Link>
-        ) : (
-          label
-        )}
-        {line.preparation ? (
-          <span className="prep">, {line.preparation}</span>
-        ) : null}
-        {line.optional ? <span className="faint"> (optional)</span> : null}
-        {line.note ? (
-          <div className="faint" style={{ fontSize: '0.85rem' }}>
-            {line.note}
-          </div>
-        ) : null}
-      </span>
-    </li>
-  );
-}
-
 export function RecipeDetail({
   recipe,
   isHistorical,
@@ -93,7 +50,6 @@ export function RecipeDetail({
   recipe: RecipeView;
   isHistorical: boolean;
 }) {
-  const groups = groupByComponent(recipe.ingredients);
   const phases = groupByPhase(recipe.steps);
   const rev = recipe.revision;
 
@@ -197,16 +153,14 @@ export function RecipeDetail({
           {recipe.ingredients.length > 0 ? (
             <section className="panel">
               <h2>Ingredients</h2>
-              {groups.map(([component, lines]) => (
-                <div className="ingredient-group" key={component || 'main'}>
-                  {component ? <h4>{component}</h4> : null}
-                  <ul className="ingredient-list">
-                    {lines.map((line) => (
-                      <IngredientLine key={line.id} line={line} />
-                    ))}
-                  </ul>
-                </div>
-              ))}
+              <IngredientChecklist
+                slug={recipe.slug}
+                revisionNumber={rev.revisionNumber}
+                lines={recipe.ingredients}
+              />
+              <div className="basket-cta">
+                <AddToBasket slug={recipe.slug} title={recipe.title} />
+              </div>
             </section>
           ) : null}
 
