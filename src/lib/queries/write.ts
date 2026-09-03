@@ -38,10 +38,10 @@ import type {
   NoteInput,
   ReviseRecipeInput,
   StepInput,
-  TaxonomyFacet,
-  TaxonomyInput,
+  CategoryType,
+  CategoriesInput,
   UpsertIngredientInput,
-  UpsertTaxonomyTermInput,
+  UpsertCategoryInput,
 } from '@/lib/domain/schemas';
 
 type Tx = TransactionClient;
@@ -137,7 +137,7 @@ async function findIngredientId(tx: Tx, name: string): Promise<string | null> {
 /** Find (or create) a taxonomy term within a facet. */
 async function resolveTermId(
   tx: Tx,
-  facet: TaxonomyFacet,
+  facet: CategoryType,
   label: string,
 ): Promise<string> {
   const trimmed = label.trim();
@@ -164,7 +164,7 @@ async function resolveTermId(
 async function applyTaxonomy(
   tx: Tx,
   recipeId: string,
-  taxonomy: TaxonomyInput,
+  taxonomy: CategoriesInput,
 ): Promise<void> {
   if (!taxonomy) return;
   await tx.delete(recipeTerms).where(eq(recipeTerms.recipeId, recipeId));
@@ -172,7 +172,7 @@ async function applyTaxonomy(
   for (const [facet, labels] of Object.entries(taxonomy)) {
     if (!labels?.length) continue;
     for (const [index, label] of labels.entries()) {
-      const termId = await resolveTermId(tx, facet as TaxonomyFacet, label);
+      const termId = await resolveTermId(tx, facet as CategoryType, label);
       await tx
         .insert(recipeTerms)
         // The first term listed for a facet is the headline one shown on cards.
@@ -443,7 +443,7 @@ export async function createRecipe(
       input.ingredients ?? [],
       input.steps ?? [],
     );
-    await applyTaxonomy(tx, recipeId, input.taxonomy);
+    await applyTaxonomy(tx, recipeId, input.categories);
     await writeNotes(tx, { recipeId }, input.notes);
     const unresolvedLinks = await applyLinks(tx, recipeId, input.links);
 
@@ -574,7 +574,7 @@ export async function reviseRecipe(
     }
 
     await writeRevisionBody(tx, revisionId, ingredientLines, stepList);
-    await applyTaxonomy(tx, recipe.id, input.taxonomy);
+    await applyTaxonomy(tx, recipe.id, input.categories);
     await writeNotes(tx, { revisionId }, input.notes);
     const unresolvedLinks = input.links
       ? await applyLinks(tx, recipe.id, input.links)
@@ -794,9 +794,9 @@ export async function addNote(
  * only written when supplied — passing just a label will not blank out a
  * blurb that is already there. Pass an explicit `null` to clear one.
  */
-export async function upsertTaxonomyTerm(
-  input: UpsertTaxonomyTermInput,
-): Promise<{ facet: TaxonomyFacet; slug: string; created: boolean }> {
+export async function upsertCategory(
+  input: UpsertCategoryInput,
+): Promise<{ categoryType: CategoryType; slug: string; created: boolean }> {
   return withTransaction(async (tx) => {
     const slug = input.slug ? slugify(input.slug) : slugify(input.label);
     if (!slug) throw new Error('Term label does not produce a usable slug.');
@@ -818,14 +818,14 @@ export async function upsertTaxonomyTerm(
           .from(taxonomyTerms)
           .where(
             and(
-              eq(taxonomyTerms.facet, input.facet),
+              eq(taxonomyTerms.facet, input.categoryType),
               eq(taxonomyTerms.slug, parentSlug),
             ),
           )
           .limit(1);
         if (!parent[0]) {
           throw new Error(
-            `No term "${parentSlug}" in facet "${input.facet}" to use as parent.`,
+            `No tag "${parentSlug}" in the "${input.categoryType}" category to use as parent.`,
           );
         }
         parentId = parent[0].id;
@@ -836,7 +836,10 @@ export async function upsertTaxonomyTerm(
       .select({ id: taxonomyTerms.id })
       .from(taxonomyTerms)
       .where(
-        and(eq(taxonomyTerms.facet, input.facet), eq(taxonomyTerms.slug, slug)),
+        and(
+          eq(taxonomyTerms.facet, input.categoryType),
+          eq(taxonomyTerms.slug, slug),
+        ),
       )
       .limit(1);
 
@@ -852,17 +855,17 @@ export async function upsertTaxonomyTerm(
           updatedAt: new Date(),
         })
         .where(eq(taxonomyTerms.id, existing[0].id));
-      return { facet: input.facet, slug, created: false };
+      return { categoryType: input.categoryType, slug, created: false };
     }
 
     await tx.insert(taxonomyTerms).values({
-      facet: input.facet,
+      facet: input.categoryType,
       slug,
       label: input.label,
       description: input.description ?? null,
       parentId: parentId ?? null,
     });
-    return { facet: input.facet, slug, created: true };
+    return { categoryType: input.categoryType, slug, created: true };
   });
 }
 

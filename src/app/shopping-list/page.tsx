@@ -103,11 +103,14 @@ export default async function ShoppingListPage({
       <header className="hero">
         <h1>Shopping list</h1>
         <p>
-          Pick the recipes you are cooking and this combines their ingredients,
-          grouped by where they sit in a shop rather than alphabetically.
-          Amounts are summed only where the units agree — 800&nbsp;g and
-          1&nbsp;kg become 1.8&nbsp;kg, but three cloves and two heads stay two
-          lines, because a wrong total is worse than two honest ones.
+          Select the recipes that you will cook. This page joins their
+          ingredients into one list. The list follows the order of a shop. It is
+          not in alphabetical order.
+        </p>
+        <p>
+          The page adds two amounts only if their units agree. 800&nbsp;g and
+          1&nbsp;kg become 1.8&nbsp;kg. But three cloves and two heads stay on
+          two lines. A wrong total is worse than two correct lines.
         </p>
       </header>
 
@@ -123,10 +126,10 @@ export default async function ShoppingListPage({
 
       {selected.length === 0 ? (
         <p className="empty">
-          Choose one or more recipes above to build a list.
+          Select one or more recipes above to make a list.
         </p>
       ) : groups.length === 0 ? (
-        <p className="empty">Those recipes have no ingredients recorded yet.</p>
+        <p className="empty">These recipes have no ingredients yet.</p>
       ) : (
         <>
           <p className="faint">
@@ -138,7 +141,7 @@ export default async function ShoppingListPage({
           <FilterableGroups
             groups={groups}
             label="Filter the shopping list"
-            placeholder="Filter by ingredient, aisle or recipe…"
+            placeholder="Filter by ingredient, shop area or recipe…"
             countNoun="ingredient"
           />
         </>

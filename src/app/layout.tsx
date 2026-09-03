@@ -34,7 +34,7 @@ import { BasketButton } from '@/components/shopping-basket';
 const NAV = [
   { href: '/recipes', label: 'Recipes' },
   { href: '/cuisines', label: 'Cuisines' },
-  { href: '/taxonomy', label: 'Taxonomy' },
+  { href: '/categories', label: 'Categories' },
   { href: '/ingredients', label: 'Ingredients' },
   { href: '/shopping-list', label: 'Shopping' },
   { href: '/experiments', label: 'Experiments' },

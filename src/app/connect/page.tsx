@@ -59,7 +59,7 @@ export default function ConnectPage() {
         <h3>Reading</h3>
         <ul>
           <li>
-            <code>search_recipes</code> — text, taxonomy, must-include and
+            <code>search_recipes</code> — text, categories, must-include and
             must-exclude ingredients
           </li>
           <li>
@@ -67,7 +67,7 @@ export default function ConnectPage() {
             revision and its rationale
           </li>
           <li>
-            <code>list_taxonomy</code>, <code>list_ingredients</code>,{' '}
+            <code>list_categories</code>, <code>list_ingredients</code>,{' '}
             <code>get_ingredient</code>
           </li>
           <li>

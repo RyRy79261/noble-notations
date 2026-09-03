@@ -97,12 +97,12 @@ test.describe('agent onboarding', () => {
     }>('get_started', {});
 
     expect(guide.theOneRule).toMatch(/revise_recipe/);
-    expect(guide.theOneRule).toMatch(/immutable revision/i);
+    expect(guide.theOneRule).toMatch(/cannot change a version/i);
     expect(guide.workflow[0]).toMatch(/search_recipes/);
 
     // The distinction the note kinds exist to make.
-    expect(guide.noteKinds.science).toMatch(/happening in the dish|mechanism/i);
-    expect(guide.noteKinds.research).toMatch(/alternatives|hacks|sourcing/i);
+    expect(guide.noteKinds.science).toMatch(/happens in the dish/i);
+    expect(guide.noteKinds.research).toMatch(/after you made it|where to buy/i);
   });
 
   test('the guide is readable without write scope', async () => {

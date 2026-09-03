@@ -6,48 +6,48 @@ import { safeRead } from '@/lib/safe';
 import { RecipeGrid } from '@/components/recipe-card';
 import { DatabaseNotice } from '@/components/database-notice';
 import { TermHierarchy } from '@/components/term-hierarchy';
-import { FACET_LABELS, site } from '@/lib/site';
-import { TAXONOMY_FACETS, type TaxonomyFacet } from '@/lib/domain/schemas';
+import { CATEGORY_TYPE_LABELS, site } from '@/lib/site';
+import { CATEGORY_TYPES, type CategoryType } from '@/lib/domain/schemas';
 
 export const dynamic = 'force-dynamic';
 
-type Params = { params: Promise<{ facet: string; slug: string }> };
+type Params = { params: Promise<{ type: string; slug: string }> };
 
-function asFacet(value: string): TaxonomyFacet | null {
-  return (TAXONOMY_FACETS as readonly string[]).includes(value)
-    ? (value as TaxonomyFacet)
+function asCategoryType(value: string): CategoryType | null {
+  return (CATEGORY_TYPES as readonly string[]).includes(value)
+    ? (value as CategoryType)
     : null;
 }
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
-  const { facet, slug } = await params;
-  const parsed = asFacet(facet);
+  const { type, slug } = await params;
+  const parsed = asCategoryType(type);
   if (!parsed) return { title: 'Not found' };
 
   const { data } = await safeRead(() => getTerm(parsed, slug), null);
   if (!data) return { title: 'Not found' };
 
-  const facetLabel = FACET_LABELS[facet] ?? facet;
+  const typeLabel = CATEGORY_TYPE_LABELS[type] ?? type;
   const description =
     data.term.description ??
-    `${data.recipes.length} recipes classified as ${data.term.label} (${facetLabel.toLowerCase()}) in the ${site.name} repository.`;
+    `${data.recipes.length} recipes with the tag ${data.term.label} (${typeLabel.toLowerCase()}) in the ${site.name} repository.`;
 
   return {
-    title: `${data.term.label} — ${facetLabel}`,
+    title: `${data.term.label} — ${typeLabel}`,
     description,
-    alternates: { canonical: `/taxonomy/${facet}/${slug}` },
+    alternates: { canonical: `/categories/${type}/${slug}` },
     openGraph: {
       type: 'website',
-      title: `${data.term.label} — ${facetLabel}`,
+      title: `${data.term.label} — ${typeLabel}`,
       description,
-      url: `/taxonomy/${facet}/${slug}`,
+      url: `/categories/${type}/${slug}`,
     },
   };
 }
 
 export default async function TermPage({ params }: Params) {
-  const { facet, slug } = await params;
-  const parsed = asFacet(facet);
+  const { type, slug } = await params;
+  const parsed = asCategoryType(type);
   if (!parsed) notFound();
 
   // Cuisine terms have a dedicated section; keep one canonical URL per term.
@@ -71,11 +71,11 @@ export default async function TermPage({ params }: Params) {
   return (
     <div className="page">
       <div className="breadcrumb">
-        <Link href="/taxonomy">Taxonomy</Link> / {FACET_LABELS[facet] ?? facet}{' '}
-        / {data.term.label}
+        <Link href="/categories">Categories</Link> /{' '}
+        {CATEGORY_TYPE_LABELS[type] ?? type} / {data.term.label}
       </div>
       <header className="hero">
-        <span className="badge">{FACET_LABELS[facet] ?? facet}</span>
+        <span className="badge">{CATEGORY_TYPE_LABELS[type] ?? type}</span>
         <h1>{data.term.label}</h1>
         {data.term.description ? <p>{data.term.description}</p> : null}
         <TermHierarchy parent={data.parent} narrower={data.children} />

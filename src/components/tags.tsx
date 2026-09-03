@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { FACET_LABELS } from '@/lib/site';
+import { CATEGORY_TYPE_LABELS } from '@/lib/site';
 import type { TermView } from '@/lib/queries/read';
 
 /**
@@ -24,11 +24,12 @@ export function TermTag({
   showFacet?: boolean;
 }) {
   const href =
-    term.facet === 'cuisine'
+    term.categoryType === 'cuisine'
       ? `/cuisines/${term.slug}`
-      : `/taxonomy/${term.facet}/${term.slug}`;
-  const facetLabel = FACET_LABELS[term.facet] ?? term.facet;
-  const tooltipId = `term-blurb-${term.facet}-${term.slug}`;
+      : `/categories/${term.categoryType}/${term.slug}`;
+  const facetLabel =
+    CATEGORY_TYPE_LABELS[term.categoryType] ?? term.categoryType;
+  const tooltipId = `term-blurb-${term.categoryType}-${term.slug}`;
 
   const link = (
     <Link

@@ -13,7 +13,14 @@
  */
 import { z } from 'zod';
 
-export const TAXONOMY_FACETS = [
+/**
+ * The kinds of category a tag can belong to.
+ *
+ * The database column is still named `facet`; only the words people and
+ * agents see changed. A rename of the column would be a destructive
+ * migration for a vocabulary change, which is not a good trade.
+ */
+export const CATEGORY_TYPES = [
   'cuisine',
   'course',
   'technique',
@@ -25,7 +32,10 @@ export const TAXONOMY_FACETS = [
   'texture',
   'ingredient_class',
 ] as const;
-export type TaxonomyFacet = (typeof TAXONOMY_FACETS)[number];
+export type CategoryType = (typeof CATEGORY_TYPES)[number];
+
+/** @deprecated Use CategoryType. Kept so the db layer reads naturally. */
+export type TaxonomyFacet = CategoryType;
 
 export const RECIPE_STATUSES = ['draft', 'active', 'archived'] as const;
 
@@ -179,8 +189,9 @@ export const recipeLinkSchema = z.object({
  * This is the pass that gives a term its display label, its explanatory
  * blurb, and its place in a hierarchy.
  */
-export const upsertTaxonomyTermShape = {
-  facet: z.enum(TAXONOMY_FACETS),
+export const upsertCategoryShape = {
+  /** Which kind of category this tag belongs to. */
+  categoryType: z.enum(CATEGORY_TYPES),
   /** Display label. The slug is derived from it unless `slug` is given. */
   label: z.string().min(1).max(120),
   slug: z.string().min(1).max(120).optional(),
@@ -196,9 +207,9 @@ export const upsertTaxonomyTermShape = {
    */
   parentSlug: z.string().min(1).max(120).nullish(),
 };
-export const upsertTaxonomyTermSchema = z.object(upsertTaxonomyTermShape);
-export type UpsertTaxonomyTermArgs = z.input<typeof upsertTaxonomyTermSchema>;
-export type UpsertTaxonomyTermInput = z.infer<typeof upsertTaxonomyTermSchema>;
+export const upsertCategorySchema = z.object(upsertCategoryShape);
+export type UpsertCategoryArgs = z.input<typeof upsertCategorySchema>;
+export type UpsertCategoryInput = z.infer<typeof upsertCategorySchema>;
 
 export const buildShoppingListShape = {
   /** Recipe slugs to combine. Their *current* revisions are used. */
@@ -208,13 +219,13 @@ export const buildShoppingListSchema = z.object(buildShoppingListShape);
 export type BuildShoppingListArgs = z.input<typeof buildShoppingListSchema>;
 export type BuildShoppingListInput = z.infer<typeof buildShoppingListSchema>;
 
-export const taxonomySchema = z
+export const categoriesSchema = z
   .partialRecord(
-    z.enum(TAXONOMY_FACETS),
+    z.enum(CATEGORY_TYPES),
     z.array(z.string().min(1).max(120)).max(30),
   )
   .optional();
-export type TaxonomyInput = z.infer<typeof taxonomySchema>;
+export type CategoriesInput = z.infer<typeof categoriesSchema>;
 
 // ─────────────────────────────────────────────────────────────────────────
 // Recipe body — the part a revision snapshots
@@ -232,7 +243,7 @@ export const recipeBodyShape = {
     .describe(
       'draft hides it from listings; archived keeps the URL but retires it',
     ),
-  taxonomy: taxonomySchema,
+  categories: categoriesSchema,
   yieldQuantity: z.number().finite().positive().nullish(),
   yieldUnit: z.string().max(60).nullish(),
   servings: z.number().int().positive().nullish(),
@@ -329,7 +340,7 @@ export const reviseRecipeShape = {
   title: recipeBodyShape.title.optional(),
   subtitle: recipeBodyShape.subtitle,
   summary: recipeBodyShape.summary,
-  taxonomy: recipeBodyShape.taxonomy,
+  categories: recipeBodyShape.categories,
   yieldQuantity: recipeBodyShape.yieldQuantity,
   yieldUnit: recipeBodyShape.yieldUnit,
   servings: recipeBodyShape.servings,
@@ -475,7 +486,7 @@ export const searchRecipesShape = {
     .optional()
     .describe('Free text; matches title, summary, terms and ingredients'),
   /** Facet → term slugs. All listed terms must be present (AND). */
-  taxonomy: taxonomySchema,
+  categories: categoriesSchema,
   /** Ingredient slugs or names that must all appear. */
   ingredients: z.array(z.string().max(200)).max(20).optional(),
   /** Ingredient slugs or names that must NOT appear. */

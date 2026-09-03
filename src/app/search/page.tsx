@@ -1,10 +1,10 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { listTaxonomy, searchRecipes } from '@/lib/queries/read';
+import { listCategories, searchRecipes } from '@/lib/queries/read';
 import { safeRead } from '@/lib/safe';
 import { RecipeGrid } from '@/components/recipe-card';
 import { DatabaseNotice } from '@/components/database-notice';
-import { FACET_LABELS } from '@/lib/site';
+import { CATEGORY_TYPE_LABELS } from '@/lib/site';
 import { RECIPE_KINDS } from '@/lib/domain/schemas';
 
 export const dynamic = 'force-dynamic';
@@ -58,13 +58,13 @@ export default async function SearchPage({
     exclude.length > 0 ||
     Boolean(kind);
 
-  const [results, taxonomy] = await Promise.all([
+  const [results, categories] = await Promise.all([
     hasFilters
       ? safeRead(
           () =>
             searchRecipes({
               query: query || undefined,
-              taxonomy: {
+              categories: {
                 ...(cuisine.length ? { cuisine } : {}),
                 ...(technique.length ? { technique } : {}),
               },
@@ -81,11 +81,13 @@ export default async function SearchPage({
           configured: true,
           failed: false,
         }),
-    safeRead(() => listTaxonomy(), []),
+    safeRead(() => listCategories(), []),
   ]);
 
-  const cuisines = taxonomy.data.filter((t) => t.facet === 'cuisine');
-  const techniques = taxonomy.data.filter((t) => t.facet === 'technique');
+  const cuisines = categories.data.filter((t) => t.categoryType === 'cuisine');
+  const techniques = categories.data.filter(
+    (t) => t.categoryType === 'technique',
+  );
 
   return (
     <div className="page">
@@ -193,9 +195,9 @@ export default async function SearchPage({
               {[
                 query && `“${query}”`,
                 cuisine.length &&
-                  `${FACET_LABELS.cuisine}: ${cuisine.join(', ')}`,
+                  `${CATEGORY_TYPE_LABELS.cuisine}: ${cuisine.join(', ')}`,
                 technique.length &&
-                  `${FACET_LABELS.technique}: ${technique.join(', ')}`,
+                  `${CATEGORY_TYPE_LABELS.technique}: ${technique.join(', ')}`,
                 ingredient.length && `with ${ingredient.join(', ')}`,
                 exclude.length && `without ${exclude.join(', ')}`,
               ]

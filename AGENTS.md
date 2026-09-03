@@ -148,6 +148,33 @@ pnpm format && pnpm lint && pnpm typecheck && pnpm build
 The build does not need a database: its migration step skips when
 `DATABASE_URL` is absent.
 
+## Words and writing style
+
+**User-facing text uses ASD Simplified Technical English.** Short
+sentences. One idea in each sentence. Active voice. No word that needs
+another word to explain it. This applies to page copy, MCP tool
+descriptions and the agent guide — not to code comments, which explain
+_why_ and need their full vocabulary.
+
+The word "taxonomy" is not used anywhere a person or an agent reads. The
+vocabulary is:
+
+| Say                                         | Not                      |
+| ------------------------------------------- | ------------------------ |
+| Categories                                  | Taxonomy, classification |
+| Category type (cuisine, course, technique…) | Facet                    |
+| Tag                                         | Term                     |
+
+**The database columns did not change.** `taxonomy_terms.facet` is still
+`facet`, and `CategoryType` is an alias over the same enum. Renaming those
+columns would be a destructive migration in exchange for a vocabulary
+change, which is a bad trade. The mapping happens at the query boundary:
+`TermView.categoryType` reads from `taxonomyTerms.facet`.
+
+MCP names follow the same vocabulary: `list_categories`,
+`upsert_category`, and the fields `categoryType` and `categories`. The old
+`/taxonomy` URLs redirect permanently to `/categories`.
+
 ## Note kinds
 
 `science` and `research` are the two that get confused, and the split is

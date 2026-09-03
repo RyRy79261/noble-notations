@@ -98,9 +98,9 @@ async function main() {
         body.push('## Classification', '');
         const byFacet = new Map<string, string[]>();
         for (const term of recipe.terms) {
-          const list = byFacet.get(term.facet) ?? [];
+          const list = byFacet.get(term.categoryType) ?? [];
           list.push(term.label);
-          byFacet.set(term.facet, list);
+          byFacet.set(term.categoryType, list);
         }
         for (const [facet, labels] of byFacet) {
           body.push(`- **${facet.replace(/_/g, ' ')}**: ${labels.join(', ')}`);

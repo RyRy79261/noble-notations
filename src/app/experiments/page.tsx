@@ -21,9 +21,9 @@ export default async function ExperimentsPage() {
       <header className="hero">
         <h1>Experiments</h1>
         <p>
-          A recipe is the intent. An experiment is what happened when it met
-          reality — per-piece weights, drying times, costs, and what the batch
-          taught that the next one should do differently.
+          A recipe is the plan. An experiment is the result. It records the
+          weight of each piece, the drying times and the costs. It also records
+          what to do differently in the next batch.
         </p>
       </header>
 

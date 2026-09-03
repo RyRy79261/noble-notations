@@ -40,6 +40,19 @@ const nextConfig: NextConfig = {
     '/sitemap.xml': ['./content/**/*.md'],
   },
 
+  async redirects() {
+    // /taxonomy became /categories. The word was jargon; the links that
+    // already exist are not, so they keep working.
+    return [
+      { source: '/taxonomy', destination: '/categories', permanent: true },
+      {
+        source: '/taxonomy/:type/:slug',
+        destination: '/categories/:type/:slug',
+        permanent: true,
+      },
+    ];
+  },
+
   async rewrites() {
     // RFC 8414 and RFC 9728 require these documents to live under
     // /.well-known/. The App Router will not route a dot-prefixed folder, so

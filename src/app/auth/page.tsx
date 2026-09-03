@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 /**
  * The one sign-in surface on the site.
  *
- * Nothing here is behind a login — the recipes, taxonomy and archive are
+ * Nothing here is behind a login — the recipes, categories and archive are
  * public. This page exists so the MCP consent screen has a signed-in
  * administrator to attribute an approval to, and the authorize route sends
  * people here with `?callbackURL=` pointing back at itself.

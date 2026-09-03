@@ -15,7 +15,7 @@ const VIEWS = [
     itemSelector: 'tbody tr',
   },
   {
-    path: '/taxonomy',
+    path: '/categories',
     query: 'curing',
     absent: 'Sichuan',
     itemSelector: '.tag-wrap',

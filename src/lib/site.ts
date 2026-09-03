@@ -18,7 +18,7 @@ export const site = {
   locale: 'en',
 } as const;
 
-export const FACET_LABELS: Record<string, string> = {
+export const CATEGORY_TYPE_LABELS: Record<string, string> = {
   cuisine: 'Cuisine',
   course: 'Course',
   technique: 'Technique',

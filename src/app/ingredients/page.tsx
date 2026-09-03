@@ -75,9 +75,9 @@ export default async function IngredientsPage() {
       <header className="hero">
         <h1>Ingredients</h1>
         <p>
-          Ingredients are canonical rows, not free text on a recipe page. That
-          is what makes &ldquo;everything I have made with gochujang&rdquo; a
-          query rather than a memory exercise.
+          Each ingredient is one record. It is not free text on a recipe page.
+          This lets you ask &ldquo;show all dishes with gochujang&rdquo; and get
+          an answer.
         </p>
       </header>
 

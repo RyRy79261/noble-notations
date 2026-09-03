@@ -5,7 +5,7 @@ import {
   listExperiments,
   listIngredients,
   listRecipes,
-  listTaxonomy,
+  listCategories,
 } from '@/lib/queries/read';
 import { safeRead } from '@/lib/safe';
 
@@ -20,7 +20,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const [recipes, taxonomy, ingredients, experiments, archive] =
     await Promise.all([
       safeRead(() => listRecipes({ limit: 5000 }), []),
-      safeRead(() => listTaxonomy(), []),
+      safeRead(() => listCategories(), []),
       safeRead(listIngredients, []),
       safeRead(listExperiments, []),
       listArchive(),
@@ -30,7 +30,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${site.url}/`, changeFrequency: 'weekly', priority: 1 },
     { url: `${site.url}/recipes`, changeFrequency: 'weekly', priority: 0.9 },
     { url: `${site.url}/cuisines`, changeFrequency: 'monthly', priority: 0.7 },
-    { url: `${site.url}/taxonomy`, changeFrequency: 'monthly', priority: 0.6 },
+    {
+      url: `${site.url}/categories`,
+      changeFrequency: 'monthly',
+      priority: 0.6,
+    },
     {
       url: `${site.url}/ingredients`,
       changeFrequency: 'weekly',
@@ -58,9 +62,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       .filter((term) => term.recipeCount > 0)
       .map((term) => ({
         url:
-          term.facet === 'cuisine'
+          term.categoryType === 'cuisine'
             ? `${site.url}/cuisines/${term.slug}`
-            : `${site.url}/taxonomy/${term.facet}/${term.slug}`,
+            : `${site.url}/categories/${term.categoryType}/${term.slug}`,
         changeFrequency: 'monthly' as const,
         priority: 0.5,
       })),

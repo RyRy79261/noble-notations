@@ -89,7 +89,7 @@ test.describe('shopping list', () => {
     page,
   }) => {
     await page.goto('/shopping-list');
-    await expect(page.getByText(/choose one or more recipes/i)).toBeVisible();
+    await expect(page.getByText(/select one or more recipes/i)).toBeVisible();
     await expect(page.locator('.shopping-item')).toHaveCount(0);
   });
 

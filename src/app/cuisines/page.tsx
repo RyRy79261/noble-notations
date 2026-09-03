@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { listTaxonomy } from '@/lib/queries/read';
+import { listCategories } from '@/lib/queries/read';
 import { safeRead } from '@/lib/safe';
 import { DatabaseNotice } from '@/components/database-notice';
 
@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 
 export default async function CuisinesPage() {
   const { data, configured, failed } = await safeRead(
-    () => listTaxonomy('cuisine'),
+    () => listCategories('cuisine'),
     [],
   );
 
@@ -24,8 +24,8 @@ export default async function CuisinesPage() {
       <header className="hero">
         <h1>Cuisines</h1>
         <p>
-          The culinary traditions this repository draws on. A recipe can sit
-          under more than one — most interesting cooking does.
+          The cooking traditions in this store. A recipe can have more than one
+          tradition. Most good cooking does.
         </p>
       </header>
 

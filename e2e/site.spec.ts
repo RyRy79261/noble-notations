@@ -9,7 +9,7 @@ const ROUTES = [
   '/',
   '/recipes',
   '/cuisines',
-  '/taxonomy',
+  '/categories',
   '/ingredients',
   '/experiments',
   '/archive',

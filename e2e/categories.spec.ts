@@ -7,10 +7,10 @@ import { test, expect } from '@playwright/test';
  * than an afterthought.
  */
 
-test('the taxonomy index lists every facet, equipment included', async ({
+test('the categories index lists every category type, equipment included', async ({
   page,
 }) => {
-  await page.goto('/taxonomy');
+  await page.goto('/categories');
 
   for (const facet of ['Cuisine', 'Technique', 'Equipment', 'Preservation']) {
     await expect(page.getByRole('heading', { name: facet })).toBeVisible();
@@ -82,10 +82,10 @@ test('the same word in two facets carries two different blurbs', async ({
 }) => {
   // air-drying is both a technique (what you do) and a preservation method
   // (what it achieves). Terms never cross facets, so these are two rows.
-  await page.goto('/taxonomy/technique/air-drying');
+  await page.goto('/categories/technique/air-drying');
   await expect(page.getByText(/moving unheated air/i).first()).toBeVisible();
 
-  await page.goto('/taxonomy/preservation/air-drying');
+  await page.goto('/categories/preservation/air-drying');
   await expect(page.getByText(/water activity/i).first()).toBeVisible();
 });
 
@@ -110,7 +110,7 @@ test('a parent cuisine lists its narrower regions', async ({ page }) => {
 });
 
 test('an equipment term lists the recipes that need it', async ({ page }) => {
-  await page.goto('/taxonomy/equipment/drying-box');
+  await page.goto('/categories/equipment/drying-box');
 
   await expect(page.getByText(/steady airflow/i).first()).toBeVisible();
   await expect(

@@ -22,7 +22,7 @@ async function main() {
     createRecipe,
     reviseRecipe,
     upsertIngredient,
-    upsertTaxonomyTerm,
+    upsertCategory,
     logExperiment,
   } = await import('@/lib/queries/write');
   const { withTransaction } = await import('@/db/client');
@@ -33,7 +33,7 @@ async function main() {
     logExperimentSchema,
     reviseRecipeSchema,
     upsertIngredientSchema,
-    upsertTaxonomyTermSchema,
+    upsertCategorySchema,
   } = await import('@/lib/domain/schemas');
   const { INGREDIENTS, RECIPES, RECIPE_LINKS, EXPERIMENTS } =
     await import('./seed-data');
@@ -52,9 +52,9 @@ async function main() {
     ...TAXONOMY.filter((t) => t.parent),
   ];
   for (const term of orderedTaxonomy) {
-    const result = await upsertTaxonomyTerm(
-      upsertTaxonomyTermSchema.parse({
-        facet: term.facet,
+    const result = await upsertCategory(
+      upsertCategorySchema.parse({
+        categoryType: term.facet,
         slug: term.slug,
         label: term.label,
         description: term.description,
@@ -62,7 +62,7 @@ async function main() {
       }),
     );
     console.log(
-      `  ${result.created ? 'created' : 'described'} ${result.facet}/${result.slug}`,
+      `  ${result.created ? 'created' : 'described'} ${result.categoryType}/${result.slug}`,
     );
   }
 

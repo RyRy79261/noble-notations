@@ -29,13 +29,13 @@ export function recipeJsonLd(recipe: RecipeView): Record<string, unknown> {
   }
 
   const cuisines = recipe.terms
-    .filter((t) => t.facet === 'cuisine')
+    .filter((t) => t.categoryType === 'cuisine')
     .map((t) => t.label);
   const courses = recipe.terms
-    .filter((t) => t.facet === 'course')
+    .filter((t) => t.categoryType === 'course')
     .map((t) => t.label);
   const techniques = recipe.terms
-    .filter((t) => t.facet === 'technique')
+    .filter((t) => t.categoryType === 'technique')
     .map((t) => t.label);
 
   return {

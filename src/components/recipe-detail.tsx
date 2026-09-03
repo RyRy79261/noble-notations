@@ -267,7 +267,7 @@ export function RecipeDetail({
                                 {step.technique ? (
                                   <Link
                                     className="tag"
-                                    href={`/taxonomy/technique/${step.technique.slug}`}
+                                    href={`/categories/technique/${step.technique.slug}`}
                                   >
                                     {step.technique.label}
                                   </Link>

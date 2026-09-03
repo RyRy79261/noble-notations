@@ -29,12 +29,12 @@ import {
   buildShoppingListShape,
   searchRecipesSchema,
   searchRecipesShape,
-  TAXONOMY_FACETS,
+  CATEGORY_TYPES,
   upsertIngredientSchema,
   upsertIngredientShape,
-  upsertTaxonomyTermSchema,
-  upsertTaxonomyTermShape,
-  type TaxonomyFacet,
+  upsertCategorySchema,
+  upsertCategoryShape,
+  type CategoryType,
 } from '@/lib/domain/schemas';
 import {
   buildShoppingList,
@@ -44,7 +44,7 @@ import {
   getStats,
   listExperiments,
   listIngredients,
-  listTaxonomy,
+  listCategories,
   searchRecipes,
 } from '@/lib/queries/read';
 import {
@@ -55,7 +55,7 @@ import {
   NotFoundError,
   reviseRecipe,
   upsertIngredient,
-  upsertTaxonomyTerm,
+  upsertCategory,
 } from '@/lib/queries/write';
 import { GUIDE } from '@/lib/mcp/guide';
 import { writeMcpAudit } from '@/lib/mcp/audit';
@@ -183,7 +183,7 @@ export function registerTools(server: McpServer): void {
       description:
         'Read this first. Explains how the pieces fit together — the ' +
         'revision rule, which note kind means what, how the faceted ' +
-        'taxonomy works, and the expected order of operations.\n\n' +
+        'categories work, and the order of operations.\n\n' +
         'Every other tool description explains one tool; this explains the ' +
         'system. Worth one call at the start of any session that intends ' +
         'to write, because the most common mistake — creating a second ' +
@@ -201,8 +201,9 @@ export function registerTools(server: McpServer): void {
       title: 'Search recipes',
       description:
         'Search the repository before writing anything. Free text matches ' +
-        'titles, taxonomy, summaries and ingredients, weighted in that order. ' +
-        'Filters are conjunctive: taxonomy {cuisine:["sichuan"]} plus ' +
+        'titles, categories, summaries and ingredients, in that order of ' +
+        'importance. ' +
+        'All filters must agree: categories {cuisine:["sichuan"]} plus ' +
         'ingredients ["tofu"] means both must hold. Use excludeIngredients to ' +
         'rule things out ("dan dan noodles without sesame paste"). If a result ' +
         'is the dish you were asked about, fetch it with get_recipe and revise ' +
@@ -227,7 +228,7 @@ export function registerTools(server: McpServer): void {
       title: 'Get a recipe',
       description:
         'The full structured recipe: ingredient lines, ordered steps with the ' +
-        'ingredients each one consumes, taxonomy, notes with their sources, ' +
+        'ingredients each one uses, categories, notes with their sources, ' +
         'related recipes, recorded experiments, and the list of every revision ' +
         'with the rationale for each. Read the rationales before revising — ' +
         'they say what has already been tried and rejected. Pass ' +
@@ -252,24 +253,26 @@ export function registerTools(server: McpServer): void {
   );
 
   server.registerTool(
-    'list_taxonomy',
+    'list_categories',
     {
-      title: 'List taxonomy terms',
+      title: 'List the categories',
       description:
-        'Every classification term with the number of recipes using it. Call ' +
-        'this before classifying a new recipe so you reuse existing terms ' +
-        'instead of coining near-duplicates ("stir fry" when "stir-frying" ' +
-        'already exists). Omit facet to list all of them.',
+        'Every tag, and the number of recipes that use it. Call this before ' +
+        'you add tags to a new recipe. Then you use the tags that exist. ' +
+        'You do not make a tag that is almost the same as one that is here ' +
+        '("stir fry" when "stir-frying" is here already).\n\n' +
+        'Do not give categoryType if you want all the tags.',
       inputSchema: {
-        facet: z.enum(TAXONOMY_FACETS).optional(),
+        categoryType: z.enum(CATEGORY_TYPES).optional(),
       },
     },
     async (args, extra) =>
       runTool(
         extra as AuthCtx,
-        'list_taxonomy',
-        { facet: args.facet },
-        async () => listTaxonomy(args.facet as TaxonomyFacet | undefined),
+        'list_categories',
+        { categoryType: args.categoryType },
+        async () =>
+          listCategories(args.categoryType as CategoryType | undefined),
       ),
   );
 
@@ -387,7 +390,7 @@ export function registerTools(server: McpServer): void {
     {
       title: 'Repository statistics',
       description:
-        'Counts of recipes, revisions, ingredients, taxonomy terms, notes and ' +
+        'Counts of recipes, revisions, ingredients, tags, notes and ' +
         'experiments. A cheap way to confirm the connector is reading the ' +
         'right database.',
       inputSchema: {},
@@ -545,9 +548,9 @@ export function registerTools(server: McpServer): void {
   );
 
   server.registerTool(
-    'upsert_taxonomy_term',
+    'upsert_category',
     {
-      title: 'Describe a taxonomy term',
+      title: 'Describe a category tag',
       description:
         'Give a tag its display label, its explanatory blurb and its place ' +
         'in the hierarchy. Tagging a recipe auto-creates any term it names, ' +
@@ -563,17 +566,17 @@ export function registerTools(server: McpServer): void {
         'cannot be parented to a technique.\n\n' +
         'Use this after creating a recipe that introduced new tags, so the ' +
         'repository does not accumulate bare, unexplained labels.',
-      inputSchema: upsertTaxonomyTermShape,
+      inputSchema: upsertCategoryShape,
     },
     async (args, extra) =>
       runTool(
         extra as AuthCtx,
-        'upsert_taxonomy_term',
-        { facet: args.facet, label: args.label },
+        'upsert_category',
+        { categoryType: args.categoryType, label: args.label },
         async (principal) => {
           requireWrite(principal);
-          const input = upsertTaxonomyTermSchema.parse(args);
-          return upsertTaxonomyTerm(input);
+          const input = upsertCategorySchema.parse(args);
+          return upsertCategory(input);
         },
       ),
   );

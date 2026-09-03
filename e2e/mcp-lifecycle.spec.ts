@@ -31,7 +31,7 @@ interface RecipeResult {
   title: string;
   revisionNumber: number;
   terms: {
-    facet: string;
+    categoryType: string;
     slug: string;
     label: string;
     description: string | null;
@@ -57,7 +57,7 @@ test.describe('MCP write lifecycle', () => {
     expect(names).toContain('search_recipes');
     expect(names).toContain('create_recipe');
     expect(names).toContain('revise_recipe');
-    expect(names).toContain('upsert_taxonomy_term');
+    expect(names).toContain('upsert_category');
   });
 
   test('a read-only token is refused a write tool', async () => {
@@ -87,7 +87,7 @@ test.describe('MCP write lifecycle', () => {
       rationale: 'First working version.',
       heroImageUrl: HERO_IMAGE,
       heroImageAlt: 'The finished bowl, sauce clinging to the noodles',
-      taxonomy: {
+      categories: {
         cuisine: ['Sichuan'],
         course: ['main'],
         technique: ['blending', 'toasting'],
@@ -117,19 +117,19 @@ test.describe('MCP write lifecycle', () => {
     expect(created.revisionNumber).toBe(1);
 
     const fetched = await mcp.call<RecipeResult>('get_recipe', { slug: SLUG });
-    const facets = fetched.terms.map((t) => t.facet);
-    expect(facets).toContain('cuisine');
-    expect(facets).toContain('equipment');
+    const types = fetched.terms.map((t) => t.categoryType);
+    expect(types).toContain('cuisine');
+    expect(types).toContain('equipment');
 
-    const equipment = fetched.terms.find((t) => t.facet === 'equipment');
+    const equipment = fetched.terms.find((t) => t.categoryType === 'equipment');
     expect(equipment?.slug).toBe('blender');
   });
 
   test('describes the tags it introduced', async () => {
     const mcp = mcpClient(test.info().project.use.baseURL!, tokens().readWrite);
 
-    await mcp.call('upsert_taxonomy_term', {
-      facet: 'equipment',
+    await mcp.call('upsert_category', {
+      categoryType: 'equipment',
       label: 'Blender',
       description:
         'A high-speed jug blender. Shears hard enough to emulsify fat into ' +
@@ -137,8 +137,8 @@ test.describe('MCP write lifecycle', () => {
         'stand in for sesame paste.',
     });
 
-    await mcp.call('upsert_taxonomy_term', {
-      facet: 'cuisine',
+    await mcp.call('upsert_category', {
+      categoryType: 'cuisine',
       label: 'Sichuan',
       description:
         'South-western Chinese cooking defined by ma la — the numbing tingle ' +
@@ -146,8 +146,8 @@ test.describe('MCP write lifecycle', () => {
     });
 
     const term = await mcp.call<{ term: { description: string | null } }>(
-      'list_taxonomy',
-      { facet: 'equipment' },
+      'list_categories',
+      { categoryType: 'equipment' },
     );
     expect(JSON.stringify(term)).toContain('emulsify');
   });
@@ -221,7 +221,7 @@ test.describe('the website serves what the MCP wrote', () => {
     // Located by href, not by accessible name: the name includes the facet
     // prefix ("Equipment Blender"), which is right for a screen reader and
     // brittle to assert on.
-    const tag = page.locator('a[href="/taxonomy/equipment/blender"]');
+    const tag = page.locator('a[href="/categories/equipment/blender"]');
     await expect(tag).toBeVisible();
 
     const tooltipId = await tag.getAttribute('aria-describedby');

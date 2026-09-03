@@ -437,7 +437,7 @@ const BILTONG: RecipeSeed = {
     originNote:
       'Started as a South African staple made from Irish silverside in Berlin, which is ' +
       'most of the reason the spice profile drifted toward tandoori masala.',
-    taxonomy: {
+    categories: {
       cuisine: ['South African'],
       technique: ['dry-curing', 'air-drying'],
       preservation: ['curing', 'air-drying'],
@@ -695,7 +695,7 @@ const PICKLED_JALAPENOS: RecipeSeed = {
     summary:
       'A refrigerator pickle in a 1:1 vinegar and water brine. Ready in a day, keeps two months.',
     kind: 'recipe',
-    taxonomy: {
+    categories: {
       cuisine: ['Mexican'],
       technique: ['pickling'],
       preservation: ['pickling'],
@@ -824,7 +824,7 @@ const BERLIN_BOIL: RecipeSeed = {
     originNote:
       'Berlin has a genuine invasive Louisiana crayfish population, and harvesting them is ' +
       'encouraged. Availability is erratic — call ahead.',
-    taxonomy: {
+    categories: {
       cuisine: ['Cajun', 'German'],
       technique: ['boiling'],
       course: ['main'],
@@ -982,7 +982,7 @@ const DEMI_GLACE: RecipeSeed = {
       'Classical demi-glace with a dual-bone foundation, triple clarification and a staged ' +
       'reduction. A preparation other recipes pull in rather than a dish.',
     kind: 'preparation',
-    taxonomy: {
+    categories: {
       cuisine: ['French'],
       technique: ['roasting', 'reduction', 'clarification'],
       course: ['sauce'],
@@ -1177,7 +1177,7 @@ const BEEF_WELLINGTON: RecipeSeed = {
       'doing — octagonal searing, duxelles dehydration, layered moisture barriers and ' +
       'two-stage baking.',
     kind: 'research',
-    taxonomy: {
+    categories: {
       cuisine: ['British', 'French'],
       technique: ['searing', 'baking'],
       course: ['main'],
@@ -1252,7 +1252,7 @@ const PERI_PERI: RecipeSeed = {
       'An idea that never got written down. Preserved so it does not get lost a second time.',
     kind: 'research',
     status: 'draft',
-    taxonomy: { cuisine: ['Portuguese'], course: ['drink'] },
+    categories: { cuisine: ['Portuguese'], course: ['drink'] },
     rationale:
       'The original archive file existed but was empty. Kept as a placeholder.',
     notes: [

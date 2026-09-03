@@ -35,7 +35,7 @@ import {
   type QuantityBucket,
 } from '@/lib/domain/units';
 import { categoryRank } from '@/lib/site';
-import type { SearchRecipesInput, TaxonomyFacet } from '@/lib/domain/schemas';
+import type { CategoryType, SearchRecipesInput } from '@/lib/domain/schemas';
 
 const n = (v: string | null) => (v == null ? null : Number(v));
 
@@ -45,7 +45,8 @@ const n = (v: string | null) => (v == null ? null : Number(v));
 
 export interface TermView {
   id: string;
-  facet: TaxonomyFacet;
+  /** Which kind of category this tag is in. The DB column is `facet`. */
+  categoryType: CategoryType;
   slug: string;
   label: string;
   description: string | null;
@@ -189,7 +190,7 @@ async function attachTerms<T extends { id: string }>(
     const list = byRecipe.get(row.recipeId) ?? [];
     list.push({
       id: row.id,
-      facet: row.facet as TaxonomyFacet,
+      categoryType: row.facet as CategoryType,
       slug: row.slug,
       label: row.label,
       description: row.description,
@@ -288,7 +289,7 @@ export async function searchRecipes(
     conditions.push(sql`r.kind = ${input.kind}`);
   }
 
-  for (const [facet, labels] of Object.entries(input.taxonomy ?? {})) {
+  for (const [facet, labels] of Object.entries(input.categories ?? {})) {
     for (const label of labels ?? []) {
       const slug = slugify(label);
       conditions.push(sql`EXISTS (
@@ -703,8 +704,8 @@ export interface TermWithCount extends TermView {
   recipeCount: number;
 }
 
-export async function listTaxonomy(
-  facet?: TaxonomyFacet,
+export async function listCategories(
+  facet?: CategoryType,
 ): Promise<TermWithCount[]> {
   const rows = await db
     .select({
@@ -732,7 +733,7 @@ export async function listTaxonomy(
 
   return rows.map((r) => ({
     id: r.id,
-    facet: r.facet as TaxonomyFacet,
+    categoryType: r.facet as CategoryType,
     slug: r.slug,
     label: r.label,
     description: r.description,
@@ -741,7 +742,7 @@ export async function listTaxonomy(
 }
 
 export async function getTerm(
-  facet: TaxonomyFacet,
+  facet: CategoryType,
   slug: string,
 ): Promise<{
   term: TermView;
@@ -780,7 +781,7 @@ export async function getTerm(
     description: string | null;
   }): TermView => ({
     id: row.id,
-    facet: row.facet as TaxonomyFacet,
+    categoryType: row.facet as CategoryType,
     slug: row.slug,
     label: row.label,
     description: row.description,
