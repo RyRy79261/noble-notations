@@ -119,6 +119,12 @@ Every database-backed page degrades to an explanatory notice rather than a
 stack trace when `DATABASE_URL` is unset, so the build and the archive work
 without one.
 
+`pnpm build` runs `pnpm db:migrate:deploy` first, so a deployment ships its
+schema with its code. That step _skips_ when `DATABASE_URL` is unset (CI has
+no database and must stay green) but fails the build when a configured
+database is unreachable or a migration errors. It applies schema only —
+seeding the archive is still a separate `pnpm ingest`.
+
 ## Environment
 
 See `.env.example`. `DATABASE_URL` is required for content;
@@ -130,13 +136,16 @@ the `VERCEL_URL` gotcha in `docs/mcp-connector.md`).
 ## Quality gates
 
 `.github/workflows/ci.yml` runs on every push and PR and must stay green:
-format check → lint → typecheck → production build. Before pushing:
+format check → lint → typecheck → production build. The build step needs no
+database — the migration it now runs skips itself when `DATABASE_URL` is
+absent. Before pushing:
 
 ```bash
 pnpm format && pnpm lint && pnpm typecheck && pnpm build
 ```
 
-The build does not need a database.
+The build does not need a database: its migration step skips when
+`DATABASE_URL` is absent.
 
 ## Do not touch
 

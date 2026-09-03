@@ -1,7 +1,13 @@
 /**
  * Apply committed migrations to the database in DATABASE_URL.
  *
- *   pnpm db:migrate
+ *   pnpm db:migrate                  fails if DATABASE_URL is missing
+ *   pnpm db:migrate --if-configured  skips instead, exit 0
+ *
+ * The second form is what `pnpm build` runs, so a deployment ships its
+ * schema alongside its code. CI has no database and must still go green,
+ * hence the skip; a database that *is* configured but unreachable or behind
+ * on migrations still fails the build, which is the point.
  *
  * Uses the drizzle-orm migrator rather than `drizzle-kit push`: push diffs
  * the live schema without writing a migration file and will drop columns it
@@ -17,9 +23,15 @@ import { loadEnv } from './env';
 
 loadEnv();
 
+const OPTIONAL = process.argv.includes('--if-configured');
+
 async function main() {
   const url = process.env.DATABASE_URL;
   if (!url) {
+    if (OPTIONAL) {
+      console.log('DATABASE_URL is not set — skipping migrations.');
+      return;
+    }
     console.error('DATABASE_URL is not set.');
     process.exit(1);
   }

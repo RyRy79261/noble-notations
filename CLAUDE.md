@@ -8,7 +8,8 @@ Quick reminders:
 
 - Package manager is **pnpm**.
 - Run `pnpm format && pnpm lint && pnpm typecheck && pnpm build` before
-  pushing — CI enforces all four. The build does not need a database.
+  pushing — CI enforces all four. The build does not need a database: it
+  runs migrations first, and that step skips when `DATABASE_URL` is absent.
 - **Never edit a recipe in place.** Add a revision with a rationale; the
   write layer has no update path for ingredients or steps.
 - All database access goes through `src/lib/queries/`; all writes go through
