@@ -148,6 +148,21 @@ pnpm format && pnpm lint && pnpm typecheck && pnpm build
 The build does not need a database: its migration step skips when
 `DATABASE_URL` is absent.
 
+## Shopping lists and filtering
+
+`buildShoppingList(slugs)` combines several recipes' _current_ revisions
+into one list grouped by `CATEGORY_ORDER` (shop order, not alphabetical).
+Amounts sum only within a compatible unit bucket — mass and volume convert
+freely, count units never do, because every count unit carries `toBase: 1`
+and three cloves plus two heads are not five of anything. Unquantified
+lines are flagged, never guessed at.
+
+`FilterableGroups` is the shared filter for any grouped view. Server
+Components pre-render each heading and row and pass them in as nodes; the
+client only decides what to show. **A Server Component may pass JSX across
+that boundary but not a function** — hence `layout` / `tableHead` rather
+than a render callback.
+
 ## End-to-end tests
 
 `pnpm test:e2e` runs Playwright against a real production build and a real

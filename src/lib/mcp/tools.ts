@@ -25,6 +25,8 @@ import {
   logExperimentShape,
   reviseRecipeSchema,
   reviseRecipeShape,
+  buildShoppingListSchema,
+  buildShoppingListShape,
   searchRecipesSchema,
   searchRecipesShape,
   TAXONOMY_FACETS,
@@ -35,6 +37,7 @@ import {
   type TaxonomyFacet,
 } from '@/lib/domain/schemas';
 import {
+  buildShoppingList,
   getExperiment,
   getIngredient,
   getRecipeBySlug,
@@ -327,6 +330,34 @@ export function registerTools(server: McpServer): void {
           const found = await getExperiment(args.slug);
           if (!found) throw new NotFoundError(`No experiment "${args.slug}".`);
           return found;
+        },
+      ),
+  );
+
+  server.registerTool(
+    'build_shopping_list',
+    {
+      title: 'Build a shopping list',
+      description:
+        'Combine the ingredients of several recipes into one list, grouped ' +
+        'by where they sit in a shop (produce, meat, spices, sauces…) ' +
+        'rather than alphabetically.\n\n' +
+        "Reads each recipe's *current* revision — shopping for a " +
+        "superseded version means cooking last month's mistake.\n\n" +
+        'Amounts are summed only within compatible units: 800 g and 1 kg ' +
+        'become 1.8 kg, but three cloves and two heads stay two lines. ' +
+        'Lines with no quantity are flagged rather than guessed at, so ' +
+        'report them as-is instead of inventing an amount.',
+      inputSchema: buildShoppingListShape,
+    },
+    async (args, extra) =>
+      runTool(
+        extra as AuthCtx,
+        'build_shopping_list',
+        { slugs: args.slugs },
+        async () => {
+          const input = buildShoppingListSchema.parse(args);
+          return buildShoppingList(input.slugs);
         },
       ),
   );

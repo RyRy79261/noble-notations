@@ -197,6 +197,14 @@ export const upsertTaxonomyTermSchema = z.object(upsertTaxonomyTermShape);
 export type UpsertTaxonomyTermArgs = z.input<typeof upsertTaxonomyTermSchema>;
 export type UpsertTaxonomyTermInput = z.infer<typeof upsertTaxonomyTermSchema>;
 
+export const buildShoppingListShape = {
+  /** Recipe slugs to combine. Their *current* revisions are used. */
+  slugs: z.array(z.string().min(1).max(200)).min(1).max(50),
+};
+export const buildShoppingListSchema = z.object(buildShoppingListShape);
+export type BuildShoppingListArgs = z.input<typeof buildShoppingListSchema>;
+export type BuildShoppingListInput = z.infer<typeof buildShoppingListSchema>;
+
 export const taxonomySchema = z
   .partialRecord(
     z.enum(TAXONOMY_FACETS),

@@ -3,6 +3,7 @@ import { listTaxonomy } from '@/lib/queries/read';
 import { safeRead } from '@/lib/safe';
 import { TermTag } from '@/components/tags';
 import { DatabaseNotice } from '@/components/database-notice';
+import { FilterableGroups } from '@/components/filterable-groups';
 import { FACET_LABELS } from '@/lib/site';
 
 export const dynamic = 'force-dynamic';
@@ -37,6 +38,26 @@ export default async function TaxonomyPage() {
     byFacet.set(term.facet, list);
   }
 
+  const groups = [...byFacet.entries()].map(([facet, terms]) => ({
+    key: facet,
+    heading: (
+      <div className="section-head">
+        <h2>{FACET_LABELS[facet] ?? facet}</h2>
+        <span className="faint">{terms.length} terms</span>
+      </div>
+    ),
+    intro: FACET_BLURBS[facet] ? (
+      <p className="faint">{FACET_BLURBS[facet]}</p>
+    ) : undefined,
+    items: terms.map((term) => ({
+      key: term.id,
+      // The blurb is searchable too: "numbing" should find Sichuan even
+      // though the tag itself only says "Sichuan".
+      text: [term.label, facet, term.description ?? ''].join(' '),
+      node: <TermTag key={term.id} term={term} />,
+    })),
+  }));
+
   return (
     <div className="page">
       <header className="hero">
@@ -55,22 +76,12 @@ export default async function TaxonomyPage() {
       ) : byFacet.size === 0 ? (
         <p className="empty">No terms recorded yet.</p>
       ) : (
-        [...byFacet.entries()].map(([facet, terms]) => (
-          <section className="section" key={facet}>
-            <div className="section-head">
-              <h2>{FACET_LABELS[facet] ?? facet}</h2>
-              <span className="faint">{terms.length} terms</span>
-            </div>
-            {FACET_BLURBS[facet] ? (
-              <p className="faint">{FACET_BLURBS[facet]}</p>
-            ) : null}
-            <div className="row">
-              {terms.map((term) => (
-                <TermTag key={term.id} term={term} />
-              ))}
-            </div>
-          </section>
-        ))
+        <FilterableGroups
+          groups={groups}
+          label="Filter taxonomy terms"
+          placeholder="Filter by term, facet or blurb…"
+          countNoun="term"
+        />
       )}
     </div>
   );

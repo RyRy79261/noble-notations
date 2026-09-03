@@ -28,6 +28,13 @@ import {
   taxonomyTerms,
 } from '@/db/schema';
 import { slugify } from '@/lib/domain/slug';
+import {
+  formatAggregate,
+  formatIngredientLine,
+  quantityBucket,
+  type QuantityBucket,
+} from '@/lib/domain/units';
+import { categoryRank } from '@/lib/site';
 import type { SearchRecipesInput, TaxonomyFacet } from '@/lib/domain/schemas';
 
 const n = (v: string | null) => (v == null ? null : Number(v));
@@ -1140,5 +1147,206 @@ export async function getStats(): Promise<{
     terms: Number(row?.terms ?? 0),
     notes: Number(row?.notes ?? 0),
     experiments: Number(row?.experiments ?? 0),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Shopping list
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface ShoppingListEntry {
+  /** Canonical ingredient slug, or null for an unresolved written line. */
+  slug: string | null;
+  name: string;
+  category: string;
+  /** Summed amounts, one per unit bucket that could not be merged. */
+  amounts: string[];
+  /** True when at least one contributing line had no quantity at all. */
+  unquantified: boolean;
+  /** True when every contributing line was marked optional. */
+  optional: boolean;
+  /** Recipes that put this on the list, and what each of them asked for. */
+  from: { slug: string; title: string; text: string }[];
+}
+
+export interface ShoppingListGroup {
+  category: string;
+  entries: ShoppingListEntry[];
+}
+
+export interface ShoppingList {
+  recipes: { slug: string; title: string }[];
+  /** Slugs that were asked for but do not exist. */
+  missing: string[];
+  groups: ShoppingListGroup[];
+  totalEntries: number;
+}
+
+/**
+ * Aggregate the ingredients of several recipes into one shopping list.
+ *
+ * Reads each recipe's *current* revision — a shopping list for a superseded
+ * version is a way to cook last month's mistake.
+ *
+ * Amounts are summed only within a compatible unit bucket (see
+ * `quantityBucket`), so 800 g and 1 kg become 1.8 kg while three cloves and
+ * two heads stay two separate lines. Anything unquantified is carried as a
+ * flag rather than guessed at.
+ */
+export async function buildShoppingList(
+  slugs: string[],
+): Promise<ShoppingList> {
+  const wanted = [...new Set(slugs.map((s) => s.trim()).filter(Boolean))];
+  if (wanted.length === 0) {
+    return { recipes: [], missing: [], groups: [], totalEntries: 0 };
+  }
+
+  const recipeRows = await db
+    .select({
+      slug: recipes.slug,
+      title: recipes.title,
+      revisionId: recipes.currentRevisionId,
+    })
+    .from(recipes)
+    .where(inArray(recipes.slug, wanted));
+
+  const found = recipeRows.filter((r) => r.revisionId !== null);
+  const missing = wanted.filter(
+    (slug) => !recipeRows.some((r) => r.slug === slug),
+  );
+
+  if (found.length === 0) {
+    return {
+      recipes: [],
+      missing,
+      groups: [],
+      totalEntries: 0,
+    };
+  }
+
+  const titleByRevision = new Map(
+    found.map((r) => [r.revisionId!, { slug: r.slug, title: r.title }]),
+  );
+
+  const lines = await db
+    .select({
+      revisionId: recipeIngredients.revisionId,
+      quantity: recipeIngredients.quantity,
+      unit: recipeIngredients.unit,
+      optional: recipeIngredients.optional,
+      rawText: recipeIngredients.rawText,
+      preparation: recipeIngredients.preparation,
+      ingredientSlug: ingredients.slug,
+      ingredientName: ingredients.name,
+      ingredientCategory: ingredients.category,
+    })
+    .from(recipeIngredients)
+    .leftJoin(ingredients, eq(ingredients.id, recipeIngredients.ingredientId))
+    .where(
+      inArray(
+        recipeIngredients.revisionId,
+        found.map((r) => r.revisionId!),
+      ),
+    )
+    .orderBy(recipeIngredients.position);
+
+  interface Accumulator {
+    slug: string | null;
+    name: string;
+    category: string;
+    buckets: Map<string, { bucket: QuantityBucket; amount: number }>;
+    unquantified: boolean;
+    optionalCount: number;
+    lineCount: number;
+    from: { slug: string; title: string; text: string }[];
+  }
+
+  const byIngredient = new Map<string, Accumulator>();
+
+  for (const line of lines) {
+    const source = titleByRevision.get(line.revisionId);
+    if (!source) continue;
+
+    // Unresolved lines still belong on the list — they are things to buy —
+    // so they key on their own text rather than being dropped.
+    const name = line.ingredientName ?? line.rawText;
+    const key = line.ingredientSlug ?? `raw:${name.trim().toLowerCase()}`;
+
+    let entry = byIngredient.get(key);
+    if (!entry) {
+      entry = {
+        slug: line.ingredientSlug,
+        name,
+        category: line.ingredientCategory ?? 'other',
+        buckets: new Map(),
+        unquantified: false,
+        optionalCount: 0,
+        lineCount: 0,
+        from: [],
+      };
+      byIngredient.set(key, entry);
+    }
+
+    entry.lineCount += 1;
+    if (line.optional) entry.optionalCount += 1;
+
+    const quantity = line.quantity == null ? null : Number(line.quantity);
+    if (quantity == null || !Number.isFinite(quantity)) {
+      entry.unquantified = true;
+    } else {
+      const bucket = quantityBucket(line.unit);
+      const existing = entry.buckets.get(bucket.key);
+      const added = quantity * bucket.toBase;
+      if (existing) existing.amount += added;
+      else entry.buckets.set(bucket.key, { bucket, amount: added });
+    }
+
+    entry.from.push({
+      slug: source.slug,
+      title: source.title,
+      text: formatIngredientLine({
+        quantity,
+        unit: line.unit,
+        name,
+        preparation: line.preparation,
+        optional: line.optional,
+      }),
+    });
+  }
+
+  const byCategory = new Map<string, ShoppingListEntry[]>();
+  for (const entry of byIngredient.values()) {
+    const view: ShoppingListEntry = {
+      slug: entry.slug,
+      name: entry.name,
+      category: entry.category,
+      amounts: [...entry.buckets.values()].map(({ bucket, amount }) =>
+        formatAggregate(bucket, amount),
+      ),
+      unquantified: entry.unquantified,
+      optional: entry.optionalCount === entry.lineCount,
+      from: entry.from,
+    };
+    const list = byCategory.get(view.category) ?? [];
+    list.push(view);
+    byCategory.set(view.category, list);
+  }
+
+  const groups = [...byCategory.entries()]
+    .map(([category, entries]) => ({
+      category,
+      entries: entries.sort((a, b) => a.name.localeCompare(b.name)),
+    }))
+    .sort(
+      (a, b) =>
+        categoryRank(a.category) - categoryRank(b.category) ||
+        a.category.localeCompare(b.category),
+    );
+
+  return {
+    recipes: found.map((r) => ({ slug: r.slug, title: r.title })),
+    missing,
+    groups,
+    totalEntries: byIngredient.size,
   };
 }

@@ -202,3 +202,70 @@ export function formatIngredientLine(line: {
   if (line.optional) text += ' (optional)';
   return text;
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Aggregation, for shopping lists
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * The bucket a quantity may be summed within.
+ *
+ * Mass and volume convert freely inside their kind, so 800 g and 1 kg add up
+ * to 1.8 kg. Count units emphatically do not: every one of them carries
+ * `toBase: 1`, but three cloves and two heads are not five of anything.
+ * They therefore bucket per unit, and so does anything unrecognised — a
+ * wrong total on a shopping list is worse than two honest lines.
+ */
+export interface QuantityBucket {
+  kind: UnitKind;
+  /** Buckets that share this key may be summed. */
+  key: string;
+  /** Multiplier into the bucket's base unit. */
+  toBase: number;
+  canonical: string | null;
+}
+
+export function quantityBucket(
+  unit: string | null | undefined,
+): QuantityBucket {
+  const def = unit ? BY_ALIAS.get(unit.trim().toLowerCase()) : null;
+
+  if (def && (def.kind === 'mass' || def.kind === 'volume')) {
+    return {
+      kind: def.kind,
+      key: def.kind,
+      toBase: def.toBase,
+      canonical: def.canonical,
+    };
+  }
+
+  const canonical = def?.canonical ?? (unit ? unit.trim() : null);
+  return {
+    kind: def?.kind ?? (unit ? 'other' : 'count'),
+    key: canonical ? `unit:${canonical.toLowerCase()}` : 'unitless',
+    toBase: 1,
+    canonical,
+  };
+}
+
+/**
+ * Render a summed amount back into the unit a person would shop in: grams
+ * until a kilogram is reached, millilitres until a litre.
+ */
+export function formatAggregate(
+  bucket: QuantityBucket,
+  amount: number,
+): string {
+  if (bucket.kind === 'mass') {
+    return amount >= 1000
+      ? `${trimNumber(Math.round((amount / 1000) * 100) / 100)} kg`
+      : `${trimNumber(Math.round(amount * 10) / 10)} g`;
+  }
+  if (bucket.kind === 'volume') {
+    return amount >= 1000
+      ? `${trimNumber(Math.round((amount / 1000) * 100) / 100)} l`
+      : `${trimNumber(Math.round(amount * 10) / 10)} ml`;
+  }
+  const value = trimNumber(Math.round(amount * 100) / 100);
+  return bucket.canonical ? `${value} ${bucket.canonical}` : value;
+}

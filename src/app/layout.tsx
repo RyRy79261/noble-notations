@@ -34,6 +34,7 @@ const NAV = [
   { href: '/cuisines', label: 'Cuisines' },
   { href: '/taxonomy', label: 'Taxonomy' },
   { href: '/ingredients', label: 'Ingredients' },
+  { href: '/shopping-list', label: 'Shopping' },
   { href: '/experiments', label: 'Experiments' },
   { href: '/archive', label: 'Archive' },
   { href: '/search', label: 'Search' },

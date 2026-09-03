@@ -31,6 +31,55 @@ export const FACET_LABELS: Record<string, string> = {
   ingredient_class: 'Ingredient class',
 };
 
+/**
+ * Ingredient categories, in the order a shop is walked rather than
+ * alphabetically: fresh things first, cupboard staples last. A shopping
+ * list sorted A–Z sends you back and forth across the shop.
+ */
+export const CATEGORY_ORDER = [
+  'produce',
+  'protein',
+  'dairy',
+  'fungus',
+  'herb',
+  'grain',
+  'legume',
+  'spice',
+  'condiment',
+  'fat',
+  'acid',
+  'sweetener',
+  'liquid',
+  'alcohol',
+  'additive',
+  'other',
+] as const;
+
+export const CATEGORY_LABELS: Record<string, string> = {
+  produce: 'Produce',
+  protein: 'Meat & protein',
+  dairy: 'Dairy',
+  fungus: 'Mushrooms',
+  herb: 'Fresh herbs',
+  grain: 'Grains & flour',
+  legume: 'Legumes',
+  spice: 'Spices',
+  condiment: 'Sauces & condiments',
+  fat: 'Fats & oils',
+  acid: 'Vinegars & acids',
+  sweetener: 'Sweeteners',
+  liquid: 'Liquids',
+  alcohol: 'Alcohol',
+  additive: 'Additives',
+  other: 'Other',
+};
+
+/** Sort key for a category; unknown categories sort last, then A–Z. */
+export function categoryRank(category: string): number {
+  const index = (CATEGORY_ORDER as readonly string[]).indexOf(category);
+  return index === -1 ? CATEGORY_ORDER.length : index;
+}
+
 export const KIND_LABELS: Record<string, string> = {
   recipe: 'Recipe',
   preparation: 'Preparation',
