@@ -1,7 +1,12 @@
 name: CI
 
 # Regression gate: every push and PR must format-check, lint, typecheck,
-# and produce a clean production build (broken links fail the build).
+# produce a clean production build, and pass the end-to-end suite.
+#
+# The `quality` job deliberately needs no database — every DB-backed page
+# degrades to a notice when DATABASE_URL is unset, and the build's migration
+# step skips itself. The `e2e` job does need one, and brings its own
+# throwaway Postgres service rather than touching Neon.
 on:
   push:
     branches: [main]
@@ -26,7 +31,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
 
       - name: Install dependencies
@@ -43,3 +48,59 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+  e2e:
+    name: End-to-end
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: noble_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # global-setup drops and rebuilds this database on every run, so it
+      # must never point at anything but the throwaway service above.
+      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/noble_test
+      MCP_PUBLIC_URL: http://127.0.0.1:3100
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # No PLAYWRIGHT_CHROMIUM_PATH here: Playwright resolves the browser it
+      # installed itself. That variable exists for sandboxes whose preloaded
+      # Chromium is a different revision.
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run end-to-end tests
+        run: pnpm test:e2e
+
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            e2e/.results/
+          retention-days: 7

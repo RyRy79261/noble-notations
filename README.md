@@ -1,67 +1,62 @@
 # Noble Notations
 
-This repository is my digital playground for:
+A structured repository of recipes, ingredients, techniques and batch logs.
 
-- Taking notes on food and culinary experiments
-- Tinkering with AI and exploring its applications
-- Logging recipes and cooking techniques
-- Any other note-taking that, for some reason, requires a code editor
+Every recipe is versioned. Its ingredients and steps belong to an immutable
+revision, and each revision records _why_ it exists — so a dish gets refined
+across revisions instead of being re-derived from scratch every time somebody
+asks for it. That is the entire point: the history of how something got good
+is the most valuable part of it.
 
-## About
+Live at **[noble-notations.ryanjnoble.dev](https://noble-notations.ryanjnoble.dev)**.
 
-Noble Notations is built using [Docusaurus](https://docusaurus.io/), a modern static website generator. This setup allows me to easily organize and present my notes, recipes, and experiments in a structured and accessible manner.
+## What is in here
 
-### Key Features
+- **Taxonomy** — faceted classification: cuisine, course, technique, diet,
+  season, equipment, occasion, preservation, texture, ingredient class.
+- **Ingredients** — a canonical list with aliases, densities and substitutes,
+  separate from the per-recipe lines that reference it. "Everything I have
+  made with gochujang" is a query, not a memory exercise.
+- **Process** — ordered, phased steps carrying duration, temperature,
+  equipment, and the ingredients each step consumes.
+- **Notes** — typed annotations with citable sources: observations, research,
+  substitutions, warnings, results, ideas, corrections.
+- **Experiments** — recorded runs with per-item measurements. Six years of
+  biltong batches live here.
 
-- **Food Notes**: Detailed observations and learnings from culinary adventures
-- **AI Experiments**: Documentation of AI-related projects and insights
-- **Recipe Logs**: A collection of recipes, both traditional and experimental
-- **Miscellaneous Notes**: Various topics that benefit from a code-editor environment
+## The MCP connector
 
-## Getting Started
+The repository speaks the Model Context Protocol. Connected to a Claude
+project, a conversation can search what is already recorded and append
+revisions directly — so a refinement worked out in chat lands here instead of
+evaporating.
 
-To explore or contribute to this project, follow these steps:
+Endpoint: `https://noble-notations.ryanjnoble.dev/api/mcp/mcp`
 
-### Installation
+See [`docs/mcp-connector.md`](./docs/mcp-connector.md) for the design and
+[`/connect`](https://noble-notations.ryanjnoble.dev/connect) for setup.
 
+## The archive
+
+Everything that predates the database is preserved verbatim under
+[`content/`](./content) — those files are the provenance record the
+structured rows were derived from. In the other direction, `pnpm export`
+writes every recipe and revision back out to `content/generated/`, so the
+repository always holds a readable, diffable copy of the data.
+
+## Running it
+
+```bash
+pnpm install
+cp .env.example .env.local     # fill in DATABASE_URL
+
+pnpm db:migrate                # apply migrations
+pnpm ingest                    # load the archive
+pnpm dev
 ```
-$ pnpm install
-```
 
-### Local Development
+A `*.neon.tech` connection string uses Neon's serverless drivers; anything
+else uses node-postgres, so a local Postgres works for development.
 
-```
-$ pnpm start
-```
-
-This command starts a local development server and opens up a browser window. Most changes are reflected live without having to restart the server.
-
-### Build
-
-```
-$ pnpm build
-```
-
-This command generates static content into the `build` directory and can be served using any static contents hosting service.
-
-### Quality checks
-
-```
-$ pnpm format        # apply Prettier formatting
-$ pnpm lint          # ESLint
-$ pnpm typecheck     # TypeScript, no emit
-```
-
-GitHub Actions (`.github/workflows/ci.yml`) runs format check, lint,
-typecheck, and a production build on every push and pull request.
-
-### Deployment
-
-Deployment is handled automatically by [Vercel](https://vercel.com/) —
-pushes to `main` are built and published using the settings in
-`vercel.json`. No manual deploy step is required.
-
-## Contributing
-
-See [`AGENTS.md`](./AGENTS.md) for conventions, repository layout, and the
-quality gates contributors (human or AI) are expected to follow.
+Contributor conventions, the data model and the quality gates are in
+[`AGENTS.md`](./AGENTS.md).

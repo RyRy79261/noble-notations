@@ -1,7 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "docusaurus-2",
+  "framework": "nextjs",
   "buildCommand": "pnpm build",
-  "outputDirectory": "build",
   "installCommand": "pnpm install --frozen-lockfile"
 }
