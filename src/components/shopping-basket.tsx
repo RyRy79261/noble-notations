@@ -79,9 +79,7 @@ function useBasket() {
     write(read().filter((item) => item.slug !== slug));
   }, []);
 
-  const clear = useCallback(() => write([]), []);
-
-  return { items, ready, add, remove, clear };
+  return { items, ready, add, remove };
 }
 
 export function basketHref(items: BasketRecipe[]): string {
@@ -111,94 +109,40 @@ export function AddToBasket({ slug, title }: BasketRecipe) {
   );
 }
 
-/** Header control: opens the basket, shows how much is in it. */
+/**
+ * Header control: how many recipes are collected, and the way to the list.
+ *
+ * This used to open a dialog listing the collected *recipes*, under the
+ * heading "Shopping list". Opening something called a shopping list and
+ * finding recipe titles with remove buttons is not a shopping list, and the
+ * actual list was another click away behind "Build the list". So the
+ * control is now a link straight to it. One tap, ingredients.
+ *
+ * It also lives outside the nav. The nav scrolls sideways on a phone and
+ * this was its last child, which put it several hundred pixels off the
+ * right edge of a 390px screen — present in the DOM, reachable by a
+ * sideways drag nobody would guess to make.
+ */
 export function BasketButton() {
-  const { items, ready, remove, clear } = useBasket();
-  const [open, setOpen] = useState(false);
-
-  // Escape closes it, because a dialog that traps you is worse than none.
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open]);
+  const { items, ready } = useBasket();
 
   if (!ready || items.length === 0) return null;
 
   return (
-    <>
-      <button
-        type="button"
-        className="basket-button"
-        onClick={() => setOpen(true)}
-        aria-haspopup="dialog"
-      >
-        Shopping list <span className="basket-count">{items.length}</span>
-      </button>
-
-      {open ? (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) setOpen(false);
-          }}
-        >
-          <div
-            className="modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="basket-title"
-          >
-            <div className="section-head">
-              <h2 id="basket-title">Shopping list</h2>
-              <button
-                type="button"
-                className="button-secondary"
-                onClick={() => setOpen(false)}
-              >
-                Close
-              </button>
-            </div>
-
-            <ul className="basket-list">
-              {items.map((item) => (
-                <li key={item.slug}>
-                  <Link href={`/recipes/${item.slug}`}>{item.title}</Link>
-                  <button
-                    type="button"
-                    className="basket-remove"
-                    onClick={() => remove(item.slug)}
-                    aria-label={`Remove ${item.title}`}
-                  >
-                    ×
-                  </button>
-                </li>
-              ))}
-            </ul>
-
-            <div className="modal-actions">
-              <Link
-                href={basketHref(items)}
-                className="button-primary"
-                onClick={() => setOpen(false)}
-              >
-                Build the list
-              </Link>
-              <button
-                type="button"
-                className="button-secondary"
-                onClick={clear}
-              >
-                Clear
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-    </>
+    <Link href={basketHref(items)} className="basket-button">
+      Shopping list <span className="basket-count">{items.length}</span>
+    </Link>
   );
+}
+
+/**
+ * Replace the basket wholesale.
+ *
+ * The shopping list page drives its selection from the URL, so changing the
+ * recipes there has to write back here — otherwise the header count keeps
+ * counting recipes the list no longer contains, and the basket only ever
+ * grows.
+ */
+export function setBasket(items: BasketRecipe[]): void {
+  write(items);
 }

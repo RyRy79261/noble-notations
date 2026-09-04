@@ -22,13 +22,45 @@ import type { IngredientLineView } from '@/lib/queries/read';
  * Ticks persist per revision in localStorage. Per *revision* deliberately:
  * a recipe that gains an ingredient should not show it pre-ticked because
  * something with the same name was ticked in an older version.
+ *
+ * Scaling multiplies the amounts in place rather than writing a new
+ * revision. Cooking half a batch is not a change to the recipe, and a
+ * revision per batch size would bury the revisions that say something.
+ * It is deliberately not persisted: the scale you used last week is not a
+ * safe default for a recipe you are reading today, and the recipe's own
+ * quantities are what the page should say when you arrive.
  */
+
+/** The scales worth a button. Anything else goes in the box beside them. */
+const SCALE_PRESETS = [0.5, 1, 2, 3];
+
+/**
+ * Round a scaled amount to something you can measure.
+ *
+ * At ×1 the value is returned untouched. The rounding is there to stop a
+ * scaled amount reading as 138.49999999999997, and applying it to an
+ * unscaled one silently rewrites the recipe: 138.5 g of salt became
+ * "139 g" on a page that had not been scaled at all. What the recipe says
+ * is what the page says until someone asks for a different batch.
+ */
+function scaleAmount(value: number, scale: number): number {
+  if (scale === 1) return value;
+  const scaled = value * scale;
+  if (scaled >= 100) return Math.round(scaled);
+  if (scaled >= 10) return Math.round(scaled * 10) / 10;
+  return Math.round(scaled * 1000) / 1000;
+}
 function storageKey(slug: string, revisionNumber: number): string {
   return `nn:checked:${slug}:${revisionNumber}`;
 }
 
-function Amount({ line }: { line: IngredientLineView }) {
-  const amount = formatQuantity(line.quantity, line.quantityMax);
+function Amount({ line, scale }: { line: IngredientLineView; scale: number }) {
+  const amount = formatQuantity(
+    line.quantity == null ? line.quantity : scaleAmount(line.quantity, scale),
+    line.quantityMax == null
+      ? line.quantityMax
+      : scaleAmount(line.quantityMax, scale),
+  );
   if (!amount) return <span className="amount" />;
   return (
     <span className="amount">
@@ -42,12 +74,17 @@ export function IngredientChecklist({
   slug,
   revisionNumber,
   lines,
+  yieldQuantity,
+  yieldUnit,
 }: {
   slug: string;
   revisionNumber: number;
   lines: IngredientLineView[];
+  yieldQuantity?: number | null;
+  yieldUnit?: string | null;
 }) {
   const [byShop, setByShop] = useState(true);
+  const [scale, setScale] = useState(1);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [ready, setReady] = useState(false);
 
@@ -151,6 +188,50 @@ export function IngredientChecklist({
         </span>
       </div>
 
+      <div className="scale-bar">
+        <span className="scale-label" id="scale-label">
+          Batch
+        </span>
+        <div
+          className="checklist-toggle"
+          role="group"
+          aria-labelledby="scale-label"
+        >
+          {SCALE_PRESETS.map((preset) => (
+            <button
+              key={preset}
+              type="button"
+              onClick={() => setScale(preset)}
+              aria-pressed={scale === preset}
+            >
+              ×{preset}
+            </button>
+          ))}
+        </div>
+        <label className="scale-custom">
+          <span className="visually-hidden">Custom multiplier</span>
+          <input
+            type="number"
+            min="0.1"
+            max="100"
+            step="0.1"
+            value={scale}
+            onChange={(event) => {
+              const next = Number(event.target.value);
+              // An empty or nonsense box should not blank every amount on
+              // the page; hold the last usable scale until a real one lands.
+              if (Number.isFinite(next) && next > 0) setScale(next);
+            }}
+          />
+        </label>
+        {scale !== 1 && yieldQuantity != null ? (
+          <span className="faint scale-yield">
+            makes {formatQuantity(scaleAmount(yieldQuantity, scale))}
+            {yieldUnit ? ` ${yieldUnit}` : ''}
+          </span>
+        ) : null}
+      </div>
+
       {groups.map((group) => (
         <div className="ingredient-group" key={group.key}>
           {group.label ? <h4>{group.label}</h4> : null}
@@ -168,7 +249,7 @@ export function IngredientChecklist({
                       aria-label={label}
                     />
                   </label>
-                  <Amount line={line} />
+                  <Amount line={line} scale={scale} />
                   <span className="what">
                     {line.ingredient ? (
                       <Link href={`/ingredients/${line.ingredient.slug}`}>

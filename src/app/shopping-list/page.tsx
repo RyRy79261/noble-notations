@@ -1,12 +1,10 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { Suspense } from 'react';
 import { buildShoppingList, listRecipes } from '@/lib/queries/read';
 import { safeRead } from '@/lib/safe';
 import { DatabaseNotice } from '@/components/database-notice';
-import { FilterableGroups } from '@/components/filterable-groups';
+import { ShoppingChecklist } from '@/components/shopping-checklist';
 import { RecipePicker } from './recipe-picker';
-import { CATEGORY_LABELS } from '@/lib/site';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,56 +44,20 @@ export default async function ShoppingListPage({
 
   const list = listResult.data;
 
+  // Plain data, not JSX: the list is ticked client-side, and a server
+  // component cannot hand a click handler across the boundary.
   const groups = (list?.groups ?? []).map((group) => ({
-    key: group.category,
-    heading: (
-      <div className="section-head">
-        <h2>{CATEGORY_LABELS[group.category] ?? group.category}</h2>
-        <span className="faint">{group.entries.length}</span>
-      </div>
-    ),
-    items: group.entries.map((entry) => ({
+    category: group.category,
+    entries: group.entries.map((entry) => ({
       key: entry.slug ?? entry.name,
-      // Everything worth searching, including the recipes that put it here
-      // and its category — those are not all visible on the row itself.
-      text: [
-        entry.name,
-        entry.category,
-        CATEGORY_LABELS[entry.category] ?? '',
-        ...entry.from.map((from) => from.title),
-      ].join(' '),
-      node: (
-        <li key={entry.slug ?? entry.name} className="shopping-item">
-          <div className="shopping-amount">
-            {entry.amounts.length > 0 ? entry.amounts.join(' + ') : null}
-            {entry.unquantified ? (
-              <span className="faint">
-                {entry.amounts.length > 0 ? ' + some' : 'some'}
-              </span>
-            ) : null}
-          </div>
-          <div className="shopping-what">
-            {entry.slug ? (
-              <Link href={`/ingredients/${entry.slug}`}>{entry.name}</Link>
-            ) : (
-              <span>{entry.name}</span>
-            )}
-            {entry.optional ? <span className="badge">optional</span> : null}
-            <div className="faint shopping-from">
-              {entry.from.map((from, index) => (
-                <span key={`${from.slug}-${index}`}>
-                  {index > 0 ? ' · ' : ''}
-                  <Link href={`/recipes/${from.slug}`}>{from.title}</Link>{' '}
-                  <span title={from.text}>({from.text})</span>
-                </span>
-              ))}
-            </div>
-          </div>
-        </li>
-      ),
+      slug: entry.slug,
+      name: entry.name,
+      category: entry.category,
+      amounts: entry.amounts,
+      unquantified: entry.unquantified,
+      optional: entry.optional,
+      from: entry.from,
     })),
-    layout: 'list' as const,
-    listClassName: 'shopping-list',
   }));
 
   return (
@@ -138,12 +100,7 @@ export default async function ShoppingListPage({
             {list!.recipes.length} recipe
             {list!.recipes.length === 1 ? '' : 's'}.
           </p>
-          <FilterableGroups
-            groups={groups}
-            label="Filter the shopping list"
-            placeholder="Filter by ingredient, shop area or recipe…"
-            countNoun="ingredient"
-          />
+          <ShoppingChecklist groups={groups} selection={selected} />
         </>
       )}
     </div>

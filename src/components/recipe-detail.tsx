@@ -165,6 +165,8 @@ export function RecipeDetail({
                   slug={recipe.slug}
                   revisionNumber={rev.revisionNumber}
                   lines={recipe.ingredients}
+                  yieldQuantity={rev.yieldQuantity}
+                  yieldUnit={rev.yieldUnit}
                 />
                 <div className="basket-cta">
                   <AddToBasket slug={recipe.slug} title={recipe.title} />

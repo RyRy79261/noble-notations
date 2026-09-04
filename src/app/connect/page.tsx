@@ -6,6 +6,10 @@ export const metadata: Metadata = {
   description:
     'Connect a Claude project to this repository so it can search recipes and append revisions directly.',
   alternates: { canonical: '/connect' },
+  // Reachable, but not advertised. `ALLOWED_EMAILS` means one person can
+  // approve a connector, so a search result for this page can only ever
+  // send someone to a 403. It stays linked from the footer for that person.
+  robots: { index: false, follow: true },
 };
 
 export default function ConnectPage() {

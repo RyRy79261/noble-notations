@@ -25,6 +25,31 @@ for (const route of ROUTES) {
   });
 }
 
+test('the connector is in the footer and nowhere louder', async ({ page }) => {
+  // One person can approve a connector, so the home page should not sell it
+  // to readers. It stays reachable from the footer for that person.
+  await page.goto('/');
+
+  await expect(page.locator('.site-footer a[href="/connect"]')).toBeVisible();
+  await expect(page.locator('main a[href="/connect"]')).toHaveCount(0);
+});
+
+test('the connector page is reachable but not indexed', async ({ page }) => {
+  const response = await page.goto('/connect');
+  expect(response?.status()).toBe(200);
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute(
+    'content',
+    /noindex/,
+  );
+});
+
+test('the sitemap does not list the connector page', async ({ request }) => {
+  // A noindex page in a sitemap is a contradiction crawlers report as an error.
+  const body = await (await request.get('/sitemap.xml')).text();
+  expect(body).toContain('/recipes');
+  expect(body).not.toContain('/connect');
+});
+
 test('search narrows by ingredient with no free text', async ({ page }) => {
   // The regression that shipped broken: with no query term the ranking
   // expression collapsed to `ORDER BY 0`, which Postgres reads as an

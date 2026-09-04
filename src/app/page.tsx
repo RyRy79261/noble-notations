@@ -43,9 +43,6 @@ export default async function HomePage() {
           <Link href="/search" className="button-primary">
             Search the repository
           </Link>
-          <Link href="/connect" className="button-secondary">
-            Connect via MCP
-          </Link>
         </div>
       </header>
 
@@ -125,9 +122,9 @@ export default async function HomePage() {
           <article className="card">
             <h3>Written to by an agent</h3>
             <p>
-              An <Link href="/connect">MCP connector</Link> lets a Claude
-              conversation search this store and add versions to it. An
-              improvement that you make in a chat comes here. It is not lost.
+              An MCP connector lets a Claude conversation search this store and
+              add versions to it. An improvement that you make in a chat comes
+              here. It is not lost.
             </p>
           </article>
           <article className="card">
