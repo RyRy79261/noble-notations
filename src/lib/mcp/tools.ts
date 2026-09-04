@@ -25,6 +25,8 @@ import {
   logExperimentShape,
   reviseRecipeSchema,
   reviseRecipeShape,
+  backfillRevisionSchema,
+  backfillRevisionShape,
   buildShoppingListSchema,
   buildShoppingListShape,
   searchRecipesSchema,
@@ -54,6 +56,7 @@ import {
   logExperiment,
   NotFoundError,
   reviseRecipe,
+  backfillRevision,
   upsertIngredient,
   upsertCategory,
 } from '@/lib/queries/write';
@@ -474,6 +477,48 @@ export function registerTools(server: McpServer): void {
             ...result,
             url: `/recipes/${result.slug}`,
             message: `Revision ${result.revisionNumber} created.`,
+          };
+        },
+      ),
+  );
+
+  server.registerTool(
+    'backfill_revision',
+    {
+      title: 'Backfill an earlier revision',
+      description:
+        'Record a version of a recipe that existed BEFORE everything already ' +
+        'stored. This is for history you are writing down late — an older ' +
+        'version found in a notebook, a photo, or an earlier conversation — ' +
+        'not for changing a recipe. To change a recipe, use revise_recipe.\n\n' +
+        '`occurredAt` must be earlier than every revision already recorded, ' +
+        'and the call is refused if it is not. The recipe a reader sees does ' +
+        'not change: the current revision stays exactly where it was.\n\n' +
+        '`ingredients` is required, and `steps` should be sent whenever the ' +
+        'old version had any. Unlike revise_recipe nothing carries forward, ' +
+        'because carrying a later version backwards would invent a history ' +
+        'that never happened. Send what that version actually was; leave out ' +
+        'what you do not know.\n\n' +
+        '`rationale` should say what this version was and how you know — ' +
+        '"the batch-two dredge, from the photo of the notebook page" — since ' +
+        'a version recorded years late is only worth having with its source.',
+      inputSchema: backfillRevisionShape,
+    },
+    async (args, extra) =>
+      runTool(
+        extra as AuthCtx,
+        'backfill_revision',
+        { slug: args.slug, occurredAt: args.occurredAt },
+        async (principal) => {
+          requireWrite(principal);
+          const input = backfillRevisionSchema.parse(args);
+          const result = await backfillRevision(input, 'mcp');
+          return {
+            ...result,
+            url: `/recipes/${result.slug}/revisions/${result.revisionNumber}`,
+            message:
+              `Recorded as revision ${result.revisionNumber}, placed in the ` +
+              `history at ${input.occurredAt}. The current revision did not move.`,
           };
         },
       ),

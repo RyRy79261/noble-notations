@@ -26,7 +26,12 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   return {
     title: recipe.title,
     description,
-    alternates: { canonical },
+    alternates: {
+      canonical,
+      // Advertise the Markdown twin, so a reader that wants the recipe
+      // without the page around it does not have to guess the address.
+      types: { 'text/markdown': `${canonical}.md` },
+    },
     keywords: recipe.terms.map((term) => term.label),
     openGraph: {
       type: 'article',

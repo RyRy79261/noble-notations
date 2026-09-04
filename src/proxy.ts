@@ -16,10 +16,15 @@
  *
  * Scope is deliberately tiny. Nothing on this site is behind a login: the
  * recipes are public and the MCP endpoints authenticate with bearer tokens.
- * This file exists for the exchange alone, so it runs on the two auth
- * paths and nowhere else — a wider matcher would start redirecting
- * anonymous readers, and `/api/mcp/*` must stay reachable without a browser
- * session.
+ * The auth exchange runs on the two auth paths and nowhere else — a wider
+ * matcher would start redirecting anonymous readers, and `/api/mcp/*` must
+ * stay reachable without a browser session.
+ *
+ * One more path is matched, and it never reaches the auth code: a recipe
+ * URL. `/recipes/<slug>.md` is the address an agent guesses for the plain
+ * text of a page, and a route handler cannot claim a segment that a page
+ * already owns, so the suffix is rewritten here to the handler's own path.
+ * Every other recipe URL passes straight through.
  *
  * `loginUrl` stays pointed at the sign-in page, which makes
  * `processAuthMiddleware` early-return `allow` for anything at or under
@@ -30,17 +35,29 @@
  * statically analyses `config.matcher` at build time and silently ignores
  * anything it cannot evaluate, imported constants included.
  */
-import type { NextRequest } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
 import { auth } from '@/lib/neon-auth';
 import { SIGN_IN_PATH } from '@/lib/auth-routes';
 
 const neonAuthMiddleware = auth.middleware({ loginUrl: SIGN_IN_PATH });
 
+const MARKDOWN_SUFFIX = '.md';
+
 export default function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  if (pathname.startsWith('/recipes/')) {
+    if (!pathname.endsWith(MARKDOWN_SUFFIX)) return NextResponse.next();
+    const url = request.nextUrl.clone();
+    url.pathname = `${pathname.slice(0, -MARKDOWN_SUFFIX.length)}/md`;
+    return NextResponse.rewrite(url);
+  }
+
   return neonAuthMiddleware(request);
 }
 
 export const config = {
-  // Keep in sync with SIGN_IN_PATH and OAUTH_RETURN_PATH.
-  matcher: ['/auth', '/oauth-return'],
+  // Keep in sync with SIGN_IN_PATH and OAUTH_RETURN_PATH. Written out as
+  // string literals: Next.js statically analyses this array at build time.
+  matcher: ['/auth', '/oauth-return', '/recipes/:slug'],
 };

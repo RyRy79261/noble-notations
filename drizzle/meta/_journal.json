@@ -29,6 +29,13 @@
       "when": 1788455208639,
       "tag": "0003_science_note_kind",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788531244955,
+      "tag": "0004_revision_occurred_at",
+      "breakpoints": true
     }
   ]
 }

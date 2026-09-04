@@ -316,6 +316,22 @@ export const recipeRevisions = pgTable(
     totalTimeMinutes: integer('total_time_minutes'),
     activeTimeMinutes: integer('active_time_minutes'),
     source: revisionSource('source').notNull().default('human'),
+    /**
+     * When this version of the recipe actually existed, if that is not when
+     * the row was written.
+     *
+     * Revision numbers are dense, 1-based and permanent — they are in URLs
+     * and in the localStorage keys that remember ticked ingredients — so an
+     * older version discovered later cannot be given a lower number without
+     * rewriting what the existing numbers mean. It gets the next number
+     * like everything else, and this column says where it belongs in the
+     * history.
+     *
+     * NULL means "when it was written", which is the ordinary case. A value
+     * here therefore also marks the revision as one recorded after the
+     * fact; history is ordered by COALESCE(occurred_at, created_at).
+     */
+    occurredAt: timestamp('occurred_at', { withTimezone: true }),
     createdAt: now(),
   },
   (t) => [
