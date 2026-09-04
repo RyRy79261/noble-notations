@@ -15,6 +15,11 @@ export const dynamic = 'force-dynamic';
  * The sitemap is generated per request rather than at build time: recipes
  * arrive through the MCP connector between deploys, and a build-time sitemap
  * would go stale the moment one did.
+ *
+ * `/connect` is deliberately absent. It is noindex — only one address can
+ * approve a connector, so a search result for it leads to a 403 for
+ * everyone else — and listing a noindex page in a sitemap is a
+ * contradiction that crawlers report as an error.
  */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const [recipes, taxonomy, ingredients, experiments, archive] =
@@ -47,7 +52,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     },
     { url: `${site.url}/archive`, changeFrequency: 'yearly', priority: 0.4 },
     { url: `${site.url}/search`, changeFrequency: 'yearly', priority: 0.3 },
-    { url: `${site.url}/connect`, changeFrequency: 'yearly', priority: 0.3 },
   ];
 
   return [
