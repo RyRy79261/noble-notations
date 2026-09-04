@@ -49,7 +49,7 @@ pnpm export             # write the database back out to content/generated/
 content/                  frozen Markdown archive (provenance; see its README)
   generated/              machine-written export from the database
 drizzle/                  committed SQL migrations
-scripts/                  migrate, ingest, export, password hashing
+scripts/                  migrate, ingest, export, token minting
 src/
   app/                    App Router pages, metadata, OG images
     api/mcp/              the MCP endpoint and its OAuth 2.1 + DCR stack
@@ -64,9 +64,11 @@ docs/mcp-connector.md     connector design reference and its gotchas
 
 ## The four systems
 
-1. **Taxonomy** — faceted, hierarchical terms. Terms never cross facets, so
-   "smoking" the technique and "smoking" the preservation method stay
-   distinct.
+1. **Categories** — tags grouped by category type, each with a plain-English
+   explanation and an optional parent. A tag never crosses category types,
+   so "air-drying" the technique and "air-drying" the preservation method
+   are two tags with two different explanations. The database columns still
+   say `taxonomy_terms.facet`; the mapping happens at the query boundary.
 2. **Ingredients** — a canonical list, separate from the per-recipe lines
    that reference it. This is what makes referential queries possible.
 3. **Process** — ordered, phased steps with duration, temperature, equipment
@@ -129,26 +131,34 @@ database is unreachable or a migration errors. It applies schema only.
 Migrations run on every build; the archive does not. A build must not
 decide on its own to write rows to the database it is deploying against.
 So `pnpm build` also runs `pnpm ingest:deploy`, which does nothing unless
-that deployment asked for it. Two ways to ask:
+that deployment asked for it. Three ways to ask:
 
-| Ask                                                         | Fits                                                                       |
-| ----------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `[ingest]` anywhere in the commit message                   | A pull request. Nothing in the project settings changes.                   |
-| `INGEST_ON_DEPLOY` set to anything but `0`, `false` or `no` | A one-off production run from the Vercel dashboard, or one preview branch. |
+| Ask                                                         | Fits                                                                                         |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| A `.ingest-request` file at the repository root             | A pull request. Nothing in the project settings changes.                                     |
+| `INGEST_ON_DEPLOY` set to anything but `0`, `false` or `no` | A one-off production run from the Vercel dashboard, or one preview branch.                   |
+| `[ingest]` in the commit message                            | Only where the project exposes system environment variables to the build. Do not rely on it. |
 
 To load the archive from a pull request:
 
-1. Commit to a branch with `[ingest]` in the message.
-2. Push. Vercel builds the preview.
+1. Write a `.ingest-request` file. Put the reason in it — the build prints
+   what it says.
+2. Push the branch. Vercel builds the preview.
 3. Read the build log. The ingest prints every row it creates or skips.
-4. Close the branch, or drop the marker before merging.
+4. Delete the file before merging, or the load repeats on every build.
 
-Two things to know before doing this. A preview build writes to whatever
-`DATABASE_URL` the Preview environment holds, and that is the production
-database unless the project sets a different one per environment — so
-treat a marked preview as a write to production. And the ingest is
-idempotent but not free: it re-runs on every build that carries the
-marker, so a marker merged into `main` keeps firing.
+The file is the one signal that does not depend on Vercel's build
+environment. The commit-message marker was tried first and never arrived:
+`VERCEL_GIT_COMMIT_MESSAGE` reaches a build only when the project exposes
+system environment variables, and what it exposes can be truncated. When
+the archive is not loaded, the build log names all three signals and says
+what it found for each.
+
+Two things to know before doing this. A preview build carries the Preview
+environment's `DATABASE_URL`, and unless the project sets a different one
+per environment that is the production database — so treat a marked
+preview as a write to production. And the ingest is idempotent but not
+free: it re-runs on every build that still carries the marker.
 
 The deploy path never passes `--force`. It adds what is missing. Adding
 revisions to recipes that already exist stays a manual `pnpm ingest

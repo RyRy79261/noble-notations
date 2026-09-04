@@ -5,6 +5,8 @@
  *   pnpm ingest --force         # add revisions to recipes that already exist
  *   pnpm ingest --if-requested  # run only when a deployment asks for it
  *
+ * A deployment asks by committing a `.ingest-request` file; see below.
+ *
  * Idempotent by default: running it twice does not duplicate anything, so it
  * is safe to run against a database that already has content. The seed data
  * lives in ./seed-data.ts, hand-derived from content/ — see the note at the
@@ -14,41 +16,77 @@
  * because a build must not decide on its own to write to the database it is
  * deploying against.
  */
+import { readFileSync } from 'node:fs';
 import { loadEnv } from './env';
 
 loadEnv();
 
 /**
- * Report why this deployment wants the archive loaded, or null if it does not.
+ * A file on the branch is the primary way to ask for the archive.
  *
- * There are two ways to ask because they suit different moments.
- * `INGEST_ON_DEPLOY` is a project setting: it survives every build, so it
- * fits a one-off production run started from the Vercel dashboard, and it
- * can be scoped to one preview branch. The commit marker fits a pull
- * request — put `[ingest]` in the message, let that deployment's build run
- * it, and no project setting changes at all.
+ * The obvious alternative — `[ingest]` in the commit message — was tried
+ * first and did not survive contact with a real deployment: the marker
+ * never reached the build. VERCEL_GIT_COMMIT_MESSAGE only appears in the
+ * build environment when the project exposes system environment
+ * variables, and what it exposes can be truncated, so a marker in a long
+ * message depends on two things outside this repository.
  *
- * Neither can pass `--force`. A build may add what is missing; rewriting
- * history is a decision for a person at a terminal.
+ * A committed file needs neither. It is in the checkout by definition, it
+ * shows up in the diff of the pull request that asks for the load, and
+ * deleting it is how you stop asking. The commit-message route is still
+ * honoured for anyone whose project does expose it.
+ */
+const MARKER_FILE = '.ingest-request';
+
+/**
+ * Report why this deployment wants the archive loaded, or null if it does
+ * not, and say what was checked either way. A build that silently declines
+ * to do the one thing it was pushed for is worse than no feature.
+ *
+ * None of these routes can pass `--force`. A build may add what is
+ * missing; rewriting history is a decision for a person at a terminal.
  */
 function ingestRequest(): string | null {
+  let marker: string | null = null;
+  try {
+    marker = readFileSync(MARKER_FILE, 'utf8').trim();
+  } catch {
+    // Absent — the normal case.
+  }
+  if (marker !== null) {
+    // The file holds a prose reason over several lines; the log wants one.
+    const reason = marker.replace(/\s+/g, ' ').slice(0, 200);
+    return reason ? `${MARKER_FILE} says: ${reason}` : `${MARKER_FILE} exists`;
+  }
+
   const flag = (process.env.INGEST_ON_DEPLOY ?? '').trim().toLowerCase();
   if (flag && flag !== '0' && flag !== 'false' && flag !== 'no') {
     return 'INGEST_ON_DEPLOY is set';
   }
+
   if (/\[ingest\]/i.test(process.env.VERCEL_GIT_COMMIT_MESSAGE ?? '')) {
     return 'the commit message contains [ingest]';
   }
+
+  console.log('No deployment asked for the archive — skipping ingest.');
+  console.log(`  ${MARKER_FILE}: absent`);
+  console.log(
+    `  INGEST_ON_DEPLOY: ${flag ? `set to "${flag}", which reads as off` : 'unset'}`,
+  );
+  console.log(
+    `  commit message: ${
+      process.env.VERCEL_GIT_COMMIT_MESSAGE
+        ? 'available, no [ingest] marker in it'
+        : 'not available to this build'
+    }`,
+  );
   return null;
 }
 
 async function main() {
   if (process.argv.includes('--if-requested')) {
     const reason = ingestRequest();
-    if (!reason) {
-      console.log('No deployment asked for the archive — skipping ingest.');
-      return;
-    }
+    if (!reason) return;
     // A marker can reach a build that has no database — CI builds every
     // commit, including one marked [ingest]. Skip rather than fail, the
     // same call migrate.ts makes.
