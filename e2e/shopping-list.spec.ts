@@ -85,19 +85,39 @@ test.describe('shopping list', () => {
     await expect(page.getByText(/2 recipes/i)).toBeVisible();
   });
 
-  test('prompts rather than erroring when nothing is selected', async ({
+  test('an empty list sends you to a recipe, not to a picker', async ({
     page,
   }) => {
     await page.goto('/shopping-list');
-    await expect(page.getByText(/select one or more recipes/i)).toBeVisible();
+
+    await expect(page.getByText(/nothing on the list yet/i)).toBeVisible();
     await expect(page.locator('.shopping-item')).toHaveCount(0);
+    await expect(
+      page.getByRole('link', { name: /browse recipes/i }),
+    ).toBeVisible();
   });
 
-  test('picking a recipe updates the URL', async ({ page }) => {
-    await page.goto('/shopping-list');
+  test('never lists recipes that are not on the list', async ({ page }) => {
+    // The page used to open with a checkbox per recipe in the repository.
+    // At eight hundred recipes that is eight hundred checkboxes above the
+    // thing you came to read, and it is the recipe page's job anyway.
+    await page.goto('/shopping-list?r=baumy-biltong');
 
-    await page.getByRole('checkbox').first().check();
-    await page.waitForURL(/[?&]r=/);
-    await expect(page.locator('.shopping-item').first()).toBeVisible();
+    const named = await page.locator('.list-recipes a').allTextContents();
+    expect(named).toEqual(['Baumy Biltong']);
+    // No stray checkbox outside the ingredient rows and the tick-all box.
+    const boxes = await page.getByRole('checkbox').count();
+    const rows = await page.locator('.shopping-item').count();
+    expect(boxes).toBe(rows + 1);
+  });
+
+  test('a recipe can be dropped from the list', async ({ page }) => {
+    await page.goto('/shopping-list?r=baumy-biltong&r=pickled-jalapenos');
+    await expect(page.locator('.list-recipes li')).toHaveCount(2);
+
+    await page.getByRole('button', { name: /remove baumy biltong/i }).click();
+
+    await page.waitForURL((url) => !url.search.includes('baumy-biltong'));
+    await expect(page.locator('.list-recipes li')).toHaveCount(1);
   });
 });

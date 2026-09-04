@@ -184,6 +184,13 @@ hr {
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
+  /* A tag tooltip is `position: absolute` and ~350px wide. Even held at
+     `visibility: hidden` it still occupies layout, so a tag near the right
+     edge pushed the whole document sideways — every page carrying tags, at
+     every width, scrolled horizontally. `clip` rather than `hidden` on
+     purpose: `hidden` would make this a scroll container and break the
+     sticky header inside it. */
+  overflow-x: clip;
 }
 
 .page {
@@ -280,11 +287,19 @@ hr {
 }
 
 /* The basket claims the right of the top row, so the nav follows it rather
-   than fighting it for the same space. */
+   than fighting it for the same space.
+   
+   `justify-content: flex-end` used to be here and it was a serious bug. On a
+   phone this row is `overflow-x: auto`, and a flex container that packs
+   toward the end puts its overflow past the START edge, where scrolling
+   cannot reach: the browser reports `scrollWidth === clientWidth`, so there
+   is nothing to scroll, and the first four links — Recipes, Cuisines,
+   Categories, Ingredients — simply stop existing the moment anything is in
+   the basket. Packing toward the start keeps every link reachable. */
 .basket-button ~ .site-nav {
   margin-left: 0;
   flex-basis: 100%;
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 /* On a phone the wrapped nav took three rows before any recipe was
@@ -1251,6 +1266,19 @@ input::placeholder {
   overflow-x: auto;
 }
 
+/* A bare <pre> — the MCP endpoint on /connect — held a URL longer than a
+   phone is wide and dragged the page sideways with it. Wrapping an address
+   mid-string is uglier than a scrollbar but better than a page that slides. */
+.prose-page pre {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.9rem 1rem;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .markdown code:not(pre code) {
   background: var(--surface-2);
   border-radius: 4px;
@@ -1366,6 +1394,29 @@ input::placeholder {
 .checklist-toggle button[aria-pressed='true'] {
   background: var(--accent-dim);
   color: var(--accent);
+}
+
+/* ── Tap targets ─────────────────────────────────────────────────────────
+   A 21px checkbox is a miss waiting to happen with wet hands in a shop.
+   The box itself grows, and its label stretches to a full row so the whole
+   line is the target rather than the glyph. 44px is the size a thumb
+   actually needs; anything smaller is decoration. */
+.ingredient-list .check,
+.shopping-item .check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  margin: -0.5rem 0 -0.5rem -0.6rem;
+  cursor: pointer;
+}
+
+.ingredient-list .check input,
+.shopping-item .check input {
+  width: 1.35rem;
+  height: 1.35rem;
+  accent-color: var(--accent);
 }
 
 /* Tick-all sits with the counter rather than in the list, so it reads as a
@@ -1554,4 +1605,66 @@ input::placeholder {
   .ingredient-list.checklist .amount {
     grid-column: 2;
   }
+}
+
+/* ── Recipes on the shopping list ────────────────────────────────────────
+   Chips naming what the list was built from, each with a remove button.
+   Deliberately the size of your shop, never the size of the archive: the
+   picker that used to live here listed every recipe in the repository.
+
+   The remove button is a 44px target with a 44px row, because this gets
+   used one-handed in a shop. */
+.list-recipes ul {
+  list-style: none;
+  margin: 0 0 1.5rem;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.list-recipes li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  min-height: 2.75rem;
+  padding-left: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.list-recipes a {
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.list-recipes a:hover {
+  color: var(--accent);
+}
+
+.list-recipes button {
+  font: inherit;
+  font-size: 1.15rem;
+  line-height: 1;
+  width: 2.75rem;
+  height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.list-recipes button:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.list-recipes[data-pending] {
+  opacity: 0.6;
 }

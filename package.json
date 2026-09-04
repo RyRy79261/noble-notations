@@ -20,6 +20,7 @@
     "ingest": "NODE_OPTIONS=--conditions=react-server tsx scripts/ingest-archive.ts",
     "ingest:deploy": "NODE_OPTIONS=--conditions=react-server tsx scripts/ingest-archive.ts --if-requested",
     "mcp:token": "NODE_OPTIONS=--conditions=react-server tsx scripts/mint-mcp-token.ts",
+    "audit:ui": "tsx scripts/audit-ui.ts",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "export": "NODE_OPTIONS=--conditions=react-server tsx scripts/export-markdown.ts"

@@ -24,3 +24,6 @@ npm-debug.log*
 /e2e/.results/
 /playwright-report/
 /test-results/
+
+# Throwaway browser probes written while auditing.
+_audit_*.mjs
