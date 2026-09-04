@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useOptimistic, useState, useTransition } from 'react';
+import { setBasket } from '@/components/shopping-basket';
 
 /**
  * Picks which recipes the list is built from.
@@ -33,6 +34,16 @@ export function RecipePicker({
     const url = new URLSearchParams(params.toString());
     url.delete('r');
     for (const slug of next) url.append('r', slug);
+
+    // Write the same selection back to the basket. Without this the header
+    // count keeps counting recipes this list no longer contains, and the
+    // basket only ever grows — there is no longer anywhere else to empty it.
+    setBasket(
+      recipes
+        .filter((recipe) => next.has(recipe.slug))
+        .map((recipe) => ({ slug: recipe.slug, title: recipe.title })),
+    );
+
     startTransition(() => {
       setChosenSlugs([...next]);
       router.push(url.size > 0 ? `/shopping-list?${url}` : '/shopping-list');

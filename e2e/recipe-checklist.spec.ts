@@ -120,25 +120,33 @@ test('a recipe can be added to the basket and built into a list', async ({
   await page.goto('/recipes/baumy-biltong');
   await page.getByRole('button', { name: /add to shopping list/i }).click();
 
-  const basket = page.getByRole('button', { name: /shopping list 2/i });
+  // The control is a link straight to the list now. It used to open a
+  // dialog listing the collected recipes under the heading "Shopping
+  // list", with the ingredients another click behind "Build the list" —
+  // which is not a shopping list, and is what this test used to assert.
+  const basket = page.getByRole('link', { name: /shopping list 2/i });
   await expect(basket).toBeVisible();
   await basket.click();
-
-  const dialog = page.getByRole('dialog');
-  await expect(dialog).toBeVisible();
-  await dialog.getByRole('link', { name: /build the list/i }).click();
 
   // Both recipes end up in the URL, so the result is still shareable.
   await page.waitForURL(/shopping-list\?r=.*&r=/);
   await expect(page.getByText(/2 recipes/i)).toBeVisible();
+  await expect(page.locator('.shopping-item').first()).toBeVisible();
 });
 
-test('escape closes the basket', async ({ page }) => {
+test('the shopping list stays in step with the basket', async ({ page }) => {
   await page.goto(RECIPE);
   await page.getByRole('button', { name: /add to shopping list/i }).click();
-  await page.getByRole('button', { name: /shopping list 1/i }).click();
+  await page.getByRole('link', { name: /shopping list 1/i }).click();
+  await expect(page.locator('.shopping-item').first()).toBeVisible();
 
-  await expect(page.getByRole('dialog')).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(page.getByRole('dialog')).toHaveCount(0);
+  // The picker arrives collapsed once a list exists, so opening it is part
+  // of the journey rather than an implementation detail to skip.
+  await page.getByRole('button', { name: /choose \(1\)/i }).click();
+
+  // Emptying the selection has to empty the basket too. When it did not,
+  // the header kept counting recipes the list no longer held, and there
+  // was no longer a dialog to clear it from.
+  await page.getByRole('button', { name: /clear all/i }).click();
+  await expect(page.locator('.basket-button')).toHaveCount(0);
 });

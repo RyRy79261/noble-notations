@@ -62,13 +62,15 @@ export default function RootLayout({
               <Link href="/" className="brand">
                 <span aria-hidden>◆</span> {site.name}
               </Link>
+              {/* Outside the nav on purpose: the nav scrolls sideways on a
+                  phone, which used to park this off the right edge. */}
+              <BasketButton />
               <nav className="site-nav" aria-label="Primary">
                 {NAV.map((item) => (
                   <Link key={item.href} href={item.href}>
                     {item.label}
                   </Link>
                 ))}
-                <BasketButton />
               </nav>
             </div>
           </header>

@@ -279,6 +279,14 @@ hr {
   margin-left: auto;
 }
 
+/* The basket claims the right of the top row, so the nav follows it rather
+   than fighting it for the same space. */
+.basket-button ~ .site-nav {
+  margin-left: 0;
+  flex-basis: 100%;
+  justify-content: flex-end;
+}
+
 /* On a phone the wrapped nav took three rows before any recipe was
    visible. One scrollable row instead: every destination stays reachable,
    and the content starts near the top where it belongs. */
@@ -423,12 +431,40 @@ a.tag:hover {
   padding: 0;
 }
 
+/* Matches the recipe page's group headings: same size, same rule beneath,
+   same air above, so a section reads as a section on both pages. */
+.shopping-group-heading {
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  margin: 2rem 0 0.85rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.section:first-of-type > .shopping-group-heading {
+  margin-top: 0;
+}
+
 .shopping-item {
   display: grid;
-  grid-template-columns: 7rem 1fr;
-  gap: 0 1rem;
+  grid-template-columns: auto minmax(3rem, max-content) 1fr;
+  gap: 0 0.9rem;
+  align-items: start;
   padding: 0.6rem 0;
   border-bottom: 1px solid var(--border);
+}
+
+/* Ticked means "in the trolley". It fades rather than disappearing: on a
+   second pass you still want to see what you already picked up. */
+.shopping-item[data-checked] {
+  opacity: 0.45;
+}
+
+.shopping-item[data-checked] .shopping-what > a,
+.shopping-item[data-checked] .shopping-what > span:first-of-type {
+  text-decoration: line-through;
 }
 
 .shopping-item:last-child {
@@ -490,13 +526,20 @@ a.tag:hover {
 }
 
 @media (max-width: 34rem) {
+  /* The checkbox keeps its own column and the rest stacks beside it, so a
+     row stays one tap target instead of wrapping under the box. */
   .shopping-item {
-    grid-template-columns: 1fr;
-    gap: 0.15rem;
+    grid-template-columns: auto 1fr;
+    gap: 0.1rem 0.7rem;
   }
 
   .shopping-amount {
     text-align: left;
+    grid-column: 2;
+  }
+
+  .shopping-what {
+    grid-column: 2;
   }
 }
 
@@ -864,16 +907,21 @@ th.numeric {
   margin: 0 0 0.75rem;
 }
 
+/* A section heading has to look like the start of something. At 0.8rem
+   with 0.4rem beneath it, "Spices" read as a label stuck to the row under
+   it rather than as a break between groups, and the groups ran together. */
 .ingredient-group + .ingredient-group {
-  margin-top: 1.1rem;
+  margin-top: 2rem;
 }
 
 .ingredient-group > h4 {
-  font-size: 0.8rem;
+  font-size: 0.95rem;
   text-transform: uppercase;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.06em;
   color: var(--accent);
-  margin: 0 0 0.4rem;
+  margin: 0 0 0.85rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
 .ingredient-list {
@@ -1320,6 +1368,58 @@ input::placeholder {
   color: var(--accent);
 }
 
+/* Tick-all sits with the counter rather than in the list, so it reads as a
+   control over the list and not as another thing to buy. */
+.check-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.check-all input {
+  width: 1.05rem;
+  height: 1.05rem;
+  accent-color: var(--accent);
+}
+
+/* ── Batch scaling ───────────────────────────────────────────────────────
+   Half a batch is not a new revision, so this multiplies the amounts in
+   place. It wraps to its own row on a phone rather than squeezing the
+   presets. */
+.scale-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.scale-label {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.scale-custom input {
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  width: 4.5rem;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.scale-yield {
+  font-size: 0.8rem;
+}
+
 .ingredient-list.checklist li {
   display: grid;
   /* The amount track sizes to its content rather than a fixed width: a
@@ -1375,7 +1475,12 @@ input::placeholder {
   border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
   background: var(--accent-dim);
   color: var(--accent);
+  text-decoration: none;
   cursor: pointer;
+  /* Sits in the header's top row, pushed to the right of the brand, so it
+     stays on screen at every width. It is the only way back to a list you
+     have started building. */
+  margin-left: auto;
 }
 
 .basket-count {
