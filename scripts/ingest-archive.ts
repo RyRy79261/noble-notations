@@ -1,19 +1,66 @@
 /**
  * Load the Markdown archive into the database as structured records.
  *
- *   pnpm ingest            # skip anything already present
- *   pnpm ingest --force    # add revisions to recipes that already exist
+ *   pnpm ingest                 # skip anything already present
+ *   pnpm ingest --force         # add revisions to recipes that already exist
+ *   pnpm ingest --if-requested  # run only when a deployment asks for it
  *
  * Idempotent by default: running it twice does not duplicate anything, so it
  * is safe to run against a database that already has content. The seed data
  * lives in ./seed-data.ts, hand-derived from content/ — see the note at the
  * top of that file for why it is not parsed.
+ *
+ * The third form is what `pnpm build` runs. It is off unless asked for,
+ * because a build must not decide on its own to write to the database it is
+ * deploying against.
  */
 import { loadEnv } from './env';
 
 loadEnv();
 
+/**
+ * Report why this deployment wants the archive loaded, or null if it does not.
+ *
+ * There are two ways to ask because they suit different moments.
+ * `INGEST_ON_DEPLOY` is a project setting: it survives every build, so it
+ * fits a one-off production run started from the Vercel dashboard, and it
+ * can be scoped to one preview branch. The commit marker fits a pull
+ * request — put `[ingest]` in the message, let that deployment's build run
+ * it, and no project setting changes at all.
+ *
+ * Neither can pass `--force`. A build may add what is missing; rewriting
+ * history is a decision for a person at a terminal.
+ */
+function ingestRequest(): string | null {
+  const flag = (process.env.INGEST_ON_DEPLOY ?? '').trim().toLowerCase();
+  if (flag && flag !== '0' && flag !== 'false' && flag !== 'no') {
+    return 'INGEST_ON_DEPLOY is set';
+  }
+  if (/\[ingest\]/i.test(process.env.VERCEL_GIT_COMMIT_MESSAGE ?? '')) {
+    return 'the commit message contains [ingest]';
+  }
+  return null;
+}
+
 async function main() {
+  if (process.argv.includes('--if-requested')) {
+    const reason = ingestRequest();
+    if (!reason) {
+      console.log('No deployment asked for the archive — skipping ingest.');
+      return;
+    }
+    // A marker can reach a build that has no database — CI builds every
+    // commit, including one marked [ingest]. Skip rather than fail, the
+    // same call migrate.ts makes.
+    if (!process.env.DATABASE_URL) {
+      console.log(
+        'Asked to load the archive, but DATABASE_URL is not set — skipping.',
+      );
+      return;
+    }
+    console.log(`Loading the archive because ${reason}.\n`);
+  }
+
   // Imported after loadEnv so the database client sees DATABASE_URL.
   const { db } = await import('@/db/client');
   const { recipes, experiments: experimentsTable } =

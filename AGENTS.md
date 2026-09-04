@@ -122,8 +122,37 @@ without one.
 `pnpm build` runs `pnpm db:migrate:deploy` first, so a deployment ships its
 schema with its code. That step _skips_ when `DATABASE_URL` is unset (CI has
 no database and must stay green) but fails the build when a configured
-database is unreachable or a migration errors. It applies schema only —
-seeding the archive is still a separate `pnpm ingest`.
+database is unreachable or a migration errors. It applies schema only.
+
+### Loading the archive from a deployment
+
+Migrations run on every build; the archive does not. A build must not
+decide on its own to write rows to the database it is deploying against.
+So `pnpm build` also runs `pnpm ingest:deploy`, which does nothing unless
+that deployment asked for it. Two ways to ask:
+
+| Ask                                                         | Fits                                                                       |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `[ingest]` anywhere in the commit message                   | A pull request. Nothing in the project settings changes.                   |
+| `INGEST_ON_DEPLOY` set to anything but `0`, `false` or `no` | A one-off production run from the Vercel dashboard, or one preview branch. |
+
+To load the archive from a pull request:
+
+1. Commit to a branch with `[ingest]` in the message.
+2. Push. Vercel builds the preview.
+3. Read the build log. The ingest prints every row it creates or skips.
+4. Close the branch, or drop the marker before merging.
+
+Two things to know before doing this. A preview build writes to whatever
+`DATABASE_URL` the Preview environment holds, and that is the production
+database unless the project sets a different one per environment — so
+treat a marked preview as a write to production. And the ingest is
+idempotent but not free: it re-runs on every build that carries the
+marker, so a marker merged into `main` keeps firing.
+
+The deploy path never passes `--force`. It adds what is missing. Adding
+revisions to recipes that already exist stays a manual `pnpm ingest
+--force` from a terminal.
 
 ## Environment
 
