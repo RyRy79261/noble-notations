@@ -147,11 +147,11 @@ decide on its own to write rows to the database it is deploying against.
 So `pnpm build` also runs `pnpm ingest:deploy`, which does nothing unless
 that deployment asked for it. Three ways to ask:
 
-| Ask                                                         | Fits                                                                                         |
-| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| A `.ingest-request` file at the repository root             | A pull request. Nothing in the project settings changes.                                     |
-| `INGEST_ON_DEPLOY` set to anything but `0`, `false` or `no` | A one-off production run from the Vercel dashboard, or one preview branch.                   |
-| `[ingest]` in the commit message                            | Only where the project exposes system environment variables to the build. Do not rely on it. |
+| Ask                                                         | Fits                                                                             |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| A `.ingest-request` file at the repository root             | A pull request. Nothing in the project settings changes.                         |
+| `INGEST_ON_DEPLOY` set to anything but `0`, `false` or `no` | A one-off production run from the Vercel dashboard, or one preview branch.       |
+| `[ingest]` in the commit message                            | Only near the **start** of the message — Vercel truncates it. Do not rely on it. |
 
 To load the archive from a pull request:
 
@@ -162,11 +162,15 @@ To load the archive from a pull request:
 4. Delete the file before merging, or the load repeats on every build.
 
 The file is the one signal that does not depend on Vercel's build
-environment. The commit-message marker was tried first and never arrived:
-`VERCEL_GIT_COMMIT_MESSAGE` reaches a build only when the project exposes
-system environment variables, and what it exposes can be truncated. When
-the archive is not loaded, the build log names all three signals and says
-what it found for each.
+environment. The commit-message marker was tried first and did not fire.
+The build log said why: `VERCEL_GIT_COMMIT_MESSAGE` was there, but Vercel
+truncates it at roughly a thousand characters and the marker sat at the
+end of a long message. That route therefore works only for a marker near
+the start of the subject, and only where the project exposes system
+environment variables at all — neither condition is visible from inside
+this repository. When the archive is not loaded, the build log names all
+three signals and says what it found for each, which is how this was
+diagnosed.
 
 Two things to know before doing this. A preview build carries the Preview
 environment's `DATABASE_URL`, and unless the project sets a different one

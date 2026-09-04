@@ -25,16 +25,17 @@ loadEnv();
  * A file on the branch is the primary way to ask for the archive.
  *
  * The obvious alternative — `[ingest]` in the commit message — was tried
- * first and did not survive contact with a real deployment: the marker
- * never reached the build. VERCEL_GIT_COMMIT_MESSAGE only appears in the
- * build environment when the project exposes system environment
- * variables, and what it exposes can be truncated, so a marker in a long
- * message depends on two things outside this repository.
+ * first and did not survive contact with a real deployment. The diagnostic
+ * below says why: VERCEL_GIT_COMMIT_MESSAGE reached the build, but Vercel
+ * truncates it at roughly a thousand characters, and the marker sat at the
+ * end of a long message. So that route works only for a marker near the
+ * start, and only where the project exposes system environment variables
+ * at all — two conditions invisible from inside this repository.
  *
- * A committed file needs neither. It is in the checkout by definition, it
+ * A committed file has neither. It is in the checkout by definition, it
  * shows up in the diff of the pull request that asks for the load, and
  * deleting it is how you stop asking. The commit-message route is still
- * honoured for anyone whose project does expose it.
+ * honoured, with that caveat.
  */
 const MARKER_FILE = '.ingest-request';
 
