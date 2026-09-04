@@ -25,7 +25,12 @@ export const metadata: Metadata = {
     title: `${site.name} — ${site.tagline}`,
     description: site.description,
   },
-  alternates: { canonical: '/' },
+  alternates: {
+    canonical: '/',
+    // /llms.txt is the map an agent reads before it starts fetching. It is
+    // only discoverable by convention otherwise, so say where it is.
+    types: { 'text/plain': '/llms.txt' },
+  },
   robots: { index: true, follow: true },
 };
 

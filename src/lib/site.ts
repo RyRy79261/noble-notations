@@ -10,8 +10,11 @@ export const site = {
     'A structured repository of recipes, ingredients, techniques and batch ' +
     'logs. Every recipe is versioned: it gets refined across revisions ' +
     'instead of being re-derived from scratch.',
+  // `?? ` alone is not enough: an environment that defines the variable
+  // and leaves it empty would set the site URL to '', and `new URL('')`
+  // in the root layout fails the whole build.
   url:
-    process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') ??
+    process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/$/, '') ||
     'https://noble-notations.ryanjnoble.dev',
   repository: 'https://github.com/RyRy79261/noble-notations',
   author: 'Ryan Noble',
