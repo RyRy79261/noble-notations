@@ -192,6 +192,18 @@ export function RecipeDetail({
                       >
                         Revision {entry.revisionNumber}
                       </Link>
+                      {entry.backfilled && entry.occurredAt ? (
+                        // The number says when it was written down, which
+                        // for an older version found later is not when it
+                        // existed. Say both, or the list reads as wrong.
+                        <p className="rev-when">
+                          From{' '}
+                          <time dateTime={entry.occurredAt}>
+                            {entry.occurredAt.slice(0, 10)}
+                          </time>
+                          , recorded later
+                        </p>
+                      ) : null}
                       <p className="rev-rationale">
                         {entry.rationale ?? (
                           <span className="faint">No rationale recorded.</span>

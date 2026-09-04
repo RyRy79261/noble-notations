@@ -1,6 +1,0 @@
-Load the archive into the production Neon database. It came up with the
-schema and no recipes: the build ships migrations, not content.
-
-Delete this file once the build log shows the recipes created. Leaving it
-in place is harmless — the ingest never duplicates and never forces — but
-it re-runs on every build.

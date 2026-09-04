@@ -24,6 +24,9 @@ reason. Do not make a second recipe for the same dish.
 You cannot delete anything. You cannot edit ingredients or steps. This is
 correct behaviour, not a fault.
 
+You can add an older version that you find later. Call backfill_revision.
+This adds history. It does not change the recipe that people read.
+
 Before you make anything, call search_recipes.
 
 Call get_started to read the full guide.
@@ -43,10 +46,22 @@ export const GUIDE = {
     'same dish. You cannot delete a recipe. You cannot edit ingredients or ' +
     'steps.',
 
+  olderVersions:
+    'You can add a version that is older than every version in the store. ' +
+    'Call backfill_revision. Use it when you find an old version later: in ' +
+    'a notebook, in a photo, or in an earlier conversation. Give the date ' +
+    'that the version existed. The date must be earlier than every version ' +
+    'that is already stored. The recipe that people read does not change: ' +
+    'the current version stays where it is. Send the full ingredients. ' +
+    'Nothing is copied from a later version, because that would make a ' +
+    'history that never happened. To add a version that comes after the ' +
+    'stored versions, call revise_recipe instead.',
+
   workflow: [
     'Call search_recipes first. Always. Find out if the dish is here.',
     'If the dish is here, call revise_recipe. Give a reason that says what you changed.',
     'If the dish is not here, call create_recipe.',
+    'If you find a version that is older than every stored version, call backfill_revision.',
     'Call upsert_category for each new tag. This gives the tag an explanation.',
     'Call add_note for each thing that you learned that is not an instruction.',
     'Call log_experiment after you cook a batch and measure it.',

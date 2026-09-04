@@ -32,6 +32,7 @@ import { slugify, uniqueSlug } from '@/lib/domain/slug';
 import { formatIngredientLine, normaliseUnit } from '@/lib/domain/units';
 import type {
   AddNoteInput,
+  BackfillRevisionInput,
   CreateRecipeInput,
   IngredientLineInput,
   LogExperimentInput,
@@ -607,6 +608,117 @@ export async function reviseRecipe(
       recipeId: recipe.id,
       revisionId,
       unresolvedLinks,
+    };
+  });
+}
+
+/**
+ * Record a version of a recipe that predates the ones already stored.
+ *
+ * The append-only rule exists so that a recipe cannot be silently rewritten
+ * — so that whatever is current can be traced back through what it came
+ * from. Adding a version that came *before* everything stored does not
+ * break that rule: it does not change what is current and it does not touch
+ * a stored revision. It only fills in history that was never written down.
+ *
+ * Two things keep it honest:
+ *
+ * - The current revision pointer is not moved. A backfill can never change
+ *   what a reader sees as the recipe.
+ * - `occurredAt` has to be earlier than every revision already recorded.
+ *   Anything else is a revise pretending to be a backfill, and is refused
+ *   rather than silently accepted into the middle of the history.
+ *
+ * The revision still takes the next number. Numbers are identity here —
+ * they are in URLs and in the keys that remember ticked ingredients — so
+ * they say when something was recorded, and `occurred_at` says when it
+ * happened. Renumbering to squeeze one in would change what every existing
+ * number means.
+ */
+export async function backfillRevision(
+  input: BackfillRevisionInput,
+  source: 'human' | 'mcp' | 'import' = 'mcp',
+): Promise<WriteResult> {
+  return withTransaction(async (tx) => {
+    const found = await tx
+      .select({ id: recipes.id, title: recipes.title })
+      .from(recipes)
+      .where(eq(recipes.slug, input.slug))
+      .limit(1);
+    const recipe = found[0];
+    if (!recipe) {
+      throw new NotFoundError(`No recipe with slug "${input.slug}".`);
+    }
+
+    const occurredAt = new Date(input.occurredAt);
+
+    // Compare against the earliest point in the history as it stands, using
+    // the same COALESCE the read side orders by — otherwise two backfills
+    // in a row would measure the second against a created_at from today.
+    const boundary = await tx
+      .select({
+        earliest: sql<Date | null>`MIN(COALESCE(${recipeRevisions.occurredAt}, ${recipeRevisions.createdAt}))`,
+        max: sql<number>`COALESCE(MAX(${recipeRevisions.revisionNumber}), 0)`,
+      })
+      .from(recipeRevisions)
+      .where(eq(recipeRevisions.recipeId, recipe.id));
+
+    const earliest = boundary[0]?.earliest
+      ? new Date(boundary[0].earliest)
+      : null;
+    if (earliest && occurredAt >= earliest) {
+      throw new ConflictError(
+        `This recipe's earliest recorded version is ${earliest.toISOString()}, ` +
+          `and ${occurredAt.toISOString()} is not before it. To add a version ` +
+          'that comes after what is stored, use revise_recipe.',
+      );
+    }
+
+    const revisionNumber = Number(boundary[0]?.max ?? 0) + 1;
+
+    const revisionRow = await tx
+      .insert(recipeRevisions)
+      .values({
+        recipeId: recipe.id,
+        revisionNumber,
+        title: input.title ?? recipe.title,
+        summary: input.summary ?? null,
+        rationale: input.rationale,
+        yieldQuantity:
+          input.yieldQuantity === undefined ? null : num(input.yieldQuantity),
+        yieldUnit: input.yieldUnit ?? null,
+        servings: input.servings ?? null,
+        totalTimeMinutes: input.totalTimeMinutes ?? null,
+        activeTimeMinutes: input.activeTimeMinutes ?? null,
+        source,
+        occurredAt,
+      })
+      .returning({ id: recipeRevisions.id });
+    const revisionId = revisionRow[0]!.id;
+
+    await writeRevisionBody(
+      tx,
+      revisionId,
+      input.ingredients ?? [],
+      input.steps ?? [],
+    );
+    await writeNotes(tx, { revisionId }, input.notes);
+
+    // Deliberately no update to `recipes`: not the title, not the summary,
+    // and above all not currentRevisionId. Everything a reader sees stays
+    // exactly as it was. `updatedAt` does move, because the record of this
+    // recipe did change and the sitemap should say so.
+    await tx
+      .update(recipes)
+      .set({ updatedAt: new Date() })
+      .where(eq(recipes.id, recipe.id));
+
+    return {
+      slug: input.slug,
+      revisionNumber,
+      recipeId: recipe.id,
+      revisionId,
+      unresolvedLinks: [],
     };
   });
 }

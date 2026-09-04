@@ -136,6 +136,10 @@ export interface RecipeView extends RecipeSummaryView {
     rationale: string | null;
     source: string;
     createdAt: string;
+    /** When this version existed, if that is not when it was recorded. */
+    occurredAt: string | null;
+    /** True for a version recorded after the fact. */
+    backfilled: boolean;
   }[];
   links: { kind: string; note: string | null; recipe: RecipeSummaryView }[];
   backlinks: { kind: string; recipe: RecipeSummaryView }[];
@@ -434,11 +438,20 @@ export async function getRecipeBySlug(
   const recipe = found[0];
   if (!recipe) return null;
 
+  // Newest first by when the version existed, not by when the row was
+  // written. A revision backfilled today can describe a recipe from years
+  // ago, and listing it at the top would make the history read backwards.
+  // The revision number breaks ties and keeps the order stable.
   const revisionRows = await db
     .select()
     .from(recipeRevisions)
     .where(eq(recipeRevisions.recipeId, recipe.id))
-    .orderBy(desc(recipeRevisions.revisionNumber));
+    .orderBy(
+      desc(
+        sql`COALESCE(${recipeRevisions.occurredAt}, ${recipeRevisions.createdAt})`,
+      ),
+      desc(recipeRevisions.revisionNumber),
+    );
 
   const revision =
     revisionNumber != null
@@ -674,6 +687,8 @@ export async function getRecipeBySlug(
       rationale: r.rationale,
       source: r.source,
       createdAt: r.createdAt.toISOString(),
+      occurredAt: r.occurredAt ? r.occurredAt.toISOString() : null,
+      backfilled: r.occurredAt !== null,
     })),
     links: linkRows.map((row) => ({
       kind: row.linkKind,

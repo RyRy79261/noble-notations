@@ -366,6 +366,75 @@ export type ReviseRecipeArgs = z.input<typeof reviseRecipeSchema>;
 export type ReviseRecipeInput = z.infer<typeof reviseRecipeSchema>;
 
 // ─────────────────────────────────────────────────────────────────────────
+// Backfilling history
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Record a version of a recipe that existed before the ones already stored.
+ *
+ * This is not an edit. It adds a revision the way `revise_recipe` does, and
+ * differs in exactly two ways: the recipe's current revision does not move,
+ * and `occurredAt` says where in the history the new revision belongs.
+ *
+ * `ingredients` and `steps` are required rather than optional. A revise
+ * that omits them carries them forward from the revision it supersedes,
+ * which is right going forwards and wrong going backwards: carrying a later
+ * version's ingredients into an earlier one would invent a history that
+ * never happened. An old version has to be stated, not inherited.
+ */
+export const backfillRevisionShape = {
+  slug: z.string().min(1).max(120),
+  occurredAt: z
+    .string()
+    .describe(
+      'When this version existed, as an ISO 8601 date or date-time. Must ' +
+        'be earlier than every revision already recorded for this recipe.',
+    ),
+  rationale: z
+    .string()
+    .min(1)
+    .max(4000)
+    .describe(
+      'What this version was, and how you know. Required — a revision ' +
+        'without it is a version with no story.',
+    ),
+  title: recipeBodyShape.title.optional(),
+  summary: recipeBodyShape.summary,
+  yieldQuantity: recipeBodyShape.yieldQuantity,
+  yieldUnit: recipeBodyShape.yieldUnit,
+  servings: recipeBodyShape.servings,
+  totalTimeMinutes: recipeBodyShape.totalTimeMinutes,
+  activeTimeMinutes: recipeBodyShape.activeTimeMinutes,
+  ingredients: recipeBodyShape.ingredients,
+  steps: recipeBodyShape.steps,
+  notes: recipeBodyShape.notes,
+};
+
+export const backfillRevisionSchema = z
+  .object(backfillRevisionShape)
+  .superRefine((value, ctx) => {
+    if (Number.isNaN(Date.parse(value.occurredAt))) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['occurredAt'],
+        message: `"${value.occurredAt}" is not a date this can read. Use ISO 8601, such as 2024-03-17.`,
+      });
+    }
+    if (!value.ingredients?.length) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['ingredients'],
+        message:
+          'An earlier version has to state its own ingredients. Omitting ' +
+          'them would copy a later version backwards.',
+      });
+    }
+    if (value.ingredients && value.steps) checkStepReferences(value, ctx);
+  });
+export type BackfillRevisionArgs = z.input<typeof backfillRevisionSchema>;
+export type BackfillRevisionInput = z.infer<typeof backfillRevisionSchema>;
+
+// ─────────────────────────────────────────────────────────────────────────
 // Notes, ingredients, experiments
 // ─────────────────────────────────────────────────────────────────────────
 

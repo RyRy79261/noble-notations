@@ -1070,6 +1070,14 @@ th.numeric {
   margin: 0.15rem 0 0;
 }
 
+/* A version recorded after the fact: its number is later than its date. */
+.timeline .rev-when {
+  color: var(--text-faint);
+  font-size: 0.78rem;
+  font-style: italic;
+  margin: 0.1rem 0 0;
+}
+
 /* ─── Forms ──────────────────────────────────────────────────────────── */
 
 .field {

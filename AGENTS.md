@@ -16,6 +16,16 @@ a recipe appends a revision and moves a pointer — nothing is ever edited in
 place. That is the whole reason the project exists: the same dish kept being
 re-derived from scratch in every conversation instead of getting better.
 
+History can still be written down late. `backfillRevision` records a version
+that existed **before** everything stored, for an older version found in a
+notebook or an earlier conversation. It is not an exception to the rule: it
+never moves the current revision and never touches a stored one, so nothing
+a reader sees changes. Revision numbers stay dense and permanent — they are
+in URLs and in the keys that remember ticked ingredients — so a backfill
+takes the next number and `occurred_at` says where it belongs. Numbers say
+when a version was recorded; `occurred_at` says when it existed, and the
+history is ordered by the latter.
+
 ## Stack
 
 - **Next.js 16** (App Router) on **React 19**, TypeScript 5.9
@@ -88,7 +98,11 @@ observations. The biltong batch logs are experiments, not recipes.
   but whose ingredients did not is worse than no recipe, because the site
   renders it as an empty dish.
 - **Never edit a recipe in place.** Add a revision. The write layer has no
-  update path for ingredients or steps, deliberately.
+  update path for ingredients or steps, deliberately. `backfillRevision` is
+  the one way to add a version out of order, and it only adds ones older
+  than everything stored — it cannot change what is current. Nothing carries
+  forward into a backfill: inheriting a later version's ingredients would
+  invent a history that never happened, so an old version states its own.
 - **`src/lib/domain/schemas.ts` is the submission contract.** MCP tools, the
   ingest script and the exporter all derive from it. Tools take the raw
   _shape_ (for JSON Schema) and parse with the assembled _schema_ (for
