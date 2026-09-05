@@ -60,6 +60,7 @@ import {
   upsertIngredient,
   upsertCategory,
 } from '@/lib/queries/write';
+import type { WriteResult } from '@/lib/queries/write';
 import { GUIDE } from '@/lib/mcp/guide';
 import { writeMcpAudit } from '@/lib/mcp/audit';
 import { hasScope, WRITE_SCOPE } from '@/lib/mcp/scopes';
@@ -97,6 +98,58 @@ function requireWrite(principal: Principal): void {
         'write access to create or revise recipes.',
     );
   }
+}
+
+/**
+ * Say plainly what the write left unfinished.
+ *
+ * `needsDescription` is in the payload either way, but a model reads the
+ * message first and acts on prose more reliably than on a nested object it
+ * has to notice. Naming the tool to call next is the point: the previous
+ * result said "Created." and nothing else while seven unexplained tags and
+ * fifteen bare ingredients went in behind it.
+ */
+function followUpMessage(headline: string, result: WriteResult): string {
+  const parts = [headline];
+
+  if (result.unresolvedLinks.length > 0) {
+    parts.push(
+      `These linked slugs do not exist yet and were skipped: ${result.unresolvedLinks.join(', ')}.`,
+    );
+  }
+
+  const {
+    categories,
+    ingredients: bare,
+    needsDensity,
+  } = result.needsDescription;
+
+  if (categories.length > 0) {
+    parts.push(
+      `${categories.length} tag(s) have no explanation yet — call ` +
+        `upsert_category for each: ${categories
+          .map((c) => `${c.categoryType}/${c.slug}`)
+          .join(', ')}.`,
+    );
+  }
+
+  if (bare.length > 0) {
+    parts.push(
+      `${bare.length} ingredient(s) are bare — call upsert_ingredient for ` +
+        `each: ${bare.map((i) => `${i.slug} (needs ${i.missing.join(', ')})`).join('; ')}.`,
+    );
+  }
+
+  if (needsDensity.length > 0) {
+    parts.push(
+      'These are written in a volume unit and have no densityGPerMl, so ' +
+        'their amounts cannot be converted to mass or compared across ' +
+        `batches: ${needsDensity.map((d) => `${d.slug} (${d.unit})`).join(', ')}. ` +
+        'Set densityGPerMl with upsert_ingredient, or rewrite the line in grams.',
+    );
+  }
+
+  return parts.join(' ');
 }
 
 function ok(payload: unknown) {
@@ -437,11 +490,7 @@ export function registerTools(server: McpServer): void {
           return {
             ...result,
             url: `/recipes/${result.slug}`,
-            unresolvedLinks: result.unresolvedLinks,
-            message:
-              result.unresolvedLinks.length > 0
-                ? `Created. These linked slugs do not exist yet and were skipped: ${result.unresolvedLinks.join(', ')}`
-                : 'Created.',
+            message: followUpMessage('Created.', result),
           };
         },
       ),
@@ -476,7 +525,10 @@ export function registerTools(server: McpServer): void {
           return {
             ...result,
             url: `/recipes/${result.slug}`,
-            message: `Revision ${result.revisionNumber} created.`,
+            message: followUpMessage(
+              `Revision ${result.revisionNumber} created.`,
+              result,
+            ),
           };
         },
       ),

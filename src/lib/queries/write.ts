@@ -29,7 +29,11 @@ import {
   taxonomyTerms,
 } from '@/db/schema';
 import { slugify, uniqueSlug } from '@/lib/domain/slug';
-import { formatIngredientLine, normaliseUnit } from '@/lib/domain/units';
+import {
+  formatIngredientLine,
+  normaliseUnit,
+  unitKind,
+} from '@/lib/domain/units';
 import type {
   AddNoteInput,
   BackfillRevisionInput,
@@ -378,6 +382,104 @@ export interface WriteResult {
   revisionId: string;
   /** Link targets that did not exist; the write still succeeded. */
   unresolvedLinks: string[];
+  /**
+   * What this recipe now references that is still a bare stub.
+   *
+   * Naming a category or an ingredient creates it if it does not exist —
+   * that is deliberate, because refusing a recipe until its vocabulary is
+   * complete would make writing one a multi-round negotiation. But the
+   * result said nothing about it, so one `create_recipe` quietly minted
+   * seven unexplained tags and fifteen uncategorised ingredients and
+   * reported success. The only reason a caller ever followed up was that it
+   * had read the guide and remembered.
+   *
+   * Documentation asking an agent to remember is a weaker mechanism than
+   * the response telling it what it owes.
+   */
+  needsDescription: NeedsDescription;
+}
+
+export interface NeedsDescription {
+  categories: { categoryType: string; slug: string; label: string }[];
+  ingredients: { slug: string; name: string; missing: string[] }[];
+  /**
+   * Lines written in a volume unit whose ingredient has no density, so the
+   * amount cannot be converted to mass — the only unit that compares across
+   * batches of different size.
+   */
+  needsDensity: { slug: string; name: string; unit: string }[];
+}
+
+/**
+ * Look at what the recipe now references and report what is still bare.
+ *
+ * Deliberately a query over final state rather than a tally of what this
+ * call happened to create: a term left undescribed by an earlier write is
+ * exactly as incomplete, and the caller holding the recipe is the one who
+ * can fix it.
+ */
+async function collectNeedsDescription(
+  tx: Tx,
+  recipeId: string,
+  revisionId: string,
+): Promise<NeedsDescription> {
+  const termRows = await tx
+    .select({
+      categoryType: taxonomyTerms.facet,
+      slug: taxonomyTerms.slug,
+      label: taxonomyTerms.label,
+      description: taxonomyTerms.description,
+    })
+    .from(recipeTerms)
+    .innerJoin(taxonomyTerms, eq(recipeTerms.termId, taxonomyTerms.id))
+    .where(eq(recipeTerms.recipeId, recipeId));
+
+  const lineRows = await tx
+    .select({
+      slug: ingredients.slug,
+      name: ingredients.name,
+      description: ingredients.description,
+      category: ingredients.category,
+      aliases: ingredients.aliases,
+      density: ingredients.densityGPerMl,
+      unit: recipeIngredients.unit,
+    })
+    .from(recipeIngredients)
+    .innerJoin(ingredients, eq(recipeIngredients.ingredientId, ingredients.id))
+    .where(eq(recipeIngredients.revisionId, revisionId));
+
+  const seen = new Set<string>();
+  const bare: NeedsDescription['ingredients'] = [];
+  const needsDensity: NeedsDescription['needsDensity'] = [];
+
+  for (const row of lineRows) {
+    if (unitKind(row.unit) === 'volume' && row.density === null) {
+      if (!needsDensity.some((d) => d.slug === row.slug)) {
+        needsDensity.push({
+          slug: row.slug,
+          name: row.name,
+          unit: row.unit ?? '',
+        });
+      }
+    }
+    if (seen.has(row.slug)) continue;
+    seen.add(row.slug);
+    const missing: string[] = [];
+    if (!row.description) missing.push('description');
+    if (!row.category || row.category === 'other') missing.push('category');
+    if (!row.aliases || row.aliases.length === 0) missing.push('aliases');
+    if (missing.length > 0) {
+      bare.push({ slug: row.slug, name: row.name, missing });
+    }
+  }
+
+  return {
+    categories: termRows
+      .filter((row) => !row.description)
+      .map(({ categoryType, slug, label }) => ({ categoryType, slug, label })),
+    ingredients: bare,
+    needsDensity,
+  };
 }
 
 export async function createRecipe(
@@ -455,7 +557,14 @@ export async function createRecipe(
       .set({ currentRevisionId: revisionId, updatedAt: new Date() })
       .where(eq(recipes.id, recipeId));
 
-    return { slug, revisionNumber: 1, recipeId, revisionId, unresolvedLinks };
+    return {
+      slug,
+      revisionNumber: 1,
+      recipeId,
+      revisionId,
+      unresolvedLinks,
+      needsDescription: await collectNeedsDescription(tx, recipeId, revisionId),
+    };
   });
 }
 
@@ -608,6 +717,11 @@ export async function reviseRecipe(
       recipeId: recipe.id,
       revisionId,
       unresolvedLinks,
+      needsDescription: await collectNeedsDescription(
+        tx,
+        recipe.id,
+        revisionId,
+      ),
     };
   });
 }
@@ -719,6 +833,11 @@ export async function backfillRevision(
       recipeId: recipe.id,
       revisionId,
       unresolvedLinks: [],
+      needsDescription: await collectNeedsDescription(
+        tx,
+        recipe.id,
+        revisionId,
+      ),
     };
   });
 }
@@ -991,6 +1110,34 @@ export async function upsertIngredient(
       .from(ingredients)
       .where(eq(ingredients.slug, slug))
       .limit(1);
+
+    // An alias that already resolves elsewhere must not be taken quietly.
+    //
+    // `coriander-seed` held the bare alias "coriander", so every future
+    // line naming coriander for a herb bound to the seed record — silently,
+    // with no error and nothing in the result to notice. Silent binding is
+    // the failure mode: a wrong ingredient is worse than a rejected write,
+    // because the write can be retried and the wrong binding cannot be
+    // seen. The error names what it collided with so the caller can either
+    // pick a narrower alias or accept the existing ingredient.
+    for (const alias of input.aliases ?? []) {
+      const trimmed = alias.trim();
+      if (!trimmed) continue;
+      const ownerId = await findIngredientId(tx, trimmed);
+      if (!ownerId || ownerId === existing[0]?.id) continue;
+      const owner = await tx
+        .select({ slug: ingredients.slug, name: ingredients.name })
+        .from(ingredients)
+        .where(eq(ingredients.id, ownerId))
+        .limit(1);
+      throw new ConflictError(
+        `The alias "${trimmed}" already resolves to "${owner[0]?.name}" ` +
+          `(${owner[0]?.slug}). Two ingredients cannot answer to the same ` +
+          'name: a recipe line naming it would bind to one of them without ' +
+          'saying which. Either narrow this alias, or add it to ' +
+          `${owner[0]?.slug} if they really are the same ingredient.`,
+      );
+    }
 
     const values = {
       slug,

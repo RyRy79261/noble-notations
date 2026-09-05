@@ -127,6 +127,28 @@ const UNITS: UnitDef[] = [
     aliases: ['bottle', 'bottles'],
   },
   { canonical: 'ear', kind: 'count', toBase: 1, aliases: ['ear', 'ears'] },
+  // Added because a real write used "stalk" for lemongrass and it fell
+  // through as an unrecognised unit. Now that unknown units are refused,
+  // anything legitimate has to actually be in here — and these three are
+  // how ordinary recipes count lemongrass, ginger and citrus.
+  {
+    canonical: 'stalk',
+    kind: 'count',
+    toBase: 1,
+    aliases: ['stalk', 'stalks'],
+  },
+  {
+    canonical: 'slice',
+    kind: 'count',
+    toBase: 1,
+    aliases: ['slice', 'slices'],
+  },
+  {
+    canonical: 'stick',
+    kind: 'count',
+    toBase: 1,
+    aliases: ['stick', 'sticks'],
+  },
 ];
 
 const BY_ALIAS = new Map<string, UnitDef>();
@@ -134,15 +156,47 @@ for (const def of UNITS) {
   for (const alias of def.aliases) BY_ALIAS.set(alias, def);
 }
 
+/** The single spelling every alias folds onto, for error messages and docs. */
+export const CANONICAL_UNITS: readonly string[] = UNITS.map((u) => u.canonical);
+
+/**
+ * The one place a written unit is turned into a lookup key.
+ *
+ * `unitKind` used to lower-case without stripping a trailing full stop while
+ * `normaliseUnit` stripped it, so the two disagreed: "TSP." normalised to
+ * "tsp" and then reported its kind as "other". Both go through this now.
+ */
+function aliasKey(raw: string): string {
+  return raw.trim().toLowerCase().replace(/\.$/, '');
+}
+
+function lookup(raw: string | null | undefined): UnitDef | undefined {
+  if (!raw) return undefined;
+  return BY_ALIAS.get(aliasKey(raw));
+}
+
+/** True when this spelling is in the vocabulary at all. */
+export function isKnownUnit(raw: string | null | undefined): boolean {
+  if (!raw || !raw.trim()) return true; // "no unit" is a legitimate answer.
+  return lookup(raw) !== undefined;
+}
+
+/**
+ * Fold a written unit onto its canonical spelling.
+ *
+ * Unknown spellings are returned as written. That is deliberate for reads —
+ * rows already in the database must render as they were stored — but it is
+ * NOT acceptable on write, where an unrecognised unit means the vocabulary
+ * silently grows a synonym nobody can query across. The write path rejects
+ * instead; see `assertKnownUnit`.
+ */
 export function normaliseUnit(raw: string | null | undefined): string | null {
   if (!raw) return null;
-  const key = raw.trim().toLowerCase().replace(/\.$/, '');
-  return BY_ALIAS.get(key)?.canonical ?? raw.trim();
+  return lookup(raw)?.canonical ?? raw.trim();
 }
 
 export function unitKind(raw: string | null | undefined): UnitKind {
-  if (!raw) return 'other';
-  return BY_ALIAS.get(raw.trim().toLowerCase())?.kind ?? 'other';
+  return lookup(raw)?.kind ?? 'other';
 }
 
 /**

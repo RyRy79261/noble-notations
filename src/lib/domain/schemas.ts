@@ -12,6 +12,7 @@
  * does not list), not to demand completeness.
  */
 import { z } from 'zod';
+import { CANONICAL_UNITS, isKnownUnit } from '@/lib/domain/units';
 
 /**
  * The kinds of category a tag can belong to.
@@ -98,6 +99,34 @@ export const noteSourceSchema = z.object({
     .optional(),
 });
 
+/**
+ * A unit the vocabulary knows, in any of its spellings.
+ *
+ * The vocabulary and its alias table already existed, and `normaliseUnit`
+ * was already applied on write — "pieces" and "pc" have always folded onto
+ * "piece". What was missing is refusal: an unrecognised spelling fell
+ * through and was stored verbatim, so "stalk" and "sachet" entered the data
+ * as units nobody can total or convert. Rejecting at the edge keeps the set
+ * closed; the error names the canonical spellings so the caller can pick.
+ */
+const unitField = z
+  .string()
+  .max(40)
+  .refine(isKnownUnit, {
+    error: (issue) =>
+      `"${String(issue.input)}" is not a unit this repository uses. ` +
+      `Canonical units: ${CANONICAL_UNITS.join(', ')}. Common spellings ` +
+      'fold onto these — "pieces" and "pc" both become "piece" — but a ' +
+      'unit outside the set is refused rather than stored, because a unit ' +
+      'nobody can convert cannot be summed into a shopping list or ' +
+      'compared across batches.',
+  })
+  .describe(
+    'One of the canonical units, or any of their spellings. Mass is ' +
+      'preferred: only mass compares across batches of different size. ' +
+      'Volume and count are accepted and preserved as written.',
+  );
+
 export const noteSchema = z.object({
   kind: z
     .enum(NOTE_KINDS)
@@ -115,6 +144,33 @@ export const noteSchema = z.object({
 });
 export type NoteInput = z.infer<typeof noteSchema>;
 
+/**
+ * A research note without a source is not research.
+ *
+ * `research` exists to hold what was learned *around* a dish — an
+ * alternative, a hack, where to buy something — and the whole reason it is
+ * its own kind rather than a free note is that it says where the claim came
+ * from. Accepting one with no provenance produced exactly the thing the
+ * kind was invented to prevent. Every other kind is a first-hand
+ * observation and stays optional.
+ */
+export function requireSourcesForResearch(
+  value: { kind: string; sources?: unknown[] | null },
+  ctx: z.RefinementCtx,
+): void {
+  if (value.kind !== 'research') return;
+  if (value.sources && value.sources.length > 0) return;
+  ctx.addIssue({
+    code: 'custom',
+    path: ['sources'],
+    message:
+      'A research note must cite at least one source in `sources` — give a ' +
+      'url, or a title and citation. Research is the kind that records ' +
+      'where something came from; without that it is an `observation` or ' +
+      'an `idea`, which take no sources.',
+  });
+}
+
 export const ingredientLineSchema = z.object({
   /**
    * The ingredient as named. Resolved against the canonical ingredient list
@@ -125,7 +181,7 @@ export const ingredientLineSchema = z.object({
   quantity: z.number().finite().nonnegative().nullish(),
   /** Upper bound when the amount was written as a range ("4–5 chipotle"). */
   quantityMax: z.number().finite().nonnegative().nullish(),
-  unit: z.string().max(40).nullish(),
+  unit: unitField.nullish(),
   /** Sub-list heading this line belongs under: "Wash", "Dredge". */
   component: z.string().max(120).nullish(),
   preparation: z
@@ -251,7 +307,10 @@ export const recipeBodyShape = {
   activeTimeMinutes: z.number().int().nonnegative().nullish(),
   ingredients: z.array(ingredientLineSchema).max(300).optional(),
   steps: z.array(stepSchema).max(200).optional(),
-  notes: z.array(noteSchema).max(100).optional(),
+  notes: z
+    .array(noteSchema.superRefine(requireSourcesForResearch))
+    .max(100)
+    .optional(),
   links: z.array(recipeLinkSchema).max(50).optional(),
   originNote: z.string().max(2000).nullish(),
   heroImageUrl: z.url().nullish(),
@@ -451,6 +510,7 @@ export const addNoteShape = {
 export const addNoteSchema = z
   .object(addNoteShape)
   .superRefine((value, ctx) => {
+    requireSourcesForResearch(value, ctx);
     const targets = [
       value.recipeSlug,
       value.ingredientSlug,
@@ -497,6 +557,16 @@ export const observationSchema = z.object({
   item: z.string().max(120).nullish().describe('Item label, e.g. "A1"'),
   metric: z.string().min(1).max(80).describe('"initial_weight", "days_to_cut"'),
   value: z.number().finite().nullish(),
+  /**
+   * Free text here, unlike an ingredient line, and deliberately so.
+   *
+   * An ingredient line's unit has to belong to a closed set because those
+   * amounts get summed into a shopping list and compared across batches. An
+   * observation measures whatever was actually measured about a batch —
+   * days hanging, °C, %, EUR spent — and a cooking vocabulary has no
+   * business constraining that. Applying the ingredient rule here rejected
+   * the existing biltong logs, which is how the difference surfaced.
+   */
   unit: z.string().max(40).nullish(),
   recordedAt: z
     .string()
@@ -537,7 +607,10 @@ export const logExperimentShape = {
     .max(500)
     .optional(),
   observations: z.array(observationSchema).max(5000).optional(),
-  notes: z.array(noteSchema).max(100).optional(),
+  notes: z
+    .array(noteSchema.superRefine(requireSourcesForResearch))
+    .max(100)
+    .optional(),
 };
 
 export const logExperimentSchema = z.object(logExperimentShape);
