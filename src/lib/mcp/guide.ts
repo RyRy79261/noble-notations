@@ -27,6 +27,11 @@ correct behaviour, not a fault.
 You can add an older version that you find later. Call backfill_revision.
 This adds history. It does not change the recipe that people read.
 
+Units come from a fixed list. A unit outside it is refused.
+
+After a write, read needsDescription in the result. It names the tags and
+ingredients that are still bare. Describe them in the same session.
+
 Before you make anything, call search_recipes.
 
 Call get_started to read the full guide.
@@ -122,8 +127,38 @@ export const GUIDE = {
 
   rules: [
     'Write a reason that says what you changed and why. Do not write "updated recipe".',
-    'Use grams. Then you can compare the quantities in different batches.',
     'Do not invent a measurement. If nobody recorded it, say this in a note.',
     'Do not make a version that only changes the text format.',
   ],
+
+  /**
+   * The old rule said "Use grams" and the server accepted ml without a
+   * word, so the guide and the code disagreed and the code won silently.
+   * This is what the code actually does.
+   */
+  units:
+    'Units come from a fixed list. Common spellings are folded onto one ' +
+    'spelling: "pieces" and "pc" both become "piece". A unit outside the ' +
+    'list is refused, and the error names the list. A unit that nobody can ' +
+    'convert cannot be added into a shopping list.\n\n' +
+    'Mass is best. Only mass lets you compare two batches of different ' +
+    'size. Volume and count are allowed, and they are kept as written: ' +
+    '"2 tbsp" stays "2 tbsp", because that is how a person cooks.\n\n' +
+    'If you write a volume unit for an ingredient that has no ' +
+    'densityGPerMl, the write succeeds and the result tells you. That ' +
+    'amount cannot be turned into grams. Fix it in one of two ways: set ' +
+    'densityGPerMl with upsert_ingredient, or write the line in grams.',
+
+  /**
+   * The result of a write says what is still missing. This is here so the
+   * agent knows to read it, but the mechanism does not depend on the agent
+   * remembering: `create_recipe` and `revise_recipe` return the list.
+   */
+  afterYouWrite:
+    'A name that does not exist yet is created. This is on purpose: a ' +
+    'recipe should not be refused because a tag is new. But a new tag has ' +
+    'no explanation and a new ingredient has no category, and the write ' +
+    'result lists both under needsDescription. Call upsert_category and ' +
+    'upsert_ingredient for everything it names. Do this in the same ' +
+    'session, while you still know what the words mean.',
 } as const;

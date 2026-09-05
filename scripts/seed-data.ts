@@ -58,11 +58,25 @@ export const INGREDIENTS: UpsertIngredientArgs[] = [
   {
     name: 'Coriander seed',
     category: 'spice',
-    aliases: ['coriander', 'coriander seeds', 'cilantro seed'],
+    // Deliberately NOT the bare word "coriander". It held that alias, and a
+    // recipe line naming coriander for a herb bound silently to the spice —
+    // no error, nothing in the result to notice. The leaf owns the bare
+    // word now, which is what an unqualified "coriander" means in a recipe.
+    aliases: ['coriander seeds', 'cilantro seed'],
     defaultUnit: 'g',
     description:
       'Ground coarsely and separately from everything else — the large pieces ' +
       'are the point, and a fine grind vanishes into the dredge.',
+  },
+  {
+    name: 'Coriander leaf',
+    category: 'herb',
+    aliases: ['coriander', 'cilantro', 'fresh coriander'],
+    defaultUnit: 'g',
+    description:
+      'The fresh herb, not the seed. A different plant part with a different ' +
+      'flavour and a different place in a dish: the leaf goes in at the end, ' +
+      'the seed goes in at the start.',
   },
   {
     name: 'Star anise',
@@ -953,6 +967,27 @@ const BERLIN_BOIL: RecipeSeed = {
           '',
           'Availability is inconsistent because it depends on catching an invasive species. Call ahead.',
         ].join('\n'),
+        // A research note has to say where it came from — that is the whole
+        // reason `research` is its own kind. This one was written from the
+        // archive with no provenance at all, and the write layer refuses
+        // that now. These are the places the list was compiled from.
+        sources: [
+          {
+            title: 'Fisch Frank, Spandau — asked in person',
+            citation:
+              'Louisiana crawfish from Berlin waterways, served as a starter. Owner Olaf Pelz.',
+          },
+          {
+            title:
+              '25 Teiche, Markthalle IX, Kreuzberg — price quoted at the stall',
+            citation: 'Crayfish sold by the kilo, around €29/kg.',
+          },
+          {
+            title: 'Berliner Anglerverband e.V.',
+            citation:
+              'Named as a route to licensed local fishermen and spots; not independently confirmed.',
+          },
+        ],
       },
       {
         kind: 'observation',

@@ -26,7 +26,11 @@
 
   --text: #e9e5f2;
   --text-muted: #a99fc2;
-  --text-faint: #7a7194;
+  /* Was #7a7194 — 4.01:1 on --bg and worse on --surface-2, an AA failure.
+     This is not decorative text: it carries step durations, oven
+     temperatures, "optional", which recipe a shopping item is for, and the
+     only sentence on every empty state. */
+  --text-faint: #9b91b8;
 
   --accent: #b794ff;
   --accent-strong: #9b6dff;
@@ -63,7 +67,9 @@
 
     --text: #1b1526;
     --text-muted: #5f5578;
-    --text-faint: #8a80a3;
+    /* Was #8a80a3 — 3.55:1 on white. Both themes failed; the dark value
+       was never a passing baseline to match. */
+    --text-faint: #635a7d;
 
     --accent: #6d28d9;
     --accent-strong: #5b21b6;
@@ -180,10 +186,27 @@ hr {
 
 /* ─── Layout ─────────────────────────────────────────────────────────── */
 
+/* Every in-page jump — the skip link, an anchor, focus scrolling — has to
+   clear the sticky header or it lands underneath it. */
+html {
+  scroll-padding-top: calc(var(--header-h, 10rem) + 0.5rem);
+}
+
+#main:focus {
+  outline: none;
+}
+
 .shell {
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
+  /* A tag tooltip is `position: absolute` and ~350px wide. Even held at
+     `visibility: hidden` it still occupies layout, so a tag near the right
+     edge pushed the whole document sideways — every page carrying tags, at
+     every width, scrolled horizontally. `clip` rather than `hidden` on
+     purpose: `hidden` would make this a scroll container and break the
+     sticky header inside it. */
+  overflow-x: clip;
 }
 
 .page {
@@ -280,11 +303,19 @@ hr {
 }
 
 /* The basket claims the right of the top row, so the nav follows it rather
-   than fighting it for the same space. */
+   than fighting it for the same space.
+   
+   `justify-content: flex-end` used to be here and it was a serious bug. On a
+   phone this row is `overflow-x: auto`, and a flex container that packs
+   toward the end puts its overflow past the START edge, where scrolling
+   cannot reach: the browser reports `scrollWidth === clientWidth`, so there
+   is nothing to scroll, and the first four links — Recipes, Cuisines,
+   Categories, Ingredients — simply stop existing the moment anything is in
+   the basket. Packing toward the start keeps every link reachable. */
 .basket-button ~ .site-nav {
   margin-left: 0;
   flex-basis: 100%;
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 /* On a phone the wrapped nav took three rows before any recipe was
@@ -456,10 +487,22 @@ a.tag:hover {
   border-bottom: 1px solid var(--border);
 }
 
-/* Ticked means "in the trolley". It fades rather than disappearing: on a
-   second pass you still want to see what you already picked up. */
-.shopping-item[data-checked] {
-  opacity: 0.45;
+/* Ticked means "in the trolley". It recedes rather than disappearing: on a
+   second pass you still want to see what you already picked up.
+
+   Recessed with a colour, never with opacity. `opacity: 0.45` composited
+   the text against the page to 1.65:1 in light and 2.47:1 in dark —
+   measured by sampling the rasterised pixels, not modelled — and the links
+   in these rows are still active and focusable, so the WCAG exception for
+   inactive controls does not apply. "Tick all" put every row in that state
+   at once, which made the page least legible exactly when it was fullest.
+   The line-through already says "done". */
+.shopping-item[data-checked] .shopping-what a,
+.shopping-item[data-checked] .shopping-what span,
+.shopping-item[data-checked] .shopping-amount,
+.shopping-item[data-checked] .shopping-from,
+.shopping-item[data-checked] .shopping-from a {
+  color: var(--text-muted);
 }
 
 .shopping-item[data-checked] .shopping-what > a,
@@ -833,8 +876,13 @@ th.numeric {
     border: 1px solid var(--border);
     border-radius: 10px;
     position: sticky;
-    top: 0.5rem;
-    z-index: 5;
+    /* Below the header, never inside it. At `top: 0.5rem` this strip
+       pinned within the header band, and hit-testing its centre returned
+       the header — so the Method tab ate the tap, and in the transition
+       band passed it to a nav link and left the recipe. The fallback
+       covers the tallest wrapped header until the observer reports. */
+    top: calc(var(--header-h, 7rem) + 0.5rem);
+    z-index: 21;
     background: var(--bg-elevated);
   }
 
@@ -879,7 +927,7 @@ th.numeric {
 
 .recipe-aside {
   position: sticky;
-  top: 5rem;
+  top: calc(var(--header-h, 7rem) + 1rem);
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
@@ -1251,6 +1299,19 @@ input::placeholder {
   overflow-x: auto;
 }
 
+/* A bare <pre> — the MCP endpoint on /connect — held a URL longer than a
+   phone is wide and dragged the page sideways with it. Wrapping an address
+   mid-string is uglier than a scrollbar but better than a page that slides. */
+.prose-page pre {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.9rem 1rem;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .markdown code:not(pre code) {
   background: var(--surface-2);
   border-radius: 4px;
@@ -1368,6 +1429,29 @@ input::placeholder {
   color: var(--accent);
 }
 
+/* ── Tap targets ─────────────────────────────────────────────────────────
+   A 21px checkbox is a miss waiting to happen with wet hands in a shop.
+   The box itself grows, and its label stretches to a full row so the whole
+   line is the target rather than the glyph. 44px is the size a thumb
+   actually needs; anything smaller is decoration. */
+.ingredient-list .check,
+.shopping-item .check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  margin: -0.5rem 0 -0.5rem -0.6rem;
+  cursor: pointer;
+}
+
+.ingredient-list .check input,
+.shopping-item .check input {
+  width: 1.35rem;
+  height: 1.35rem;
+  accent-color: var(--accent);
+}
+
 /* Tick-all sits with the counter rather than in the list, so it reads as a
    control over the list and not as another thing to buy. */
 .check-all {
@@ -1449,9 +1533,12 @@ input::placeholder {
 
 /* Ticked lines fade rather than vanish: you still want to see what you
    already have when checking the list a second time. */
+/* Recessed with a colour, not with opacity — see the shopping list rule
+   above for the measurements. */
 .ingredient-list.checklist li[data-checked] .what,
+.ingredient-list.checklist li[data-checked] .what a,
 .ingredient-list.checklist li[data-checked] .amount {
-  opacity: 0.45;
+  color: var(--text-muted);
   text-decoration: line-through;
 }
 
@@ -1554,4 +1641,76 @@ input::placeholder {
   .ingredient-list.checklist .amount {
     grid-column: 2;
   }
+
+  /* `.what` was never placed, so it auto-flowed into row 2 / column 1 —
+     the checkbox column — which then sized itself to the longest
+     ingredient name. Measured at 390px: 15 different checkbox positions
+     across 16 rows, drifting 89px, with the amount right-flushed to the
+     panel edge and its own name 90px away on the next line. The shopping
+     list already got this right twenty lines up. */
+  .ingredient-list.checklist .what {
+    grid-column: 2;
+  }
+}
+
+/* ── Recipes on the shopping list ────────────────────────────────────────
+   Chips naming what the list was built from, each with a remove button.
+   Deliberately the size of your shop, never the size of the archive: the
+   picker that used to live here listed every recipe in the repository.
+
+   The remove button is a 44px target with a 44px row, because this gets
+   used one-handed in a shop. */
+.list-recipes ul {
+  list-style: none;
+  margin: 0 0 1.5rem;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.list-recipes li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  min-height: 2.75rem;
+  padding-left: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.list-recipes a {
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.list-recipes a:hover {
+  color: var(--accent);
+}
+
+.list-recipes button {
+  font: inherit;
+  font-size: 1.15rem;
+  line-height: 1;
+  width: 2.75rem;
+  height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.list-recipes button:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.list-recipes[data-pending] {
+  opacity: 0.6;
 }

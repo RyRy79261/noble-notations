@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { formatQuantity } from '@/lib/domain/units';
+import { scaleAmount, useScale } from './scale';
 import { CATEGORY_LABELS, categoryRank } from '@/lib/site';
 import type { IngredientLineView } from '@/lib/queries/read';
 
@@ -31,35 +32,23 @@ import type { IngredientLineView } from '@/lib/queries/read';
  * quantities are what the page should say when you arrive.
  */
 
-/** The scales worth a button. Anything else goes in the box beside them. */
-const SCALE_PRESETS = [0.5, 1, 2, 3];
-
-/**
- * Round a scaled amount to something you can measure.
- *
- * At ×1 the value is returned untouched. The rounding is there to stop a
- * scaled amount reading as 138.49999999999997, and applying it to an
- * unscaled one silently rewrites the recipe: 138.5 g of salt became
- * "139 g" on a page that had not been scaled at all. What the recipe says
- * is what the page says until someone asks for a different batch.
- */
-function scaleAmount(value: number, scale: number): number {
-  if (scale === 1) return value;
-  const scaled = value * scale;
-  if (scaled >= 100) return Math.round(scaled);
-  if (scaled >= 10) return Math.round(scaled * 10) / 10;
-  return Math.round(scaled * 1000) / 1000;
-}
 function storageKey(slug: string, revisionNumber: number): string {
   return `nn:checked:${slug}:${revisionNumber}`;
 }
 
+/** The scales worth a button. Anything else goes in the box beside them. */
+const SCALE_PRESETS = [0.5, 1, 2, 3];
+
 function Amount({ line, scale }: { line: IngredientLineView; scale: number }) {
+  // The unit goes with the number into the scaling, so a count is rounded
+  // like a count and a mass like a mass.
   const amount = formatQuantity(
-    line.quantity == null ? line.quantity : scaleAmount(line.quantity, scale),
+    line.quantity == null
+      ? line.quantity
+      : scaleAmount(line.quantity, scale, line.unit),
     line.quantityMax == null
       ? line.quantityMax
-      : scaleAmount(line.quantityMax, scale),
+      : scaleAmount(line.quantityMax, scale, line.unit),
   );
   if (!amount) return <span className="amount" />;
   return (
@@ -84,7 +73,9 @@ export function IngredientChecklist({
   yieldUnit?: string | null;
 }) {
   const [byShop, setByShop] = useState(true);
-  const [scale, setScale] = useState(1);
+  // Shared, not local: the yield in "At a glance" reads the same value, so
+  // the page cannot state two batch sizes at once.
+  const { scale, raw, setScale, setRaw, commit } = useScale();
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [ready, setReady] = useState(false);
 
@@ -211,20 +202,22 @@ export function IngredientChecklist({
         <label className="scale-custom">
           <span className="visually-hidden">Custom multiplier</span>
           <input
-            type="number"
-            min="0.1"
-            max="100"
-            step="0.1"
-            value={scale}
-            onChange={(event) => {
-              const next = Number(event.target.value);
-              // An empty or nonsense box should not blank every amount on
-              // the page; hold the last usable scale until a real one lands.
-              if (Number.isFinite(next) && next > 0) setScale(next);
-            }}
+            // Text, not number: Chrome reports `value === ''` for a
+            // partially-typed number it considers invalid, which desyncs
+            // the raw string from what is on screen. `inputMode` still
+            // gets the numeric keypad on a phone.
+            type="text"
+            inputMode="decimal"
+            value={raw}
+            onChange={(event) => setRaw(event.target.value)}
+            onBlur={commit}
+            aria-label="Batch multiplier"
           />
         </label>
         {scale !== 1 && yieldQuantity != null ? (
+          // "At a glance" carries the scaled yield too. This stays because
+          // the table is above the fold on desktop and off it on a phone,
+          // and the number belongs next to the control that changed it.
           <span className="faint scale-yield">
             makes {formatQuantity(scaleAmount(yieldQuantity, scale))}
             {yieldUnit ? ` ${yieldUnit}` : ''}

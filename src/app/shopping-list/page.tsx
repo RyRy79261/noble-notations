@@ -1,17 +1,17 @@
 import type { Metadata } from 'next';
-import { Suspense } from 'react';
-import { buildShoppingList, listRecipes } from '@/lib/queries/read';
+import { buildShoppingList } from '@/lib/queries/read';
 import { safeRead } from '@/lib/safe';
 import { DatabaseNotice } from '@/components/database-notice';
 import { ShoppingChecklist } from '@/components/shopping-checklist';
-import { RecipePicker } from './recipe-picker';
+import { ListRecipes } from './list-recipes';
+import { BasketBridge } from './basket-redirect';
 
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
   title: 'Shopping list',
   description:
-    'Combine the ingredients of several recipes into one list, grouped by where they sit in a shop.',
+    'The ingredients of the recipes you are cooking, in one list, grouped by where they sit in a shop.',
   alternates: { canonical: '/shopping-list' },
 };
 
@@ -20,6 +20,20 @@ function asArray(value: string | string[] | undefined): string[] {
   return Array.isArray(value) ? value : [value];
 }
 
+/**
+ * The shopping list shows what is on the shopping list. Nothing else.
+ *
+ * This page used to open with a checkbox for every recipe in the
+ * repository — a picker, above the list, so you could add recipes from
+ * here. That is the wrong place for it twice over. It does not scale: at
+ * eight hundred recipes it is eight hundred checkboxes over the thing you
+ * came to read. And it is redundant: you decide to cook something while
+ * reading it, so the recipe page is where the decision belongs, and its
+ * "Add to shopping list" button is where it is made.
+ *
+ * What is left is the list, and a line naming the recipes it came from so
+ * you can drop one without hunting for the recipe again.
+ */
 export default async function ShoppingListPage({
   searchParams,
 }: {
@@ -28,16 +42,13 @@ export default async function ShoppingListPage({
   const params = await searchParams;
   const selected = asArray(params.r);
 
-  const [recipesResult, listResult] = await Promise.all([
-    safeRead(() => listRecipes(), []),
-    safeRead(() => buildShoppingList(selected), null),
-  ]);
+  const listResult = await safeRead(() => buildShoppingList(selected), null);
 
-  if (!recipesResult.configured || recipesResult.failed) {
+  if (!listResult.configured || listResult.failed) {
     return (
       <div className="page">
         <h1>Shopping list</h1>
-        <DatabaseNotice failed={recipesResult.failed} />
+        <DatabaseNotice failed={listResult.failed} />
       </div>
     );
   }
@@ -60,25 +71,36 @@ export default async function ShoppingListPage({
     })),
   }));
 
+  if (selected.length === 0) {
+    // The basket is localStorage-only, so the server cannot tell an empty
+    // list from a full one reached through the bare nav link. The client
+    // decides which of the two this is.
+    return (
+      <div className="page">
+        <header className="hero">
+          <h1>Shopping list</h1>
+        </header>
+        <BasketBridge />
+      </div>
+    );
+  }
+
   return (
     <div className="page">
       <header className="hero">
         <h1>Shopping list</h1>
-        <p>
-          Select the recipes that you will cook. This page joins their
-          ingredients into one list. The list follows the order of a shop. It is
-          not in alphabetical order.
-        </p>
-        <p>
-          The page adds two amounts only if their units agree. 800&nbsp;g and
-          1&nbsp;kg become 1.8&nbsp;kg. But three cloves and two heads stay on
-          two lines. A wrong total is worse than two correct lines.
-        </p>
+        {list ? (
+          <p className="faint">
+            {list.totalEntries} thing{list.totalEntries === 1 ? '' : 's'} to buy
+            across {list.recipes.length} recipe
+            {list.recipes.length === 1 ? '' : 's'}. Grouped the way a shop is
+            walked. Each amount keeps the unit the recipe wrote. Two amounts are
+            added only when one unit converts into the other, so 800&nbsp;g and
+            1&nbsp;kg become 1.8&nbsp;kg, but two cloves and ten heads are kept
+            apart.
+          </p>
+        ) : null}
       </header>
-
-      <Suspense fallback={null}>
-        <RecipePicker recipes={recipesResult.data} selected={selected} />
-      </Suspense>
 
       {list && list.missing.length > 0 ? (
         <p className="notice">
@@ -86,22 +108,12 @@ export default async function ShoppingListPage({
         </p>
       ) : null}
 
-      {selected.length === 0 ? (
-        <p className="empty">
-          Select one or more recipes above to make a list.
-        </p>
-      ) : groups.length === 0 ? (
+      {list ? <ListRecipes recipes={list.recipes} /> : null}
+
+      {groups.length === 0 ? (
         <p className="empty">These recipes have no ingredients yet.</p>
       ) : (
-        <>
-          <p className="faint">
-            {list!.totalEntries} thing
-            {list!.totalEntries === 1 ? '' : 's'} to buy across{' '}
-            {list!.recipes.length} recipe
-            {list!.recipes.length === 1 ? '' : 's'}.
-          </p>
-          <ShoppingChecklist groups={groups} selection={selected} />
-        </>
+        <ShoppingChecklist groups={groups} selection={selected} />
       )}
     </div>
   );

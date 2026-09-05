@@ -140,13 +140,10 @@ test('the shopping list stays in step with the basket', async ({ page }) => {
   await page.getByRole('link', { name: /shopping list 1/i }).click();
   await expect(page.locator('.shopping-item').first()).toBeVisible();
 
-  // The picker arrives collapsed once a list exists, so opening it is part
-  // of the journey rather than an implementation detail to skip.
-  await page.getByRole('button', { name: /choose \(1\)/i }).click();
-
-  // Emptying the selection has to empty the basket too. When it did not,
-  // the header kept counting recipes the list no longer held, and there
-  // was no longer a dialog to clear it from.
-  await page.getByRole('button', { name: /clear all/i }).click();
+  // Emptying the list has to empty the basket too. When it did not, the
+  // header kept counting a recipe the list no longer held.
+  await page
+    .getByRole('button', { name: /remove .* from the shopping list/i })
+    .click();
   await expect(page.locator('.basket-button')).toHaveCount(0);
 });

@@ -1270,7 +1270,16 @@ export async function buildShoppingList(
     slug: string | null;
     name: string;
     category: string;
-    buckets: Map<string, { bucket: QuantityBucket; amount: number }>;
+    buckets: Map<
+      string,
+      {
+        bucket: QuantityBucket;
+        /** Total in the bucket's base unit, for cross-unit conversion. */
+        amount: number;
+        /** Total per unit as written, so a unit nobody used is never shown. */
+        byUnit: Map<string, number>;
+      }
+    >;
     unquantified: boolean;
     optionalCount: number;
     lineCount: number;
@@ -1313,8 +1322,23 @@ export async function buildShoppingList(
       const bucket = quantityBucket(line.unit);
       const existing = entry.buckets.get(bucket.key);
       const added = quantity * bucket.toBase;
-      if (existing) existing.amount += added;
-      else entry.buckets.set(bucket.key, { bucket, amount: added });
+      // Keep a total per written unit alongside the base-unit total. The
+      // base is what lets 800 g and 1 kg become 1.8 kg; the per-unit totals
+      // are what stop three tablespoons becoming "44.4 ml".
+      const writtenUnit = bucket.canonical ?? '';
+      if (existing) {
+        existing.amount += added;
+        existing.byUnit.set(
+          writtenUnit,
+          (existing.byUnit.get(writtenUnit) ?? 0) + quantity,
+        );
+      } else {
+        entry.buckets.set(bucket.key, {
+          bucket,
+          amount: added,
+          byUnit: new Map([[writtenUnit, quantity]]),
+        });
+      }
     }
 
     entry.from.push({
@@ -1336,8 +1360,8 @@ export async function buildShoppingList(
       slug: entry.slug,
       name: entry.name,
       category: entry.category,
-      amounts: [...entry.buckets.values()].map(({ bucket, amount }) =>
-        formatAggregate(bucket, amount),
+      amounts: [...entry.buckets.values()].map(({ bucket, amount, byUnit }) =>
+        formatAggregate(bucket, amount, byUnit),
       ),
       unquantified: entry.unquantified,
       optional: entry.optionalCount === entry.lineCount,
