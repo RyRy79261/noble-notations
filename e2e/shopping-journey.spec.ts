@@ -162,6 +162,72 @@ test.describe('scaling a recipe', () => {
     await expect(salt).toHaveText('138.5 g');
   });
 
+  test('a multiplier can be typed, including a half batch', async ({
+    page,
+  }) => {
+    await page.goto('/recipes/baumy-biltong');
+
+    const box = page.locator('.scale-custom input');
+    const beef = page
+      .locator('.ingredient-list li', { hasText: 'Beef silverside' })
+      .first()
+      .locator('.amount');
+
+    // The first version held one controlled number, so "0" and "0." were
+    // rejected mid-word and React snapped the box back with the caret after
+    // the old digits. Typing 0.5 produced 1.5 — a half batch was
+    // unreachable, and the field could not be emptied at all.
+    await box.click();
+    await page.keyboard.press('Control+a');
+    await page.keyboard.type('0.5');
+    await expect(box).toHaveValue('0.5');
+    await expect(beef).toHaveText('5 kg');
+
+    await box.click();
+    await page.keyboard.press('Control+a');
+    await page.keyboard.press('Backspace');
+    await expect(box).toHaveValue('');
+    // Clearing the box must not blank every amount on the page.
+    await expect(beef).toHaveText('5 kg');
+
+    await page.keyboard.type('2.5');
+    await expect(beef).toHaveText('25 kg');
+  });
+
+  test('an out-of-range multiplier is clamped, not obeyed', async ({
+    page,
+  }) => {
+    await page.goto('/recipes/baumy-biltong');
+    const box = page.locator('.scale-custom input');
+
+    await box.click();
+    await page.keyboard.press('Control+a');
+    await page.keyboard.type('999');
+    await box.blur();
+
+    await expect(box).toHaveValue('100');
+  });
+
+  test('the yield and the ingredients never state two batch sizes', async ({
+    page,
+  }) => {
+    await page.goto('/recipes/baumy-biltong');
+
+    const yieldCell = page
+      .locator('table tr', { hasText: 'Yield' })
+      .locator('td.numeric');
+
+    // The scale used to live inside the ingredient list, where nothing else
+    // could see it: at ×3 the table said "4.5 kg dried" while the readout
+    // beside the scaler said "13.5 kg". Both from the same recipe, on the
+    // same screen.
+    await expect(yieldCell).toContainText('4.5 kg');
+    await page.getByRole('button', { name: '×3', exact: true }).click();
+    await expect(yieldCell).toContainText('13.5 kg');
+    await expect(yieldCell).toContainText('×3 batch');
+    await expect(page.locator('.scale-yield')).toContainText('13.5 kg');
+  });
+
   test('scaling reports the yield it produces', async ({ page }) => {
     await page.goto('/recipes/baumy-biltong');
 
