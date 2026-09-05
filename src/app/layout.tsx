@@ -35,6 +35,7 @@ export const metadata: Metadata = {
 };
 
 import { BasketButton } from '@/components/shopping-basket';
+import { HeaderHeight } from '@/components/header-height';
 
 const NAV = [
   { href: '/recipes', label: 'Recipes' },
@@ -75,7 +76,16 @@ export default function RootLayout({
             </div>
           </header>
 
-          <main id="main">{children}</main>
+          {/* Anything that must clear the sticky header reads --header-h,
+              because the header's height depends on content, not width. */}
+          <HeaderHeight />
+
+          {/* tabIndex so "Skip to content" actually moves focus. Without it
+              only Chromium's sequential-focus fallback papers over the gap
+              and Safari does nothing at all. */}
+          <main id="main" tabIndex={-1}>
+            {children}
+          </main>
 
           <footer className="site-footer">
             <div className="site-footer-inner">

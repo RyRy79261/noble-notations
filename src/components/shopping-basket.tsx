@@ -82,6 +82,11 @@ function useBasket() {
   return { items, ready, add, remove };
 }
 
+/** The basket, for code outside a component. */
+export function readBasket(): BasketRecipe[] {
+  return read();
+}
+
 export function basketHref(items: BasketRecipe[]): string {
   const params = new URLSearchParams();
   for (const item of items) params.append('r', item.slug);
@@ -90,14 +95,17 @@ export function basketHref(items: BasketRecipe[]): string {
 
 /** "Add to shopping list", for a recipe page. */
 export function AddToBasket({ slug, title }: BasketRecipe) {
-  const { items, ready, add, remove } = useBasket();
+  const { items, add, remove } = useBasket();
   const inBasket = items.some((item) => item.slug === slug);
 
-  // Rendering nothing until mounted keeps the server markup and the first
-  // client render identical; the label depends on localStorage, which the
-  // server cannot see.
-  if (!ready) return null;
-
+  // Rendered from the server in its default state, not withheld until
+  // mounted. Withholding it meant the only entry point to the shopping
+  // flow was absent from the served HTML entirely — `curl` found no trace
+  // of it, and with JavaScript off the recipe page offered no way to shop
+  // at all. The sibling checklist in the same panel has the same
+  // localStorage dependency and renders fine, so the hydration argument
+  // was never a constraint this codebase accepted. The label corrects
+  // itself the moment the effect runs.
   return (
     <button
       type="button"
@@ -136,13 +144,25 @@ export function BasketButton() {
 }
 
 /**
- * Replace the basket wholesale.
+ * Take one recipe out of the basket, from outside a component.
  *
- * The shopping list page drives its selection from the URL, so changing the
- * recipes there has to write back here — otherwise the header count keeps
- * counting recipes the list no longer contains, and the basket only ever
- * grows.
+ * This replaced a `setBasket(items)` that wrote a whole array, and the
+ * difference is data loss. The shopping list rebuilt that array from the
+ * URL, so any recipe in the basket but not in the current `?r=` was
+ * destroyed by a removal it had nothing to do with — and the two stores
+ * drift apart the moment you add a recipe and then press Back. Measured:
+ * add three recipes, go back one page, remove one chip, and the third
+ * recipe added seconds earlier through the app's own button is gone, with
+ * no warning and no undo.
+ *
+ * Removal mutates. There is deliberately no way to replace the basket
+ * wholesale from here any more.
  */
-export function setBasket(items: BasketRecipe[]): void {
-  write(items);
+export function removeFromBasket(slug: string): void {
+  write(read().filter((item) => item.slug !== slug));
+}
+
+/** Empty the basket. One decision, one call — used by "Clear the list". */
+export function clearBasket(): void {
+  write([]);
 }

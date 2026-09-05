@@ -26,7 +26,11 @@
 
   --text: #e9e5f2;
   --text-muted: #a99fc2;
-  --text-faint: #7a7194;
+  /* Was #7a7194 — 4.01:1 on --bg and worse on --surface-2, an AA failure.
+     This is not decorative text: it carries step durations, oven
+     temperatures, "optional", which recipe a shopping item is for, and the
+     only sentence on every empty state. */
+  --text-faint: #9b91b8;
 
   --accent: #b794ff;
   --accent-strong: #9b6dff;
@@ -63,7 +67,9 @@
 
     --text: #1b1526;
     --text-muted: #5f5578;
-    --text-faint: #8a80a3;
+    /* Was #8a80a3 — 3.55:1 on white. Both themes failed; the dark value
+       was never a passing baseline to match. */
+    --text-faint: #635a7d;
 
     --accent: #6d28d9;
     --accent-strong: #5b21b6;
@@ -179,6 +185,16 @@ hr {
 }
 
 /* ─── Layout ─────────────────────────────────────────────────────────── */
+
+/* Every in-page jump — the skip link, an anchor, focus scrolling — has to
+   clear the sticky header or it lands underneath it. */
+html {
+  scroll-padding-top: calc(var(--header-h, 10rem) + 0.5rem);
+}
+
+#main:focus {
+  outline: none;
+}
 
 .shell {
   min-height: 100dvh;
@@ -471,10 +487,22 @@ a.tag:hover {
   border-bottom: 1px solid var(--border);
 }
 
-/* Ticked means "in the trolley". It fades rather than disappearing: on a
-   second pass you still want to see what you already picked up. */
-.shopping-item[data-checked] {
-  opacity: 0.45;
+/* Ticked means "in the trolley". It recedes rather than disappearing: on a
+   second pass you still want to see what you already picked up.
+
+   Recessed with a colour, never with opacity. `opacity: 0.45` composited
+   the text against the page to 1.65:1 in light and 2.47:1 in dark —
+   measured by sampling the rasterised pixels, not modelled — and the links
+   in these rows are still active and focusable, so the WCAG exception for
+   inactive controls does not apply. "Tick all" put every row in that state
+   at once, which made the page least legible exactly when it was fullest.
+   The line-through already says "done". */
+.shopping-item[data-checked] .shopping-what a,
+.shopping-item[data-checked] .shopping-what span,
+.shopping-item[data-checked] .shopping-amount,
+.shopping-item[data-checked] .shopping-from,
+.shopping-item[data-checked] .shopping-from a {
+  color: var(--text-muted);
 }
 
 .shopping-item[data-checked] .shopping-what > a,
@@ -848,8 +876,13 @@ th.numeric {
     border: 1px solid var(--border);
     border-radius: 10px;
     position: sticky;
-    top: 0.5rem;
-    z-index: 5;
+    /* Below the header, never inside it. At `top: 0.5rem` this strip
+       pinned within the header band, and hit-testing its centre returned
+       the header — so the Method tab ate the tap, and in the transition
+       band passed it to a nav link and left the recipe. The fallback
+       covers the tallest wrapped header until the observer reports. */
+    top: calc(var(--header-h, 7rem) + 0.5rem);
+    z-index: 21;
     background: var(--bg-elevated);
   }
 
@@ -894,7 +927,7 @@ th.numeric {
 
 .recipe-aside {
   position: sticky;
-  top: 5rem;
+  top: calc(var(--header-h, 7rem) + 1rem);
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
@@ -1500,9 +1533,12 @@ input::placeholder {
 
 /* Ticked lines fade rather than vanish: you still want to see what you
    already have when checking the list a second time. */
+/* Recessed with a colour, not with opacity — see the shopping list rule
+   above for the measurements. */
 .ingredient-list.checklist li[data-checked] .what,
+.ingredient-list.checklist li[data-checked] .what a,
 .ingredient-list.checklist li[data-checked] .amount {
-  opacity: 0.45;
+  color: var(--text-muted);
   text-decoration: line-through;
 }
 
@@ -1603,6 +1639,16 @@ input::placeholder {
   }
 
   .ingredient-list.checklist .amount {
+    grid-column: 2;
+  }
+
+  /* `.what` was never placed, so it auto-flowed into row 2 / column 1 —
+     the checkbox column — which then sized itself to the longest
+     ingredient name. Measured at 390px: 15 different checkbox positions
+     across 16 rows, drifting 89px, with the amount right-flushed to the
+     panel edge and its own name 90px away on the next line. The shopping
+     list already got this right twenty lines up. */
+  .ingredient-list.checklist .what {
     grid-column: 2;
   }
 }

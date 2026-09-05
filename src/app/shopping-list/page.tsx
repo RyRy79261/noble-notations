@@ -1,10 +1,10 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { buildShoppingList } from '@/lib/queries/read';
 import { safeRead } from '@/lib/safe';
 import { DatabaseNotice } from '@/components/database-notice';
 import { ShoppingChecklist } from '@/components/shopping-checklist';
 import { ListRecipes } from './list-recipes';
+import { BasketBridge } from './basket-redirect';
 
 export const dynamic = 'force-dynamic';
 
@@ -72,20 +72,15 @@ export default async function ShoppingListPage({
   }));
 
   if (selected.length === 0) {
+    // The basket is localStorage-only, so the server cannot tell an empty
+    // list from a full one reached through the bare nav link. The client
+    // decides which of the two this is.
     return (
       <div className="page">
         <header className="hero">
           <h1>Shopping list</h1>
         </header>
-        <p className="empty">
-          Nothing on the list yet. Open a recipe and press{' '}
-          <strong>Add to shopping list</strong>, then come back here.
-        </p>
-        <p>
-          <Link href="/recipes" className="button-primary">
-            Browse recipes
-          </Link>
-        </p>
+        <BasketBridge />
       </div>
     );
   }

@@ -109,6 +109,17 @@ export function RecipeDetail({
             .
           </p>
         ) : null}
+
+        {/* Above the tabs, not inside one. It used to live in the
+            Ingredients panel, which meant that on a phone — where the
+            inactive panel is `display: none` — pressing Method made the
+            only entry point to the shopping flow measure 0x0. It was also
+            around 2.9 screens down. */}
+        {recipe.ingredients.length > 0 ? (
+          <div className="basket-cta">
+            <AddToBasket slug={recipe.slug} title={recipe.title} />
+          </div>
+        ) : null}
       </header>
 
       <RecipeTabs
@@ -168,9 +179,6 @@ export function RecipeDetail({
                   yieldQuantity={rev.yieldQuantity}
                   yieldUnit={rev.yieldUnit}
                 />
-                <div className="basket-cta">
-                  <AddToBasket slug={recipe.slug} title={recipe.title} />
-                </div>
               </section>
             ) : null}
 

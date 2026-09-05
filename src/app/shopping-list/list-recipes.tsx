@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useOptimistic, useTransition } from 'react';
-import { setBasket } from '@/components/shopping-basket';
+import { removeFromBasket } from '@/components/shopping-basket';
 
 /**
  * The recipes this list came from, and the only way to drop one.
@@ -37,9 +37,10 @@ export function ListRecipes({
     url.delete('r');
     for (const recipe of next) url.append('r', recipe.slug);
 
-    // Keep the basket in step, or the header goes on counting a recipe the
-    // list no longer holds.
-    setBasket(next.map(({ slug: s, title }) => ({ slug: s, title })));
+    // Mutate one entry. Writing the whole array back — which is what this
+    // did first — destroys any recipe that is in the basket but not in the
+    // current URL, and the two drift apart as soon as you press Back.
+    removeFromBasket(slug);
 
     startTransition(() => {
       setShown(next);
