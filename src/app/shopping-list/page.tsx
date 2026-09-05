@@ -94,9 +94,10 @@ export default async function ShoppingListPage({
             {list.totalEntries} thing{list.totalEntries === 1 ? '' : 's'} to buy
             across {list.recipes.length} recipe
             {list.recipes.length === 1 ? '' : 's'}. Grouped the way a shop is
-            walked. Two amounts are added only when their units agree, so
-            800&nbsp;g and 1&nbsp;kg become 1.8&nbsp;kg but three cloves and two
-            heads stay on two lines.
+            walked. Each amount keeps the unit the recipe wrote. Two amounts are
+            added only when one unit converts into the other, so 800&nbsp;g and
+            1&nbsp;kg become 1.8&nbsp;kg, but two cloves and ten heads are kept
+            apart.
           </p>
         ) : null}
       </header>

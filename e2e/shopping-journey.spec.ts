@@ -236,3 +236,87 @@ test.describe('scaling a recipe', () => {
     await expect(page.locator('.scale-yield')).toContainText('9 kg');
   });
 });
+
+test.describe('amounts keep the unit the recipe wrote', () => {
+  /**
+   * The list used to sum in base units and throw the written unit away, so
+   * every amount was re-expressed in grams or millilitres on its way to the
+   * page. That is a rewrite, not a conversion: a lone "2 tbsp" of sugar —
+   * one line, added to nothing — rendered as "29.6 ml", "6 oz" of tomato
+   * paste as "170.1 g", "2 cup" of mirepoix as "473.2 ml". Worst of all,
+   * two tablespoons plus one tablespoon came out as "44.4 ml", a conversion
+   * performed on two numbers that already shared a unit.
+   *
+   * Nobody measures a tablespoon in millilitres, and nobody buys tomato
+   * paste by the gram. The unit is part of the quantity.
+   */
+
+  async function open(page: import('@playwright/test').Page, slugs: string[]) {
+    await collect(page, slugs);
+    await openList(page);
+  }
+
+  test('a single line is shown as written, not converted', async ({ page }) => {
+    await open(page, ['pickled-jalapenos', 'demi-glace']);
+
+    // Volume, spoons: the reason this was noticed.
+    await expect(
+      page.locator('.shopping-item', { hasText: 'Sugar' }).first(),
+    ).toContainText('2 tbsp');
+    await expect(
+      page.locator('.shopping-item', { hasText: 'Black pepper' }).first(),
+    ).toContainText('1 tsp');
+    // Volume, cups.
+    await expect(
+      page.locator('.shopping-item', { hasText: 'Mirepoix' }).first(),
+    ).toContainText('2 cups');
+    // Mass, imperial: these convert cleanly to grams, which is exactly why
+    // they were being converted. A shop still sells them by the pound.
+    await expect(
+      page.locator('.shopping-item', { hasText: 'Tomato paste' }).first(),
+    ).toContainText('6 oz');
+    await expect(
+      page.locator('.shopping-item', { hasText: 'Oxtail' }).first(),
+    ).toContainText('1 lb');
+  });
+
+  test('no amount uses a unit its own recipes never wrote', async ({
+    page,
+  }) => {
+    await open(page, ['pickled-jalapenos', 'demi-glace']);
+
+    // The sweep rather than a handful of examples, because the failure was
+    // systemic: every row went through the same lossy boundary.
+    const strays = await page.evaluate(() => {
+      const UNITS = /\b(g|kg|mg|oz|lb|lbs|ml|l|tsp|tbsp|cups?)\b/g;
+      const bad: string[] = [];
+      for (const item of document.querySelectorAll('.shopping-item')) {
+        const amount =
+          item.querySelector('.shopping-amount')?.textContent ?? '';
+        const from = item.querySelector('.shopping-from')?.textContent ?? '';
+        const name = item.querySelector('.shopping-what')?.textContent ?? '';
+        for (const unit of amount.match(UNITS) ?? []) {
+          const singular = unit.replace(/s$/, '');
+          const written = new RegExp(`\\d\\s*${singular}s?\\b`, 'i');
+          if (!written.test(from)) bad.push(`${name.trim()}: ${amount.trim()}`);
+        }
+      }
+      return bad;
+    });
+
+    expect(strays).toEqual([]);
+  });
+
+  test('a count keeps its own noun and its plural', async ({ page }) => {
+    await open(page, ['pickled-jalapenos', 'berlin-crayfish-boil']);
+
+    // Cloves and heads are both `toBase: 1`, and adding them would give
+    // "12 pieces" of something you cannot buy. They stay apart, and each
+    // reads as English rather than "2 clove".
+    const garlic = page
+      .locator('.shopping-item', { hasText: 'Garlic' })
+      .first();
+    await expect(garlic).toContainText('2 cloves');
+    await expect(garlic).toContainText('heads');
+  });
+});

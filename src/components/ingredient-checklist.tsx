@@ -40,11 +40,15 @@ function storageKey(slug: string, revisionNumber: number): string {
 const SCALE_PRESETS = [0.5, 1, 2, 3];
 
 function Amount({ line, scale }: { line: IngredientLineView; scale: number }) {
+  // The unit goes with the number into the scaling, so a count is rounded
+  // like a count and a mass like a mass.
   const amount = formatQuantity(
-    line.quantity == null ? line.quantity : scaleAmount(line.quantity, scale),
+    line.quantity == null
+      ? line.quantity
+      : scaleAmount(line.quantity, scale, line.unit),
     line.quantityMax == null
       ? line.quantityMax
-      : scaleAmount(line.quantityMax, scale),
+      : scaleAmount(line.quantityMax, scale, line.unit),
   );
   if (!amount) return <span className="amount" />;
   return (

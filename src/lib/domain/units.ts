@@ -16,6 +16,15 @@ interface UnitDef {
   /** Multiplier to the kind's base unit: grams for mass, ml for volume. */
   toBase: number;
   aliases: string[];
+  /**
+   * The plural spelling, where one is written out.
+   *
+   * Declared rather than derived. Deriving it from the alias list picked
+   * "gram" as the plural of "g" and turned 1200 grams into "1200 gram",
+   * and no suffix rule gets "leaves" from "leaf". Abbreviations leave this
+   * unset and stay invariant, which is what "500 ml" wants anyway.
+   */
+  plural?: string;
 }
 
 const UNITS: UnitDef[] = [
@@ -45,6 +54,7 @@ const UNITS: UnitDef[] = [
   },
   {
     canonical: 'lb',
+    plural: 'lbs',
     kind: 'mass',
     toBase: 453.592,
     aliases: ['lb', 'lbs', 'pound', 'pounds'],
@@ -76,6 +86,7 @@ const UNITS: UnitDef[] = [
   },
   {
     canonical: 'cup',
+    plural: 'cups',
     kind: 'volume',
     toBase: 236.588,
     aliases: ['cup', 'cups'],
@@ -89,62 +100,95 @@ const UNITS: UnitDef[] = [
 
   {
     canonical: 'piece',
+    plural: 'pieces',
     kind: 'count',
     toBase: 1,
     aliases: ['piece', 'pieces', 'pc', 'pcs', 'whole', 'each'],
   },
   {
     canonical: 'clove',
+    plural: 'cloves',
     kind: 'count',
     toBase: 1,
     aliases: ['clove', 'cloves'],
   },
-  { canonical: 'pod', kind: 'count', toBase: 1, aliases: ['pod', 'pods'] },
-  { canonical: 'head', kind: 'count', toBase: 1, aliases: ['head', 'heads'] },
+  {
+    canonical: 'pod',
+    kind: 'count',
+    toBase: 1,
+    aliases: ['pod', 'pods'],
+    plural: 'pods',
+  },
+  {
+    canonical: 'head',
+    kind: 'count',
+    toBase: 1,
+    aliases: ['head', 'heads'],
+    plural: 'heads',
+  },
   {
     canonical: 'bunch',
+    plural: 'bunches',
     kind: 'count',
     toBase: 1,
     aliases: ['bunch', 'bunches'],
   },
   {
     canonical: 'sprig',
+    plural: 'sprigs',
     kind: 'count',
     toBase: 1,
     aliases: ['sprig', 'sprigs'],
   },
-  { canonical: 'leaf', kind: 'count', toBase: 1, aliases: ['leaf', 'leaves'] },
+  {
+    canonical: 'leaf',
+    kind: 'count',
+    toBase: 1,
+    aliases: ['leaf', 'leaves'],
+    plural: 'leaves',
+  },
   {
     canonical: 'pinch',
+    plural: 'pinches',
     kind: 'count',
     toBase: 1,
     aliases: ['pinch', 'pinches'],
   },
   {
     canonical: 'bottle',
+    plural: 'bottles',
     kind: 'count',
     toBase: 1,
     aliases: ['bottle', 'bottles'],
   },
-  { canonical: 'ear', kind: 'count', toBase: 1, aliases: ['ear', 'ears'] },
+  {
+    canonical: 'ear',
+    kind: 'count',
+    toBase: 1,
+    aliases: ['ear', 'ears'],
+    plural: 'ears',
+  },
   // Added because a real write used "stalk" for lemongrass and it fell
   // through as an unrecognised unit. Now that unknown units are refused,
   // anything legitimate has to actually be in here — and these three are
   // how ordinary recipes count lemongrass, ginger and citrus.
   {
     canonical: 'stalk',
+    plural: 'stalks',
     kind: 'count',
     toBase: 1,
     aliases: ['stalk', 'stalks'],
   },
   {
     canonical: 'slice',
+    plural: 'slices',
     kind: 'count',
     toBase: 1,
     aliases: ['slice', 'slices'],
   },
   {
     canonical: 'stick',
+    plural: 'sticks',
     kind: 'count',
     toBase: 1,
     aliases: ['stick', 'sticks'],
@@ -306,20 +350,71 @@ export function quantityBucket(
  * Render a summed amount back into the unit a person would shop in: grams
  * until a kilogram is reached, millilitres until a litre.
  */
+/**
+ * The plural spelling of a unit, when it has one.
+ *
+ * The alias list already holds it — "cloves" sits beside "clove" — so this
+ * reads it rather than inventing a rule. Without it a shopping list says
+ * "3 clove", which is the sort of thing that makes a page look machine-made.
+ */
+export function pluraliseUnit(canonical: string, value: number): string {
+  if (value === 1) return canonical;
+  const def = BY_ALIAS.get(canonical);
+  if (!def) return canonical;
+  return def.plural ?? canonical;
+}
+
+/**
+ * Render a total, in the unit the recipe actually used.
+ *
+ * This used to take a single base-unit scalar, because the sum was done in
+ * base units and the written unit was thrown away at the boundary. It
+ * produced totals nobody had asked for and, worse, rewrote amounts that had
+ * never been added to anything: a lone "2 tbsp" of sugar rendered as
+ * "29.6 ml", "6 oz" as "170.1 g", "3 lb" as "1.36 kg". Two tablespoons plus
+ * one tablespoon — same unit on both lines, no conversion needed anywhere —
+ * came out as "44.4 ml".
+ *
+ * So the units travel with the numbers now. `byUnit` holds a total per
+ * written unit, and conversion is a last resort rather than the first step:
+ *
+ * - one unit contributed  -> that unit, verbatim ("3 tbsp")
+ * - several, same kind    -> convert, because they genuinely must ("1.8 kg")
+ * - several kinds         -> they never shared a bucket in the first place
+ */
 export function formatAggregate(
   bucket: QuantityBucket,
   amount: number,
+  byUnit?: Map<string, number>,
 ): string {
+  // The common case, and the one the old signature could not express.
+  if (byUnit && byUnit.size === 1) {
+    const [unit, total] = [...byUnit.entries()][0]!;
+    const value = trimNumber(Math.round(total * 1000) / 1000);
+    return unit ? `${value} ${pluraliseUnit(unit, total)}` : value;
+  }
+
   if (bucket.kind === 'mass') {
     return amount >= 1000
       ? `${trimNumber(Math.round((amount / 1000) * 100) / 100)} kg`
       : `${trimNumber(Math.round(amount * 10) / 10)} g`;
   }
   if (bucket.kind === 'volume') {
+    // Spoons and cups stay spoons and cups when that is all that was
+    // written — millilitres are not how anyone measures a tablespoon.
+    const SPOONS = ['tsp', 'tbsp', 'cup'];
+    if (byUnit && [...byUnit.keys()].every((u) => SPOONS.includes(u))) {
+      const largest = SPOONS.filter((u) => byUnit.has(u)).pop()!;
+      const perUnit = BY_ALIAS.get(largest)!.toBase;
+      const value = trimNumber(Math.round((amount / perUnit) * 100) / 100);
+      return `${value} ${largest}`;
+    }
     return amount >= 1000
       ? `${trimNumber(Math.round((amount / 1000) * 100) / 100)} l`
       : `${trimNumber(Math.round(amount * 10) / 10)} ml`;
   }
   const value = trimNumber(Math.round(amount * 100) / 100);
-  return bucket.canonical ? `${value} ${bucket.canonical}` : value;
+  return bucket.canonical
+    ? `${value} ${pluraliseUnit(bucket.canonical, amount)}`
+    : value;
 }

@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { formatQuantity } from '@/lib/domain/units';
+import { formatQuantity, unitKind } from '@/lib/domain/units';
 
 /**
  * The batch multiplier, shared by everything on a recipe page that shows a
@@ -107,9 +107,23 @@ export function useScale(): ScaleState {
  * one silently rewrites the recipe, and 138.5 g of salt showed as "139 g"
  * on a page nobody had scaled.
  */
-export function scaleAmount(value: number, scale: number): number {
+export function scaleAmount(
+  value: number,
+  scale: number,
+  unit?: string | null,
+): number {
   if (scale === 1) return value;
   const scaled = value * scale;
+
+  // A count is a different kind of number from a mass. Half of three eggs
+  // is 1.5 eggs and saying so is honest, but 1.5 is where it should stop —
+  // rounding a count to three decimals produces "1.667 cloves", which is a
+  // measurement nobody can act on. Mass and volume keep their precision
+  // because 0.375 g of a spice is a real quantity.
+  if (unitKind(unit) === 'count') {
+    return Math.round(scaled * 100) / 100;
+  }
+
   if (scaled >= 100) return Math.round(scaled);
   if (scaled >= 10) return Math.round(scaled * 10) / 10;
   return Math.round(scaled * 1000) / 1000;
@@ -132,7 +146,7 @@ export function ScaledAmount({
   suffix?: string;
 }) {
   const { scale } = useScale();
-  const scaled = scaleAmount(value, scale);
+  const scaled = scaleAmount(value, scale, unit);
   return (
     <>
       {formatQuantity(scaled)}

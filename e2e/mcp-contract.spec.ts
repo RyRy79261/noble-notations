@@ -12,6 +12,7 @@ import { mcpClient, tokens } from './helpers';
  */
 
 const SLUG = 'mcp-contract-laab';
+const SUM_SLUG = 'mcp-contract-nam-jim';
 
 interface WriteResult {
   slug: string;
@@ -168,6 +169,47 @@ test.describe('MCP contract', () => {
     // One row, both lines added: 40 g for the khao khua plus 400 g to serve.
     expect(rows).toHaveLength(1);
     expect(rows[0]!.amounts.join(' ')).toMatch(/440/);
+  });
+
+  test('lines that share a unit sum in that unit, without converting', async () => {
+    const mcp = rw();
+
+    // Two tablespoons plus one tablespoon. No conversion is needed anywhere
+    // in this sum, and the old aggregation performed one anyway: it added in
+    // millilitres because that is the base unit of volume, then reported the
+    // base — "44.4 ml" — for a quantity every cook would call 3 tbsp.
+    await mcp.call('create_recipe', {
+      title: 'Nam jim jaew',
+      slug: SUM_SLUG,
+      kind: 'recipe',
+      rationale: 'The dipping sauce, so the two spoon lines have a home.',
+      ingredients: [
+        { name: 'Fish sauce', quantity: 2, unit: 'tbsp', component: 'Sauce' },
+        {
+          name: 'Fish sauce',
+          quantity: 1,
+          unit: 'tbsp',
+          component: 'To finish',
+        },
+        // Same kind, different units: this one genuinely has to convert,
+        // and must keep doing so.
+        { name: 'Palm sugar', quantity: 800, unit: 'g', component: 'Sauce' },
+        { name: 'Palm sugar', quantity: 1, unit: 'kg', component: 'To finish' },
+      ],
+      steps: [{ instruction: 'Stir until the sugar dissolves.' }],
+    });
+
+    const list = await mcp.call<ShoppingResult>('build_shopping_list', {
+      slugs: [SUM_SLUG],
+    });
+    const rows = new Map(
+      list.groups
+        .flatMap((group) => group.entries)
+        .map((entry) => [entry.name, entry.amounts.join(' + ')]),
+    );
+
+    expect(rows.get('Fish sauce')).toBe('3 tbsp');
+    expect(rows.get('Palm sugar')).toBe('1.8 kg');
   });
 
   test('an alias that already resolves elsewhere is refused, and named', async () => {
