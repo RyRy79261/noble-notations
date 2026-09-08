@@ -30567,10 +30567,10 @@
                           "width": "fill_container",
                           "descendants": {
                             "oDLDD": {
-                              "content": "NN-04-02 · COOKING BATCH LOGS"
+                              "content": "EVERY RUN, LINKED OR NOT"
                             },
                             "DbWM6": {
-                              "content": "NN/RECIPES/BAUMY-BILTONG/BATCH-LOGS"
+                              "content": "NN/BATCH-LOGS"
                             }
                           }
                         }
@@ -64084,6 +64084,1397 @@
                             },
                             "DbWM6": {
                               "content": "NN/ARCHIVE/05",
+                              "fontSize": 9,
+                              "letterSpacing": 1.2
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "maWJq",
+                      "name": "/batch-logs — Every batch log, 360",
+                      "clip": true,
+                      "width": 360,
+                      "fill": "$f-paper",
+                      "layout": "vertical",
+                      "children": [
+                        {
+                          "id": "y7zsE",
+                          "type": "ref",
+                          "ref": "o4vSQK",
+                          "name": "Site header",
+                          "width": "fill_container",
+                          "descendants": {
+                            "yWIMd": {
+                              "content": "4"
+                            }
+                          }
+                        },
+                        {
+                          "id": "qDiRP",
+                          "type": "ref",
+                          "ref": "Y15yR",
+                          "name": "Page head",
+                          "width": "fill_container",
+                          "descendants": {
+                            "xTUwx": {
+                              "content": "NN"
+                            },
+                            "S2iuSH": {
+                              "content": "SIX RUNS · JUN 2024 — SEP 2026"
+                            }
+                          }
+                        },
+                        {
+                          "type": "frame",
+                          "id": "T1NziR",
+                          "name": "Main",
+                          "width": "fill_container",
+                          "layout": "vertical",
+                          "gap": 28,
+                          "padding": [
+                            22,
+                            16,
+                            48,
+                            16
+                          ],
+                          "children": [
+                            {
+                              "id": "PlgwM",
+                              "type": "ref",
+                              "ref": "XqDSx",
+                              "name": "Breadcrumb",
+                              "descendants": {
+                                "vQVjE": {
+                                  "content": "BATCH LOGS",
+                                  "fill": "$f-ink"
+                                },
+                                "pcoby": {
+                                  "enabled": false
+                                },
+                                "uTFqD": {
+                                  "content": "BAUMY BILTONG",
+                                  "enabled": false
+                                },
+                                "MaDzP": {
+                                  "enabled": false
+                                },
+                                "Oqtk7": {
+                                  "enabled": false,
+                                  "content": "BATCH LOGS"
+                                }
+                              }
+                            },
+                            {
+                              "type": "frame",
+                              "id": "rIWYG",
+                              "name": "Hero",
+                              "width": "fill_container",
+                              "layout": "vertical",
+                              "gap": 12,
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "kNPmY",
+                                  "name": "Kicker",
+                                  "fill": "$f-accent",
+                                  "content": "INDEX · EVERY RUN",
+                                  "fontFamily": "$f-mono",
+                                  "fontSize": 9,
+                                  "fontWeight": "normal",
+                                  "letterSpacing": 1.5
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "o1ZBVj",
+                                  "name": "Title",
+                                  "fill": "$f-ink",
+                                  "textGrowth": "fixed-width",
+                                  "width": "fill_container",
+                                  "content": "Batch logs",
+                                  "lineHeight": 1.05,
+                                  "fontFamily": "$f-serif",
+                                  "fontSize": 40,
+                                  "fontWeight": "500",
+                                  "letterSpacing": -1
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "cdfEK",
+                                  "name": "Lede",
+                                  "fill": "$f-ink-2",
+                                  "textGrowth": "fixed-width",
+                                  "width": "fill_container",
+                                  "content": "Every run that has been cooked, newest at the foot. A run usually names the recipe it came from, but it does not have to: a trial is often logged before the recipe that describes it exists. Those runs live here and nowhere else.",
+                                  "lineHeight": 1.7,
+                                  "fontFamily": "$f-sans",
+                                  "fontSize": 15,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "qVUEj",
+                              "name": "Totals",
+                              "width": "fill_container",
+                              "fill": "$f-desk",
+                              "layout": "vertical",
+                              "gap": 16,
+                              "padding": [
+                                16,
+                                14
+                              ],
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "a2Gwe",
+                                  "name": "Row 1",
+                                  "width": "fill_container",
+                                  "gap": 12,
+                                  "children": [
+                                    {
+                                      "id": "J84HM",
+                                      "type": "ref",
+                                      "ref": "C1FDR",
+                                      "name": "Stat — BATCH LOGS",
+                                      "width": "fill_container",
+                                      "descendants": {
+                                        "nCA1p": {
+                                          "content": "BATCH LOGS"
+                                        },
+                                        "CvPJT": {
+                                          "content": "6",
+                                          "fontSize": 15
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "id": "mbR9h",
+                                      "type": "ref",
+                                      "ref": "C1FDR",
+                                      "name": "Stat — RAW, TOTAL",
+                                      "width": "fill_container",
+                                      "descendants": {
+                                        "nCA1p": {
+                                          "content": "RAW, TOTAL"
+                                        },
+                                        "CvPJT": {
+                                          "content": "35.28 kg",
+                                          "fontSize": 15
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "id": "l1yFbb",
+                                      "type": "ref",
+                                      "ref": "C1FDR",
+                                      "name": "Stat — DRIED, TOTAL",
+                                      "width": "fill_container",
+                                      "descendants": {
+                                        "nCA1p": {
+                                          "content": "DRIED, TOTAL"
+                                        },
+                                        "CvPJT": {
+                                          "content": "15.86 kg",
+                                          "fontSize": 15
+                                        }
+                                      }
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "q1fZUv",
+                                  "name": "Row 2",
+                                  "width": "fill_container",
+                                  "gap": 12,
+                                  "children": [
+                                    {
+                                      "id": "pLKYb",
+                                      "type": "ref",
+                                      "ref": "C1FDR",
+                                      "name": "Stat — MEAN YIELD",
+                                      "width": "fill_container",
+                                      "descendants": {
+                                        "nCA1p": {
+                                          "content": "MEAN YIELD"
+                                        },
+                                        "CvPJT": {
+                                          "content": "44.9%",
+                                          "fontSize": 15
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "id": "xEOiD",
+                                      "type": "ref",
+                                      "ref": "C1FDR",
+                                      "name": "Stat — SPENT",
+                                      "width": "fill_container",
+                                      "descendants": {
+                                        "nCA1p": {
+                                          "content": "SPENT"
+                                        },
+                                        "CvPJT": {
+                                          "content": "€903.06",
+                                          "fontSize": 15
+                                        }
+                                      }
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "id": "tf5pm",
+                              "type": "ref",
+                              "ref": "RQkIV",
+                              "name": "Section — Every run",
+                              "width": "fill_container",
+                              "descendants": {
+                                "y5kIL6": {
+                                  "content": "I · EVERY RUN, OLDEST FIRST"
+                                },
+                                "Z3kPCc": {
+                                  "type": "frame",
+                                  "id": "t5nLW1",
+                                  "name": "G",
+                                  "width": "fill_container",
+                                  "justifyContent": "end",
+                                  "alignItems": "center",
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "m2vDgT",
+                                      "name": "M",
+                                      "fill": "$f-ink-3",
+                                      "content": "SIX · 2024 — 2026",
+                                      "fontFamily": "$f-mono",
+                                      "fontSize": 9,
+                                      "fontWeight": "normal",
+                                      "letterSpacing": 1.2
+                                    }
+                                  ]
+                                },
+                                "x3HrAK": {
+                                  "type": "frame",
+                                  "id": "Wkqjz",
+                                  "name": "B",
+                                  "width": "fill_container",
+                                  "layout": "vertical",
+                                  "children": [
+                                    {
+                                      "type": "frame",
+                                      "id": "I1j6O",
+                                      "name": "Batch one",
+                                      "width": "fill_container",
+                                      "stroke": "$f-hair",
+                                      "strokeWidth": {
+                                        "top": 1
+                                      },
+                                      "strokeAlignment": "inner",
+                                      "layout": "vertical",
+                                      "gap": 12,
+                                      "padding": [
+                                        16,
+                                        0,
+                                        18,
+                                        0
+                                      ],
+                                      "children": [
+                                        {
+                                          "id": "LuZN1",
+                                          "type": "ref",
+                                          "ref": "u0q1i",
+                                          "name": "Line",
+                                          "width": "fill_container",
+                                          "layout": "vertical",
+                                          "gap": 8,
+                                          "padding": 0,
+                                          "descendants": {
+                                            "bf8Y9": {
+                                              "content": "12 JUN 2024",
+                                              "width": "fill_container"
+                                            },
+                                            "s96Cn": {
+                                              "content": "Batch one"
+                                            },
+                                            "ZpMt5": {
+                                              "content": "4.20 kg German silverside from the butcher on Sonnenallee. Wash mixed by eye and by the batch rather than by the kilogram — it tasted right, and not one gram of it can be repeated."
+                                            },
+                                            "pHRo1": {
+                                              "content": "€88.20 · €46.68 PER KG FINISHED · FIRST REVISION",
+                                              "textGrowth": "fixed-width",
+                                              "width": "fill_container",
+                                              "lineHeight": 1.7
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "id": "zBQme",
+                                          "type": "ref",
+                                          "ref": "tccsI",
+                                          "name": "Source",
+                                          "descendants": {
+                                            "cFZeu": {
+                                              "fill": "$f-accent"
+                                            },
+                                            "hB0TC": {
+                                              "content": "SOURCE · Baumy Biltong"
+                                            },
+                                            "hbbIF": {
+                                              "enabled": false
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "type": "frame",
+                                          "id": "G7nRd",
+                                          "name": "Weights",
+                                          "width": "fill_container",
+                                          "fill": "$f-desk",
+                                          "gap": 12,
+                                          "padding": [
+                                            10,
+                                            12
+                                          ],
+                                          "children": [
+                                            {
+                                              "type": "frame",
+                                              "id": "oS6Gk",
+                                              "name": "RAW",
+                                              "width": "fill_container",
+                                              "layout": "vertical",
+                                              "gap": 4,
+                                              "children": [
+                                                {
+                                                  "type": "text",
+                                                  "id": "sxy5v",
+                                                  "name": "L",
+                                                  "fill": "$f-ink-3",
+                                                  "content": "RAW",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 9,
+                                                  "fontWeight": "normal",
+                                                  "letterSpacing": 1.2
+                                                },
+                                                {
+                                                  "type": "text",
+                                                  "id": "Y8ZOQz",
+                                                  "name": "V",
+                                                  "fill": "$f-ink",
+                                                  "content": "4.20 kg",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 13,
+                                                  "fontWeight": "normal"
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "type": "frame",
+                                              "id": "e4FBn",
+                                              "name": "DRIED",
+                                              "width": "fill_container",
+                                              "layout": "vertical",
+                                              "gap": 4,
+                                              "children": [
+                                                {
+                                                  "type": "text",
+                                                  "id": "Ibu6J",
+                                                  "name": "L",
+                                                  "fill": "$f-ink-3",
+                                                  "content": "DRIED",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 9,
+                                                  "fontWeight": "normal",
+                                                  "letterSpacing": 1.2
+                                                },
+                                                {
+                                                  "type": "text",
+                                                  "id": "vkFJ3",
+                                                  "name": "V",
+                                                  "fill": "$f-ink",
+                                                  "content": "1.89 kg",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 13,
+                                                  "fontWeight": "normal"
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "type": "frame",
+                                              "id": "ocBwR",
+                                              "name": "YIELD",
+                                              "width": "fill_container",
+                                              "layout": "vertical",
+                                              "gap": 4,
+                                              "children": [
+                                                {
+                                                  "type": "text",
+                                                  "id": "PvUp3",
+                                                  "name": "L",
+                                                  "fill": "$f-ink-3",
+                                                  "content": "YIELD",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 9,
+                                                  "fontWeight": "normal",
+                                                  "letterSpacing": 1.2
+                                                },
+                                                {
+                                                  "type": "text",
+                                                  "id": "QK93T",
+                                                  "name": "V",
+                                                  "fill": "$f-accent",
+                                                  "content": "45.0%",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 13,
+                                                  "fontWeight": "normal"
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "g4yG0",
+                                      "name": "Batch two",
+                                      "width": "fill_container",
+                                      "stroke": "$f-hair",
+                                      "strokeWidth": {
+                                        "top": 1
+                                      },
+                                      "strokeAlignment": "inner",
+                                      "layout": "vertical",
+                                      "gap": 12,
+                                      "padding": [
+                                        16,
+                                        0,
+                                        18,
+                                        0
+                                      ],
+                                      "children": [
+                                        {
+                                          "id": "wCJim",
+                                          "type": "ref",
+                                          "ref": "u0q1i",
+                                          "name": "Line",
+                                          "width": "fill_container",
+                                          "layout": "vertical",
+                                          "gap": 8,
+                                          "padding": 0,
+                                          "descendants": {
+                                            "bf8Y9": {
+                                              "content": "31 AUG 2024",
+                                              "width": "fill_container"
+                                            },
+                                            "s96Cn": {
+                                              "content": "Batch two"
+                                            },
+                                            "ZpMt5": {
+                                              "content": "5.60 kg. Salt doubled on a guess after batch one read flat. The thin pieces came out inedible and were thrown away; only the thick end was worth keeping."
+                                            },
+                                            "pHRo1": {
+                                              "content": "€142.80 · €57.35 PER KG FINISHED · SECOND REVISION",
+                                              "textGrowth": "fixed-width",
+                                              "width": "fill_container",
+                                              "lineHeight": 1.7
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "id": "zEZGg",
+                                          "type": "ref",
+                                          "ref": "tccsI",
+                                          "name": "Source",
+                                          "descendants": {
+                                            "cFZeu": {
+                                              "fill": "$f-accent"
+                                            },
+                                            "hB0TC": {
+                                              "content": "SOURCE · Baumy Biltong"
+                                            },
+                                            "hbbIF": {
+                                              "enabled": false
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "type": "frame",
+                                          "id": "NsnL3",
+                                          "name": "Weights",
+                                          "width": "fill_container",
+                                          "fill": "$f-desk",
+                                          "gap": 12,
+                                          "padding": [
+                                            10,
+                                            12
+                                          ],
+                                          "children": [
+                                            {
+                                              "type": "frame",
+                                              "id": "WvMb5",
+                                              "name": "RAW",
+                                              "width": "fill_container",
+                                              "layout": "vertical",
+                                              "gap": 4,
+                                              "children": [
+                                                {
+                                                  "type": "text",
+                                                  "id": "Ovxtf",
+                                                  "name": "L",
+                                                  "fill": "$f-ink-3",
+                                                  "content": "RAW",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 9,
+                                                  "fontWeight": "normal",
+                                                  "letterSpacing": 1.2
+                                                },
+                                                {
+                                                  "type": "text",
+                                                  "id": "WZHoD",
+                                                  "name": "V",
+                                                  "fill": "$f-ink",
+                                                  "content": "5.60 kg",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 13,
+                                                  "fontWeight": "normal"
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "type": "frame",
+                                              "id": "WbsRB",
+                                              "name": "DRIED",
+                                              "width": "fill_container",
+                                              "layout": "vertical",
+                                              "gap": 4,
+                                              "children": [
+                                                {
+                                                  "type": "text",
+                                                  "id": "OuqJy",
+                                                  "name": "L",
+                                                  "fill": "$f-ink-3",
+                                                  "content": "DRIED",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 9,
+                                                  "fontWeight": "normal",
+                                                  "letterSpacing": 1.2
+                                                },
+                                                {
+                                                  "type": "text",
+                                                  "id": "NeKhi",
+                                                  "name": "V",
+                                                  "fill": "$f-ink",
+                                                  "content": "2.49 kg",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 13,
+                                                  "fontWeight": "normal"
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "type": "frame",
+                                              "id": "VDYiW",
+                                              "name": "YIELD",
+                                              "width": "fill_container",
+                                              "layout": "vertical",
+                                              "gap": 4,
+                                              "children": [
+                                                {
+                                                  "type": "text",
+                                                  "id": "FYotO",
+                                                  "name": "L",
+                                                  "fill": "$f-ink-3",
+                                                  "content": "YIELD",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 9,
+                                                  "fontWeight": "normal",
+                                                  "letterSpacing": 1.2
+                                                },
+                                                {
+                                                  "type": "text",
+                                                  "id": "SVRfv",
+                                                  "name": "V",
+                                                  "fill": "$f-accent",
+                                                  "content": "44.5%",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 13,
+                                                  "fontWeight": "normal"
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "vZKVG",
+                                      "name": "Batch three",
+                                      "width": "fill_container",
+                                      "stroke": "$f-hair",
+                                      "strokeWidth": {
+                                        "top": 1
+                                      },
+                                      "strokeAlignment": "inner",
+                                      "layout": "vertical",
+                                      "gap": 12,
+                                      "padding": [
+                                        16,
+                                        0,
+                                        18,
+                                        0
+                                      ],
+                                      "children": [
+                                        {
+                                          "id": "Z2aUm",
+                                          "type": "ref",
+                                          "ref": "u0q1i",
+                                          "name": "Line",
+                                          "width": "fill_container",
+                                          "layout": "vertical",
+                                          "gap": 8,
+                                          "padding": 0,
+                                          "descendants": {
+                                            "bf8Y9": {
+                                              "content": "26 OCT 2024",
+                                              "width": "fill_container"
+                                            },
+                                            "s96Cn": {
+                                              "content": "Batch three"
+                                            },
+                                            "ZpMt5": {
+                                              "content": "6.40 kg. First run where the box held temperature for the whole five days. The dredge went on before the wash had gone tacky, and most of it ended up on the floor of the box."
+                                            },
+                                            "pHRo1": {
+                                              "content": "€166.40 · €58.18 PER KG FINISHED · THIRD REVISION",
+                                              "textGrowth": "fixed-width",
+                                              "width": "fill_container",
+                                              "lineHeight": 1.7
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "id": "mlXBx",
+                                          "type": "ref",
+                                          "ref": "tccsI",
+                                          "name": "Source",
+                                          "descendants": {
+                                            "cFZeu": {
+                                              "fill": "$f-accent"
+                                            },
+                                            "hB0TC": {
+                                              "content": "SOURCE · Baumy Biltong"
+                                            },
+                                            "hbbIF": {
+                                              "enabled": false
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "type": "frame",
+                                          "id": "BIrys",
+                                          "name": "Weights",
+                                          "width": "fill_container",
+                                          "fill": "$f-desk",
+                                          "gap": 12,
+                                          "padding": [
+                                            10,
+                                            12
+                                          ],
+                                          "children": [
+                                            {
+                                              "type": "frame",
+                                              "id": "R9JDp2",
+                                              "name": "RAW",
+                                              "width": "fill_container",
+                                              "layout": "vertical",
+                                              "gap": 4,
+                                              "children": [
+                                                {
+                                                  "type": "text",
+                                                  "id": "hKqae",
+                                                  "name": "L",
+                                                  "fill": "$f-ink-3",
+                                                  "content": "RAW",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 9,
+                                                  "fontWeight": "normal",
+                                                  "letterSpacing": 1.2
+                                                },
+                                                {
+                                                  "type": "text",
+                                                  "id": "cnnaw",
+                                                  "name": "V",
+                                                  "fill": "$f-ink",
+                                                  "content": "6.40 kg",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 13,
+                                                  "fontWeight": "normal"
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "type": "frame",
+                                              "id": "YTMgH",
+                                              "name": "DRIED",
+                                              "width": "fill_container",
+                                              "layout": "vertical",
+                                              "gap": 4,
+                                              "children": [
+                                                {
+                                                  "type": "text",
+                                                  "id": "l3seN",
+                                                  "name": "L",
+                                                  "fill": "$f-ink-3",
+                                                  "content": "DRIED",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 9,
+                                                  "fontWeight": "normal",
+                                                  "letterSpacing": 1.2
+                                                },
+                                                {
+                                                  "type": "text",
+                                                  "id": "ncvGu",
+                                                  "name": "V",
+                                                  "fill": "$f-ink",
+                                                  "content": "2.86 kg",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 13,
+                                                  "fontWeight": "normal"
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "type": "frame",
+                                              "id": "a2G6WJ",
+                                              "name": "YIELD",
+                                              "width": "fill_container",
+                                              "layout": "vertical",
+                                              "gap": 4,
+                                              "children": [
+                                                {
+                                                  "type": "text",
+                                                  "id": "x91ZMW",
+                                                  "name": "L",
+                                                  "fill": "$f-ink-3",
+                                                  "content": "YIELD",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 9,
+                                                  "fontWeight": "normal",
+                                                  "letterSpacing": 1.2
+                                                },
+                                                {
+                                                  "type": "text",
+                                                  "id": "A7W7q",
+                                                  "name": "V",
+                                                  "fill": "$f-accent",
+                                                  "content": "44.7%",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 13,
+                                                  "fontWeight": "normal"
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "VLKdG",
+                                      "name": "Batch four",
+                                      "width": "fill_container",
+                                      "stroke": "$f-hair",
+                                      "strokeWidth": {
+                                        "top": 1
+                                      },
+                                      "strokeAlignment": "inner",
+                                      "layout": "vertical",
+                                      "gap": 12,
+                                      "padding": [
+                                        16,
+                                        0,
+                                        18,
+                                        0
+                                      ],
+                                      "children": [
+                                        {
+                                          "id": "Ef1Yz",
+                                          "type": "ref",
+                                          "ref": "u0q1i",
+                                          "name": "Line",
+                                          "width": "fill_container",
+                                          "layout": "vertical",
+                                          "gap": 8,
+                                          "padding": 0,
+                                          "descendants": {
+                                            "bf8Y9": {
+                                              "content": "29 NOV 2024",
+                                              "width": "fill_container"
+                                            },
+                                            "s96Cn": {
+                                              "content": "Batch four"
+                                            },
+                                            "ZpMt5": {
+                                              "content": "7.98 kg Irish silverside, Gourmet Experts, Berlin. Wash properly scaled for the first time; the dredge ran short on the last 1.6 kg."
+                                            },
+                                            "pHRo1": {
+                                              "content": "€209.26 · €57.97 PER KG FINISHED · FOURTH REVISION",
+                                              "textGrowth": "fixed-width",
+                                              "width": "fill_container",
+                                              "lineHeight": 1.7
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "id": "vIIys",
+                                          "type": "ref",
+                                          "ref": "tccsI",
+                                          "name": "Source",
+                                          "descendants": {
+                                            "cFZeu": {
+                                              "fill": "$f-accent"
+                                            },
+                                            "hB0TC": {
+                                              "content": "SOURCE · Baumy Biltong"
+                                            },
+                                            "hbbIF": {
+                                              "enabled": false
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "type": "frame",
+                                          "id": "DKZ2h",
+                                          "name": "Weights",
+                                          "width": "fill_container",
+                                          "fill": "$f-desk",
+                                          "gap": 12,
+                                          "padding": [
+                                            10,
+                                            12
+                                          ],
+                                          "children": [
+                                            {
+                                              "type": "frame",
+                                              "id": "C2ijPp",
+                                              "name": "RAW",
+                                              "width": "fill_container",
+                                              "layout": "vertical",
+                                              "gap": 4,
+                                              "children": [
+                                                {
+                                                  "type": "text",
+                                                  "id": "D8B9ea",
+                                                  "name": "L",
+                                                  "fill": "$f-ink-3",
+                                                  "content": "RAW",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 9,
+                                                  "fontWeight": "normal",
+                                                  "letterSpacing": 1.2
+                                                },
+                                                {
+                                                  "type": "text",
+                                                  "id": "xOFaB",
+                                                  "name": "V",
+                                                  "fill": "$f-ink",
+                                                  "content": "7.98 kg",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 13,
+                                                  "fontWeight": "normal"
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "type": "frame",
+                                              "id": "bsjzJ",
+                                              "name": "DRIED",
+                                              "width": "fill_container",
+                                              "layout": "vertical",
+                                              "gap": 4,
+                                              "children": [
+                                                {
+                                                  "type": "text",
+                                                  "id": "R7J5bS",
+                                                  "name": "L",
+                                                  "fill": "$f-ink-3",
+                                                  "content": "DRIED",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 9,
+                                                  "fontWeight": "normal",
+                                                  "letterSpacing": 1.2
+                                                },
+                                                {
+                                                  "type": "text",
+                                                  "id": "dSBON",
+                                                  "name": "V",
+                                                  "fill": "$f-ink",
+                                                  "content": "3.61 kg",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 13,
+                                                  "fontWeight": "normal"
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "type": "frame",
+                                              "id": "B1Bek",
+                                              "name": "YIELD",
+                                              "width": "fill_container",
+                                              "layout": "vertical",
+                                              "gap": 4,
+                                              "children": [
+                                                {
+                                                  "type": "text",
+                                                  "id": "m7wPa6",
+                                                  "name": "L",
+                                                  "fill": "$f-ink-3",
+                                                  "content": "YIELD",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 9,
+                                                  "fontWeight": "normal",
+                                                  "letterSpacing": 1.2
+                                                },
+                                                {
+                                                  "type": "text",
+                                                  "id": "bmnDu",
+                                                  "name": "V",
+                                                  "fill": "$f-accent",
+                                                  "content": "45.2%",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 13,
+                                                  "fontWeight": "normal"
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "Xs8nz",
+                                      "name": "Batch five",
+                                      "width": "fill_container",
+                                      "stroke": "$f-hair",
+                                      "strokeWidth": {
+                                        "top": 1
+                                      },
+                                      "strokeAlignment": "inner",
+                                      "layout": "vertical",
+                                      "gap": 12,
+                                      "padding": [
+                                        16,
+                                        0,
+                                        18,
+                                        0
+                                      ],
+                                      "children": [
+                                        {
+                                          "id": "v8ley",
+                                          "type": "ref",
+                                          "ref": "u0q1i",
+                                          "name": "Line",
+                                          "width": "fill_container",
+                                          "layout": "vertical",
+                                          "gap": 8,
+                                          "padding": 0,
+                                          "descendants": {
+                                            "bf8Y9": {
+                                              "content": "06 SEP 2026",
+                                              "width": "fill_container"
+                                            },
+                                            "s96Cn": {
+                                              "content": "Batch five"
+                                            },
+                                            "ZpMt5": {
+                                              "content": "10.00 kg Irish silverside, same supplier. Ten kilograms at last and the wash held. The dredge ran short again over the final two kilograms — that shortfall is what the sixth revision was written to correct."
+                                            },
+                                            "pHRo1": {
+                                              "content": "€268.00 · €59.29 PER KG FINISHED · FIFTH REVISION",
+                                              "textGrowth": "fixed-width",
+                                              "width": "fill_container",
+                                              "lineHeight": 1.7
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "id": "ARDdQ",
+                                          "type": "ref",
+                                          "ref": "tccsI",
+                                          "name": "Source",
+                                          "descendants": {
+                                            "cFZeu": {
+                                              "fill": "$f-accent"
+                                            },
+                                            "hB0TC": {
+                                              "content": "SOURCE · Baumy Biltong"
+                                            },
+                                            "hbbIF": {
+                                              "enabled": false
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "type": "frame",
+                                          "id": "GwD9h",
+                                          "name": "Weights",
+                                          "width": "fill_container",
+                                          "fill": "$f-desk",
+                                          "gap": 12,
+                                          "padding": [
+                                            10,
+                                            12
+                                          ],
+                                          "children": [
+                                            {
+                                              "type": "frame",
+                                              "id": "FCrbz",
+                                              "name": "RAW",
+                                              "width": "fill_container",
+                                              "layout": "vertical",
+                                              "gap": 4,
+                                              "children": [
+                                                {
+                                                  "type": "text",
+                                                  "id": "W2VE0",
+                                                  "name": "L",
+                                                  "fill": "$f-ink-3",
+                                                  "content": "RAW",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 9,
+                                                  "fontWeight": "normal",
+                                                  "letterSpacing": 1.2
+                                                },
+                                                {
+                                                  "type": "text",
+                                                  "id": "q2yWE7",
+                                                  "name": "V",
+                                                  "fill": "$f-ink",
+                                                  "content": "10.00 kg",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 13,
+                                                  "fontWeight": "normal"
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "type": "frame",
+                                              "id": "pV1fL",
+                                              "name": "DRIED",
+                                              "width": "fill_container",
+                                              "layout": "vertical",
+                                              "gap": 4,
+                                              "children": [
+                                                {
+                                                  "type": "text",
+                                                  "id": "h11kEU",
+                                                  "name": "L",
+                                                  "fill": "$f-ink-3",
+                                                  "content": "DRIED",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 9,
+                                                  "fontWeight": "normal",
+                                                  "letterSpacing": 1.2
+                                                },
+                                                {
+                                                  "type": "text",
+                                                  "id": "J4AXiX",
+                                                  "name": "V",
+                                                  "fill": "$f-ink",
+                                                  "content": "4.52 kg",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 13,
+                                                  "fontWeight": "normal"
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "type": "frame",
+                                              "id": "n1syD",
+                                              "name": "YIELD",
+                                              "width": "fill_container",
+                                              "layout": "vertical",
+                                              "gap": 4,
+                                              "children": [
+                                                {
+                                                  "type": "text",
+                                                  "id": "ocpQP",
+                                                  "name": "L",
+                                                  "fill": "$f-ink-3",
+                                                  "content": "YIELD",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 9,
+                                                  "fontWeight": "normal",
+                                                  "letterSpacing": 1.2
+                                                },
+                                                {
+                                                  "type": "text",
+                                                  "id": "L9IYM",
+                                                  "name": "V",
+                                                  "fill": "$f-accent",
+                                                  "content": "45.2%",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 13,
+                                                  "fontWeight": "normal"
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "fTNJd",
+                                      "name": "Trial — chilli wash, no recipe",
+                                      "width": "fill_container",
+                                      "stroke": "$f-hair",
+                                      "strokeWidth": {
+                                        "top": 1
+                                      },
+                                      "strokeAlignment": "inner",
+                                      "layout": "vertical",
+                                      "gap": 12,
+                                      "padding": [
+                                        16,
+                                        0,
+                                        18,
+                                        0
+                                      ],
+                                      "children": [
+                                        {
+                                          "id": "szdHd",
+                                          "type": "ref",
+                                          "ref": "u0q1i",
+                                          "name": "Line",
+                                          "width": "fill_container",
+                                          "layout": "vertical",
+                                          "gap": 8,
+                                          "padding": 0,
+                                          "descendants": {
+                                            "bf8Y9": {
+                                              "content": "22 SEP 2026",
+                                              "width": "fill_container"
+                                            },
+                                            "s96Cn": {
+                                              "content": "Chilli wash trial"
+                                            },
+                                            "ZpMt5": {
+                                              "content": "1.10 kg Irish silverside cut thin and washed in a chilli and vinegar mix that has no written recipe yet. Logged on the day it was hung, so the weights are not lost while the method is still being argued over."
+                                            },
+                                            "pHRo1": {
+                                              "content": "€28.40 · €63.06 PER KG FINISHED · NOT LINKED TO A RECIPE",
+                                              "textGrowth": "fixed-width",
+                                              "width": "fill_container",
+                                              "lineHeight": 1.7
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "id": "AjisB",
+                                          "type": "ref",
+                                          "ref": "tccsI",
+                                          "name": "Source",
+                                          "descendants": {
+                                            "cFZeu": {
+                                              "fill": "$f-hair"
+                                            },
+                                            "hB0TC": {
+                                              "content": "SOURCE · Not yet linked",
+                                              "fill": "$f-ink-3"
+                                            },
+                                            "hbbIF": {
+                                              "enabled": false
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "type": "frame",
+                                          "id": "SS5vZ",
+                                          "name": "Weights",
+                                          "width": "fill_container",
+                                          "fill": "$f-desk",
+                                          "gap": 12,
+                                          "padding": [
+                                            10,
+                                            12
+                                          ],
+                                          "children": [
+                                            {
+                                              "type": "frame",
+                                              "id": "KvPRD",
+                                              "name": "RAW",
+                                              "width": "fill_container",
+                                              "layout": "vertical",
+                                              "gap": 4,
+                                              "children": [
+                                                {
+                                                  "type": "text",
+                                                  "id": "ssQ2w",
+                                                  "name": "L",
+                                                  "fill": "$f-ink-3",
+                                                  "content": "RAW",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 9,
+                                                  "fontWeight": "normal",
+                                                  "letterSpacing": 1.2
+                                                },
+                                                {
+                                                  "type": "text",
+                                                  "id": "F7szAg",
+                                                  "name": "V",
+                                                  "fill": "$f-ink",
+                                                  "content": "1.10 kg",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 13,
+                                                  "fontWeight": "normal"
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "type": "frame",
+                                              "id": "RKUAI",
+                                              "name": "DRIED",
+                                              "width": "fill_container",
+                                              "layout": "vertical",
+                                              "gap": 4,
+                                              "children": [
+                                                {
+                                                  "type": "text",
+                                                  "id": "VfGhH",
+                                                  "name": "L",
+                                                  "fill": "$f-ink-3",
+                                                  "content": "DRIED",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 9,
+                                                  "fontWeight": "normal",
+                                                  "letterSpacing": 1.2
+                                                },
+                                                {
+                                                  "type": "text",
+                                                  "id": "o5ZxU",
+                                                  "name": "V",
+                                                  "fill": "$f-ink",
+                                                  "content": "0.49 kg",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 13,
+                                                  "fontWeight": "normal"
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "type": "frame",
+                                              "id": "h2zAy",
+                                              "name": "YIELD",
+                                              "width": "fill_container",
+                                              "layout": "vertical",
+                                              "gap": 4,
+                                              "children": [
+                                                {
+                                                  "type": "text",
+                                                  "id": "MPMT1",
+                                                  "name": "L",
+                                                  "fill": "$f-ink-3",
+                                                  "content": "YIELD",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 9,
+                                                  "fontWeight": "normal",
+                                                  "letterSpacing": 1.2
+                                                },
+                                                {
+                                                  "type": "text",
+                                                  "id": "PahXK",
+                                                  "name": "V",
+                                                  "fill": "$f-accent",
+                                                  "content": "44.5%",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 13,
+                                                  "fontWeight": "normal"
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              }
+                            },
+                            {
+                              "id": "h9pNi",
+                              "type": "ref",
+                              "ref": "iqGkO",
+                              "name": "Note — hooks",
+                              "width": "fill_container",
+                              "gap": 12,
+                              "padding": [
+                                14,
+                                0,
+                                0,
+                                0
+                              ],
+                              "stroke": "$f-hair",
+                              "strokeWidth": {
+                                "top": 1
+                              },
+                              "strokeAlignment": "inner",
+                              "descendants": {
+                                "RJ0oo": {
+                                  "content": "1",
+                                  "width": 16
+                                },
+                                "PcGwA": {
+                                  "layout": "vertical",
+                                  "gap": 4,
+                                  "alignItems": "start"
+                                },
+                                "hCfUs": {
+                                  "content": "NOTE · METHOD"
+                                },
+                                "yzCTh": {
+                                  "content": "What the weights are measured against",
+                                  "textGrowth": "fixed-width",
+                                  "width": "fill_container",
+                                  "lineHeight": 1.3
+                                },
+                                "x6hpfW": {
+                                  "content": "Thirty steel hooks, 7 cm, 13 g each. Every gross weight on this page has had the hooks subtracted before it was written down, so a piece recorded at 118 g came off the scale at 131 g. Yield is dried weight over raw weight, and it has sat between 44 and 46 per cent in every run so far.",
+                                  "fontSize": 14
+                                }
+                              }
+                            }
+                          ]
+                        },
+                        {
+                          "id": "J0OjFy",
+                          "type": "ref",
+                          "ref": "zh3oi",
+                          "name": "Page foot",
+                          "width": "fill_container",
+                          "padding": [
+                            24,
+                            16
+                          ],
+                          "descendants": {
+                            "oDLDD": {
+                              "content": "EVERY RUN, LINKED OR NOT",
+                              "fontSize": 9,
+                              "letterSpacing": 1.2
+                            },
+                            "mEKQk": {
+                              "enabled": false
+                            },
+                            "DbWM6": {
+                              "content": "NN/BATCH-LOGS",
                               "fontSize": 9,
                               "letterSpacing": 1.2
                             }
