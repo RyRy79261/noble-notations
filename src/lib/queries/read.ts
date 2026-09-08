@@ -80,7 +80,15 @@ export interface StepView {
   imageUrl: string | null;
   imageAlt: string | null;
   note: string | null;
-  uses: string[];
+  /**
+   * The ingredient lines this step consumes.
+   *
+   * The id rather than only the name, so a step can show the amount as
+   * well: "10 g Jasmine rice" beside the instruction is the difference
+   * between reading a method and cooking from it. Names alone would mean
+   * matching on a string and guessing which of two rice lines was meant.
+   */
+  uses: { recipeIngredientId: string; name: string }[];
 }
 
 export interface NoteView {
@@ -525,6 +533,7 @@ export async function getRecipeBySlug(
     ? await db
         .select({
           stepId: recipeStepIngredients.stepId,
+          recipeIngredientId: recipeStepIngredients.recipeIngredientId,
           name: sql<string>`COALESCE(${ingredients.name}, ${recipeIngredients.rawText})`,
         })
         .from(recipeStepIngredients)
@@ -544,10 +553,13 @@ export async function getRecipeBySlug(
         )
     : [];
 
-  const usesByStep = new Map<string, string[]>();
+  const usesByStep = new Map<
+    string,
+    { recipeIngredientId: string; name: string }[]
+  >();
   for (const row of stepUses) {
     const list = usesByStep.get(row.stepId) ?? [];
-    list.push(row.name);
+    list.push({ recipeIngredientId: row.recipeIngredientId, name: row.name });
     usesByStep.set(row.stepId, list);
   }
 

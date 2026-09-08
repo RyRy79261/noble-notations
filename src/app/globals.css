@@ -7,9 +7,16 @@
  * down the page, dense but airy spacing, and colour used to classify rather
  * than to decorate.
  *
- * Dark-first, carrying over the black-and-purple identity of the previous
- * build (which pinned dark mode outright). A viewer whose system explicitly
- * asks for light gets light; everyone else gets dark.
+ * Dark-first. A viewer whose system explicitly asks for light gets light;
+ * everyone else gets dark.
+ *
+ * The dark ground used to be purple — #0b0910 under #171226 surfaces, with
+ * the text tinted to match. It read badly, and not because of contrast:
+ * every token already passed AA. A saturated ground competes with the text
+ * on it, and purple is a strong hue to ask an eye to hold for the length of
+ * a recipe. The ground is now a near-neutral warm charcoal and purple is
+ * kept for what it was for — the accent, which reads as a signal again now
+ * that it is the only chromatic thing on the page.
  */
 
 /* ─── Tokens ─────────────────────────────────────────────────────────── */
@@ -17,25 +24,26 @@
 :root {
   color-scheme: dark;
 
-  --bg: #0b0910;
-  --bg-elevated: #120f1b;
-  --surface: #171226;
-  --surface-2: #1e1832;
-  --border: #2c2444;
-  --border-strong: #3d3160;
+  --bg: #131211;
+  --bg-elevated: #1a1918;
+  --surface: #1c1b19;
+  --surface-2: #232120;
+  --border: #322f2d;
+  --border-strong: #464240;
 
-  --text: #e9e5f2;
-  --text-muted: #a99fc2;
-  /* Was #7a7194 — 4.01:1 on --bg and worse on --surface-2, an AA failure.
-     This is not decorative text: it carries step durations, oven
+  --text: #f0eeea;
+  --text-muted: #b3aea6;
+  /* This is not decorative text: it carries step durations, oven
      temperatures, "optional", which recipe a shopping item is for, and the
-     only sentence on every empty state. */
-  --text-faint: #9b91b8;
+     only sentence on every empty state. It was #7a7194 (4.01:1 on the old
+     ground, an AA failure), then #9b91b8 to clear it. On the neutral ground
+     it measures 6.38:1 on the page and 5.47:1 on the deepest surface. */
+  --text-faint: #9c968d;
 
   --accent: #b794ff;
   --accent-strong: #9b6dff;
-  --accent-dim: rgba(183, 148, 255, 0.14);
-  --accent-contrast: #17102b;
+  --accent-dim: rgba(183, 148, 255, 0.16);
+  --accent-contrast: #141210;
 
   --warn: #ffb4c8;
   --warn-bg: rgba(255, 180, 200, 0.1);
@@ -855,11 +863,88 @@ th.numeric {
   align-items: start;
 }
 
-/* The tab strip is a mobile affordance only: above the breakpoint both
-   panels show side by side and the tabs are hidden, so there is one DOM at
-   every width and a deep link or Ctrl-F still finds the method. */
 .recipe-tabs {
-  display: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1.5rem;
+}
+
+.recipe-tabs button {
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 650;
+  padding: 0.6rem 0.85rem;
+  min-height: 44px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.recipe-tabs button:hover {
+  color: var(--text);
+}
+
+.recipe-tabs button[aria-selected='true'] {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* On a desktop the aside carries the ingredients at all times, so offering
+   a tab for them would switch the main column to a duplicate of a list
+   already on screen. The button is dropped rather than disabled — a
+   control that does nothing is worse than one that is not there. */
+@media (min-width: 901px) {
+  /* Named areas rather than line numbers. The first attempt spanned the
+     aside with `grid-row: 1 / -1`, which is a no-op trap: with no explicit
+     rows declared, `-1` resolves to line 1, so the span collapsed to a
+     single row. Row 1 then sized itself to the whole ingredient list and
+     the method column started 2185px down the page — below the fold, on a
+     tab that looked empty. Areas declare the rows, so the span is real. */
+  .recipe-aside {
+    grid-column: 1;
+  }
+
+  .recipe-column {
+    grid-column: 2;
+  }
+
+  /* Nothing to put beside the method: one column, full width. */
+  .recipe-layout[data-aside='no'] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .recipe-layout[data-aside='no'] .recipe-column {
+    grid-column: 1;
+  }
+
+  .recipe-tabs button[data-tab-button='ingredients'] {
+    display: none;
+  }
+
+  /* Ingredients + method leaves one tab once the ingredients button is
+     dropped, and a strip of one is not a choice. Method + science is also
+     two panels and both of its tabs matter, so the aside has to be part of
+     the condition — without it the Science tab vanished on every research
+     write-up, which have no ingredients at all. */
+  .recipe-layout[data-aside='yes'][data-panels='2'] .recipe-tabs {
+    display: none;
+  }
+
+  .recipe-layout[data-active='science'] [data-tab='method'],
+  .recipe-layout[data-active='revisions'] [data-tab='method'],
+  .recipe-layout[data-active='ingredients'] [data-tab='science'],
+  .recipe-layout[data-active='method'] [data-tab='science'],
+  .recipe-layout[data-active='revisions'] [data-tab='science'],
+  .recipe-layout[data-active='ingredients'] [data-tab='revisions'],
+  .recipe-layout[data-active='method'] [data-tab='revisions'],
+  .recipe-layout[data-active='science'] [data-tab='revisions'] {
+    display: none;
+  }
 }
 
 @media (max-width: 900px) {
@@ -868,13 +953,26 @@ th.numeric {
     gap: 1.25rem;
   }
 
+  /* The desktop column wrapper dissolves: its children become children of
+     the page grid, so the sticky strip sticks to the page rather than to a
+     box inside it, and the one visible panel follows it directly. */
+  .recipe-column {
+    display: contents;
+  }
+
   .recipe-tabs {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.35rem;
-    padding: 0.3rem;
-    border: 1px solid var(--border);
-    border-radius: 10px;
+    grid-column: 1;
+    gap: 0.2rem;
+    margin-bottom: 0;
+    padding: 0.25rem 0.25rem 0;
+    /* Four labels do not fit across 360px, and wrapping them costs a line
+       of the screen you cook from. They scroll instead — from the start
+       edge, never `flex-end`, which strands the first tab where no scroll
+       can reach it. */
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    justify-content: flex-start;
+    scrollbar-width: none;
     position: sticky;
     /* Below the header, never inside it. At `top: 0.5rem` this strip
        pinned within the header band, and hit-testing its centre returned
@@ -886,27 +984,21 @@ th.numeric {
     background: var(--bg-elevated);
   }
 
-  .recipe-tabs button {
-    font: inherit;
-    font-size: 0.9rem;
-    font-weight: 600;
-    padding: 0.5rem 0.75rem;
-    border: 0;
-    border-radius: 7px;
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
+  .recipe-tabs::-webkit-scrollbar {
+    display: none;
   }
 
-  .recipe-tabs button[aria-selected='true'] {
-    background: var(--accent-dim);
-    color: var(--accent);
+  .recipe-tabs button {
+    font-size: 0.95rem;
+    white-space: nowrap;
   }
 
   /* Hidden, not unmounted: ticked checkboxes and the chosen ordering
      survive switching tabs. */
-  .recipe-layout[data-active='ingredients'] [data-tab='method'],
-  .recipe-layout[data-active='method'] [data-tab='ingredients'] {
+  .recipe-layout:not([data-active='ingredients']) [data-tab='ingredients'],
+  .recipe-layout:not([data-active='method']) [data-tab='method'],
+  .recipe-layout:not([data-active='science']) [data-tab='science'],
+  .recipe-layout:not([data-active='revisions']) [data-tab='revisions'] {
     display: none;
   }
 
@@ -915,8 +1007,53 @@ th.numeric {
   }
 }
 
+/* ── What a step uses ────────────────────────────────────────────────── */
+
+/* The link from a step to its ingredient lines has been in the database
+   since the rebuild and was never shown. A method that names its amounts
+   is one you can cook from without scrolling back to the list. */
+.step-uses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step-uses li {
+  /* Inline, not flex: the space between the amount and the name has to be
+     a real text node so `textContent` and a screen reader both get it. A
+     flex gap looks identical and reads as "1 kgJalapeño". */
+  padding: 0.3rem 0.6rem;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 0.88rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.step-uses b {
+  font-weight: 650;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.step-uses a {
+  color: inherit;
+  text-decoration-color: var(--border-strong);
+}
+
+.step-uses a:hover {
+  color: var(--accent);
+}
+
 /* ── The science ─────────────────────────────────────────────────────── */
-.science-section {
+/* The rule separated the science from the method when both shared one
+   column. In its own panel it is the first thing on screen, and a rule
+   under the tab strip reads as a stray line. */
+.science-section:not(:first-child) {
   border-top: 1px solid var(--border-strong);
   padding-top: 1.5rem;
 }
@@ -1502,6 +1639,45 @@ input::placeholder {
 
 .scale-yield {
   font-size: 0.8rem;
+}
+
+/* The stepper. A round −/+ either side of the box, sized for a thumb:
+   these are the controls most likely to be pressed with wet hands. */
+.scale-stepper {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.scale-stepper button {
+  font: inherit;
+  font-size: 1.1rem;
+  line-height: 1;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.scale-stepper button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.scale-bar[data-mode='servings'] .scale-custom input {
+  font-size: 1rem;
+  text-align: center;
+  width: 3.75rem;
+  min-height: 44px;
+}
+
+.scale-of {
+  font-size: 0.85rem;
 }
 
 .ingredient-list.checklist li {

@@ -75,7 +75,7 @@ export function IngredientChecklist({
   const [byShop, setByShop] = useState(true);
   // Shared, not local: the yield in "At a glance" reads the same value, so
   // the page cannot state two batch sizes at once.
-  const { scale, raw, setScale, setRaw, commit } = useScale();
+  const { scale, raw, servings, setScale, setRaw, commit, step } = useScale();
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [ready, setReady] = useState(false);
 
@@ -179,41 +179,81 @@ export function IngredientChecklist({
         </span>
       </div>
 
-      <div className="scale-bar">
+      <div className="scale-bar" data-mode={servings ? 'servings' : 'batch'}>
         <span className="scale-label" id="scale-label">
-          Batch
+          {servings ? 'For' : 'Batch'}
         </span>
+
+        {/* A stepper when the recipe counts servings, presets when it does
+          not. "For 4 −/+" is a question a cook can answer; "×1" asks them
+          to know what one batch is before they can change it. Recipes
+          measured by yield — 4.5 kg of dried biltong — have no servings to
+          count, so those keep the multiplier. */}
         <div
-          className="checklist-toggle"
+          className="scale-stepper"
           role="group"
           aria-labelledby="scale-label"
         >
-          {SCALE_PRESETS.map((preset) => (
+          {servings ? (
             <button
-              key={preset}
               type="button"
-              onClick={() => setScale(preset)}
-              aria-pressed={scale === preset}
+              onClick={() => step(-1)}
+              aria-label="One fewer serving"
             >
-              ×{preset}
+              −
             </button>
-          ))}
+          ) : null}
+          <label className="scale-custom">
+            <span className="visually-hidden">
+              {servings ? 'Servings' : 'Batch multiplier'}
+            </span>
+            <input
+              // Text, not number: Chrome reports `value === ''` for a
+              // partially-typed number it considers invalid, which desyncs
+              // the raw string from what is on screen. `inputMode` still
+              // gets the numeric keypad on a phone.
+              type="text"
+              inputMode="decimal"
+              value={raw}
+              onChange={(event) => setRaw(event.target.value)}
+              onBlur={commit}
+              aria-label={servings ? 'Servings' : 'Batch multiplier'}
+            />
+          </label>
+          {servings ? (
+            <button
+              type="button"
+              onClick={() => step(1)}
+              aria-label="One more serving"
+            >
+              +
+            </button>
+          ) : null}
         </div>
-        <label className="scale-custom">
-          <span className="visually-hidden">Custom multiplier</span>
-          <input
-            // Text, not number: Chrome reports `value === ''` for a
-            // partially-typed number it considers invalid, which desyncs
-            // the raw string from what is on screen. `inputMode` still
-            // gets the numeric keypad on a phone.
-            type="text"
-            inputMode="decimal"
-            value={raw}
-            onChange={(event) => setRaw(event.target.value)}
-            onBlur={commit}
-            aria-label="Batch multiplier"
-          />
-        </label>
+
+        {servings ? (
+          <span className="faint scale-of">
+            serving{scale * servings === 1 ? '' : 's'}
+            {scale !== 1 ? ` · ×${Math.round(scale * 1000) / 1000}` : ''}
+          </span>
+        ) : (
+          <div
+            className="checklist-toggle"
+            role="group"
+            aria-label="Preset batch sizes"
+          >
+            {SCALE_PRESETS.map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                onClick={() => setScale(preset)}
+                aria-pressed={scale === preset}
+              >
+                ×{preset}
+              </button>
+            ))}
+          </div>
+        )}
         {scale !== 1 && yieldQuantity != null ? (
           // "At a glance" carries the scaled yield too. This stays because
           // the table is above the fold on desktop and off it on a phone,

@@ -30,9 +30,21 @@ interface ScaleState {
   scale: number;
   /** The raw text in the box, which is not always a number mid-typing. */
   raw: string;
+  /**
+   * The recipe's own serving count, when it declares one.
+   *
+   * When it does, the box counts servings rather than batches — "For 4"
+   * is a question a cook can answer, where "×1" asks them to know what one
+   * batch is before they can change it. When it does not, there is nothing
+   * honest to count: a biltong recipe yields 4.5 kg dried and has no
+   * servings at all, so the multiplier stays.
+   */
+  servings: number | null;
   setScale: (value: number) => void;
   setRaw: (value: string) => void;
   commit: () => void;
+  /** Move the box by whole units — one serving, or ×0.5 without them. */
+  step: (delta: number) => void;
 }
 
 const MIN_SCALE = 0.1;
@@ -40,7 +52,22 @@ const MAX_SCALE = 100;
 
 const ScaleContext = createContext<ScaleState | null>(null);
 
-export function ScaleProvider({ children }: { children: ReactNode }) {
+function trim(n: number): string {
+  return String(Math.round(n * 1000) / 1000);
+}
+
+export function ScaleProvider({
+  servings,
+  children,
+}: {
+  servings?: number | null;
+  children: ReactNode;
+}) {
+  // What the box counts. Servings when the recipe has them, batches when it
+  // does not — one control either way, because two would be two answers to
+  // the same question again.
+  const basis = servings != null && servings > 0 ? servings : 1;
+
   // The number the page renders, and the text the box shows, held apart.
   //
   // One controlled numeric value could not do both. "0.5" is typed one
@@ -51,17 +78,23 @@ export function ScaleProvider({ children }: { children: ReactNode }) {
   // 1.5 and 15 kg of beef, the field could not be emptied at all, and a
   // second attempt gave "1.505". A half batch was unreachable by typing.
   const [scale, setScaleValue] = useState(1);
-  const [raw, setRaw] = useState('1');
+  const [raw, setRaw] = useState(trim(basis));
 
-  const value = useMemo<ScaleState>(
-    () => ({
+  const value = useMemo<ScaleState>(() => {
+    const toBox = (next: number) => trim(next * basis);
+    const fromBox = (boxValue: number) => boxValue / basis;
+
+    const apply = (next: number) => {
+      const clamped = Math.min(MAX_SCALE, Math.max(MIN_SCALE, next));
+      setScaleValue(clamped);
+      setRaw(toBox(clamped));
+    };
+
+    return {
       scale,
       raw,
-      setScale: (next: number) => {
-        const clamped = Math.min(MAX_SCALE, Math.max(MIN_SCALE, next));
-        setScaleValue(clamped);
-        setRaw(String(clamped));
-      },
+      servings: servings != null && servings > 0 ? servings : null,
+      setScale: apply,
       setRaw: (next: string) => {
         setRaw(next);
         const parsed = Number(next);
@@ -70,21 +103,29 @@ export function ScaleProvider({ children }: { children: ReactNode }) {
         // bottom, which would rewrite "0" into "0.1" mid-word and make
         // every sub-1 batch untypable.
         if (Number.isFinite(parsed) && parsed > 0) {
-          setScaleValue(Math.min(MAX_SCALE, parsed));
+          setScaleValue(Math.min(MAX_SCALE, fromBox(parsed)));
         }
       },
       commit: () => {
         const parsed = Number(raw);
         const settled =
           Number.isFinite(parsed) && parsed > 0
-            ? Math.min(MAX_SCALE, Math.max(MIN_SCALE, parsed))
+            ? Math.min(MAX_SCALE, Math.max(MIN_SCALE, fromBox(parsed)))
             : scale;
         setScaleValue(settled);
-        setRaw(String(settled));
+        setRaw(toBox(settled));
       },
-    }),
-    [scale, raw],
-  );
+      step: (delta: number) => {
+        // Step the box, not the scale: +1 on a four-serving recipe means
+        // five servings, which is ×1.25 — stepping the multiplier instead
+        // would jump to five batches.
+        const current = scale * basis;
+        const grid = basis > 1 ? 1 : 0.5;
+        const next = Math.round(current / grid) * grid + delta * grid;
+        apply(fromBox(Math.max(grid, next)));
+      },
+    };
+  }, [scale, raw, basis, servings]);
 
   return (
     <ScaleContext.Provider value={value}>{children}</ScaleContext.Provider>

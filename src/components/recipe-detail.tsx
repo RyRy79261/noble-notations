@@ -8,6 +8,7 @@ import { IngredientChecklist } from './ingredient-checklist';
 import { AddToBasket } from './shopping-basket';
 import { RecipeTabs } from './recipe-tabs';
 import { ScaleProvider, ScaledAmount } from './scale';
+import { StepIngredients } from './step-ingredients';
 
 const LINK_LABELS: Record<string, string> = {
   derived_from: 'Derived from',
@@ -60,10 +61,27 @@ export function RecipeDetail({
   const science = recipe.notes.filter((note) => note.kind === 'science');
   const otherNotes = recipe.notes.filter((note) => note.kind !== 'science');
 
+  // A tab with nothing behind it is a dead control, and most recipes have
+  // neither a science note nor a recorded run. The strip shows the panels
+  // this recipe actually has.
+  const hasScience = science.length > 0 || recipe.experiments.length > 0;
+
+  // A research write-up has no ingredients and no yield, so its aside is
+  // empty — and an empty aside is a third of a desktop screen held open
+  // beside the one column that has anything in it.
+  const hasAside =
+    recipe.ingredients.length > 0 ||
+    Boolean(
+      rev.yieldQuantity ||
+      rev.servings ||
+      rev.totalTimeMinutes ||
+      rev.activeTimeMinutes,
+    );
+
   return (
     // The batch multiplier lives above everything that shows a quantity, so
     // the yield in the table and the amounts in the list cannot disagree.
-    <ScaleProvider>
+    <ScaleProvider servings={rev.servings}>
       <div className="page">
         <div className="breadcrumb">
           <Link href="/recipes">Recipes</Link> / {recipe.title}
@@ -127,115 +145,70 @@ export function RecipeDetail({
 
         <RecipeTabs
           ingredients={
-            <>
-              {(rev.yieldQuantity ||
-                rev.servings ||
-                rev.totalTimeMinutes ||
-                rev.activeTimeMinutes) && (
-                <section className="panel">
-                  <h2>At a glance</h2>
-                  <table>
-                    <tbody>
-                      {rev.yieldQuantity ? (
-                        <tr>
-                          <td>Yield</td>
-                          <td className="numeric">
-                            <ScaledAmount
-                              value={rev.yieldQuantity}
-                              unit={rev.yieldUnit}
-                            />
-                          </td>
-                        </tr>
-                      ) : null}
-                      {rev.servings ? (
-                        <tr>
-                          <td>Servings</td>
-                          <td className="numeric">
-                            <ScaledAmount value={rev.servings} />
-                          </td>
-                        </tr>
-                      ) : null}
-                      {rev.totalTimeMinutes ? (
-                        <tr>
-                          <td>Total time</td>
-                          <td className="numeric">
-                            {formatDuration(rev.totalTimeMinutes, null)}
-                          </td>
-                        </tr>
-                      ) : null}
-                      {rev.activeTimeMinutes ? (
-                        <tr>
-                          <td>Active time</td>
-                          <td className="numeric">
-                            {formatDuration(rev.activeTimeMinutes, null)}
-                          </td>
-                        </tr>
-                      ) : null}
-                    </tbody>
-                  </table>
-                </section>
-              )}
-
-              {recipe.ingredients.length > 0 ? (
-                <section className="panel">
-                  <h2>Ingredients</h2>
-                  <IngredientChecklist
-                    slug={recipe.slug}
-                    revisionNumber={rev.revisionNumber}
-                    lines={recipe.ingredients}
-                    yieldQuantity={rev.yieldQuantity}
-                    yieldUnit={rev.yieldUnit}
-                  />
-                </section>
-              ) : null}
-
-              {recipe.revisions.length > 1 ? (
-                <section className="panel">
-                  <h2>Revisions</h2>
-                  <ol className="timeline">
-                    {recipe.revisions.map((entry) => (
-                      <li
-                        key={entry.revisionNumber}
-                        data-current={
-                          entry.revisionNumber === rev.revisionNumber
-                        }
-                      >
-                        <Link
-                          href={
-                            entry.revisionNumber === recipe.revisionNumber &&
-                            !isHistorical
-                              ? `/recipes/${recipe.slug}`
-                              : `/recipes/${recipe.slug}/revisions/${entry.revisionNumber}`
-                          }
-                          className="rev-label"
-                        >
-                          Revision {entry.revisionNumber}
-                        </Link>
-                        {entry.backfilled && entry.occurredAt ? (
-                          // The number says when it was written down, which
-                          // for an older version found later is not when it
-                          // existed. Say both, or the list reads as wrong.
-                          <p className="rev-when">
-                            From{' '}
-                            <time dateTime={entry.occurredAt}>
-                              {entry.occurredAt.slice(0, 10)}
-                            </time>
-                            , recorded later
-                          </p>
+            hasAside ? (
+              <>
+                {(rev.yieldQuantity ||
+                  rev.servings ||
+                  rev.totalTimeMinutes ||
+                  rev.activeTimeMinutes) && (
+                  <section className="panel">
+                    <h2>At a glance</h2>
+                    <table>
+                      <tbody>
+                        {rev.yieldQuantity ? (
+                          <tr>
+                            <td>Yield</td>
+                            <td className="numeric">
+                              <ScaledAmount
+                                value={rev.yieldQuantity}
+                                unit={rev.yieldUnit}
+                              />
+                            </td>
+                          </tr>
                         ) : null}
-                        <p className="rev-rationale">
-                          {entry.rationale ?? (
-                            <span className="faint">
-                              No rationale recorded.
-                            </span>
-                          )}
-                        </p>
-                      </li>
-                    ))}
-                  </ol>
-                </section>
-              ) : null}
-            </>
+                        {rev.servings ? (
+                          <tr>
+                            <td>Servings</td>
+                            <td className="numeric">
+                              <ScaledAmount value={rev.servings} />
+                            </td>
+                          </tr>
+                        ) : null}
+                        {rev.totalTimeMinutes ? (
+                          <tr>
+                            <td>Total time</td>
+                            <td className="numeric">
+                              {formatDuration(rev.totalTimeMinutes, null)}
+                            </td>
+                          </tr>
+                        ) : null}
+                        {rev.activeTimeMinutes ? (
+                          <tr>
+                            <td>Active time</td>
+                            <td className="numeric">
+                              {formatDuration(rev.activeTimeMinutes, null)}
+                            </td>
+                          </tr>
+                        ) : null}
+                      </tbody>
+                    </table>
+                  </section>
+                )}
+
+                {recipe.ingredients.length > 0 ? (
+                  <section className="panel">
+                    <h2>Ingredients</h2>
+                    <IngredientChecklist
+                      slug={recipe.slug}
+                      revisionNumber={rev.revisionNumber}
+                      lines={recipe.ingredients}
+                      yieldQuantity={rev.yieldQuantity}
+                      yieldUnit={rev.yieldUnit}
+                    />
+                  </section>
+                ) : null}
+              </>
+            ) : undefined
           }
           method={
             <>
@@ -266,6 +239,10 @@ export function RecipeDetail({
                                 {step.note ? (
                                   <p className="faint">{step.note}</p>
                                 ) : null}
+                                <StepIngredients
+                                  uses={step.uses}
+                                  lines={recipe.ingredients}
+                                />
                                 {step.imageUrl ? (
                                   <figure className="step-image">
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -380,44 +357,101 @@ export function RecipeDetail({
                   </div>
                 </section>
               ) : null}
-
-              {recipe.experiments.length > 0 ? (
-                <section className="section">
-                  <div className="section-head">
-                    <h2>Recorded runs</h2>
-                    <span className="faint">{recipe.experiments.length}</span>
-                  </div>
-                  <ul>
-                    {recipe.experiments.map((experiment) => (
-                      <li key={experiment.slug}>
-                        <Link href={`/experiments/${experiment.slug}`}>
-                          {experiment.title}
-                        </Link>
-                        {experiment.startedAt ? (
-                          <span className="faint">
-                            {' '}
-                            — {experiment.startedAt}
-                          </span>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              ) : null}
-              {science.length > 0 ? (
-                <section className="section science-section">
-                  <div className="section-head">
-                    <h2>The science</h2>
-                    <span className="faint">{science.length}</span>
-                  </div>
-                  <p className="faint">
-                    What is actually happening in the dish, and why the
-                    techniques work.
-                  </p>
-                  <NoteList notes={science} />
-                </section>
-              ) : null}
             </>
+          }
+          science={
+            hasScience ? (
+              <>
+                {recipe.experiments.length > 0 ? (
+                  <section className="section">
+                    <div className="section-head">
+                      <h2>Recorded runs</h2>
+                      <span className="faint">{recipe.experiments.length}</span>
+                    </div>
+                    <ul>
+                      {recipe.experiments.map((experiment) => (
+                        <li key={experiment.slug}>
+                          <Link href={`/experiments/${experiment.slug}`}>
+                            {experiment.title}
+                          </Link>
+                          {experiment.startedAt ? (
+                            <span className="faint">
+                              {' '}
+                              — {experiment.startedAt}
+                            </span>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ) : null}
+                {science.length > 0 ? (
+                  <section className="section science-section">
+                    <div className="section-head">
+                      <h2>The science</h2>
+                      <span className="faint">{science.length}</span>
+                    </div>
+                    <p className="faint">
+                      What is actually happening in the dish, and why the
+                      techniques work.
+                    </p>
+                    <NoteList notes={science} />
+                  </section>
+                ) : null}
+              </>
+            ) : undefined
+          }
+          revisions={
+            recipe.revisions.length > 1 ? (
+              <>
+                {recipe.revisions.length > 1 ? (
+                  <section className="panel">
+                    <h2>Revisions</h2>
+                    <ol className="timeline">
+                      {recipe.revisions.map((entry) => (
+                        <li
+                          key={entry.revisionNumber}
+                          data-current={
+                            entry.revisionNumber === rev.revisionNumber
+                          }
+                        >
+                          <Link
+                            href={
+                              entry.revisionNumber === recipe.revisionNumber &&
+                              !isHistorical
+                                ? `/recipes/${recipe.slug}`
+                                : `/recipes/${recipe.slug}/revisions/${entry.revisionNumber}`
+                            }
+                            className="rev-label"
+                          >
+                            Revision {entry.revisionNumber}
+                          </Link>
+                          {entry.backfilled && entry.occurredAt ? (
+                            // The number says when it was written down, which
+                            // for an older version found later is not when it
+                            // existed. Say both, or the list reads as wrong.
+                            <p className="rev-when">
+                              From{' '}
+                              <time dateTime={entry.occurredAt}>
+                                {entry.occurredAt.slice(0, 10)}
+                              </time>
+                              , recorded later
+                            </p>
+                          ) : null}
+                          <p className="rev-rationale">
+                            {entry.rationale ?? (
+                              <span className="faint">
+                                No rationale recorded.
+                              </span>
+                            )}
+                          </p>
+                        </li>
+                      ))}
+                    </ol>
+                  </section>
+                ) : null}
+              </>
+            ) : undefined
           }
         />
       </div>
