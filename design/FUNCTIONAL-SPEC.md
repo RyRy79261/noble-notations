@@ -3,7 +3,7 @@
 | Field           | Value                                           |
 | --------------- | ----------------------------------------------- |
 | Document        | NN-FS-001                                       |
-| Version         | 1.4                                             |
+| Version         | 1.5                                             |
 | Status          | Draft                                           |
 | Date            | 2026-09-08                                      |
 | Repository      | `RyRy79261/noble-notations`                     |
@@ -1036,17 +1036,18 @@ The designer answers these questions. Each answer changes the design.
 
 ## 18. Gaps in the Design
 
-The design does not yet cover these 6 items. Each one is a requirement in
-this document. Close each gap in the design before the build starts.
+The design covered the first 6 items on 2026-09-08. Each row records what
+was drawn and where. One item, G-07, is open.
 
-| ID   | Gap                                                                                                                                                                                                                               | Requirement        |
-| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
-| G-01 | **Form A, the servings stepper, is missing.** The design draws Form B only, as `BATCH ×0.5 ×1 ×2 ×3`. Every recipe that declares servings needs Form A.                                                                           | §10.2.5, D-06      |
-| G-02 | **The tick-all control is missing.** The shopping list has no tick-all and no indeterminate state. It also has no "n of m in the trolley" readout.                                                                                | R-CMP-12, D-08     |
-| G-03 | **The clear ticks control is missing** from the ingredient checklist.                                                                                                                                                             | R-SCR-15           |
-| G-04 | **The skip link is missing.**                                                                                                                                                                                                     | C-01, R-ACC-04     |
-| G-05 | **The 360 recipe drops the Science tab.** Its tab rail reads `INGREDIENTS · METHOD · REVISIONS`. The 1280 version of the same recipe reads `METHOD · SCIENCE · REVISIONS`. One recipe must offer one set of panels at each width. | R-SCR-27, R-CMP-09 |
-| G-06 | **The batch log card with no source recipe is not drawn.** Every card in the design names a recipe. `/batch-logs` must also list a run that names none.                                                                           | R-SCR-44, R-NAV-08 |
+| ID       | Gap                                                                                                                                                                                                                                                      | Requirement               |
+| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| ~~G-01~~ | ~~Form A, the servings stepper, is missing.~~ **Closed.** Plate F.6 now holds "Batch control — two forms". Form A reads `FOR − 6 +` with the readout `6 SERVINGS · ×1.5`. Form B sits under it. A caption on each says which revision gets which form.   | §10.2.5, D-06             |
+| ~~G-02~~ | ~~The tick-all control is missing.~~ **Closed.** `/list` now has a tick-all bar above the aisles: an indeterminate box, `TICK EVERYTHING`, and the readout `9 OF 24 IN THE TROLLEY`. Plate F.8 draws all 3 box states.                                   | R-CMP-12, D-08            |
+| ~~G-03~~ | ~~The clear ticks control is missing.~~ **Not a gap.** The control was already drawn. The ingredient checklist on the 1280 recipe reads `CLEAR THREE TICKS` under the groups, beside the count `3 / 16`. The first audit missed it.                      | R-SCR-15                  |
+| ~~G-04~~ | ~~The skip link is missing.~~ **Closed.** `F/Skip link` is a component and sits first on plate F.1, drawn in its focused state with a focus ring. Its caption states that it is off screen until it takes keyboard focus.                                | C-01, R-ACC-04            |
+| ~~G-05~~ | ~~The 360 recipe drops the Science tab.~~ **Closed.** Both 360 rails, light and dark, now read `INGREDIENTS · METHOD · SCIENCE · REVISIONS`.                                                                                                             | R-SCR-27, R-CMP-09        |
+| ~~G-06~~ | ~~The batch log card with no source recipe is not drawn.~~ **Closed.** The screen `/batch-logs — Every batch log, 1280` is drawn. Every row carries a `SOURCE` column. The sixth row, "Chilli wash trial", reads `SOURCE / Not yet linked` in muted ink. | R-SCR-44, R-NAV-08        |
+| G-07     | **The new route `/batch-logs` is drawn at 1280 only.** Every other route in the design is drawn at 1280 and at 360. The small format needs the same index, and it needs the run that has no source recipe.                                               | R-NAV-08, R-SCR-44, §13.6 |
 
 ---
 
@@ -1063,13 +1064,14 @@ this document. Close each gap in the design before the build starts.
 
 ## Appendix A — Change History
 
-| Version | Date       | Change                                                                                                                                                                                                                                  |
-| ------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1.0     | 2026-09-08 | First issue. Baseline `main` at `f72fbb6`.                                                                                                                                                                                              |
-| 1.1     | 2026-09-08 | Baseline `main` at `466fd76`. Added pull request #6: step chips, the neutral dark ground, the servings stepper and the 4 panel tabs. Made Tailwind and shadcn/ui mandatory.                                                             |
-| 1.2     | 2026-09-08 | Added the file for each route and each component. Added §1.4 and Appendix B, the file map.                                                                                                                                              |
-| 1.4     | 2026-09-08 | Decided K-01. Added the top level `/batch-logs` index, R-NAV-08 and R-SCR-44.                                                                                                                                                           |
-| 1.3     | 2026-09-08 | Adopted the design in `design/v1-design.pen`. Renamed 6 routes and the basket. Added `/science`, the literature block and the mass flow figure. Navigation grew to 9 items. Answered Q-02 and Q-04. Added §9.5, §18 gaps and §19 risks. |
+| Version | Date       | Change                                                                                                                                                                                                                                                                   |
+| ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1.0     | 2026-09-08 | First issue. Baseline `main` at `f72fbb6`.                                                                                                                                                                                                                               |
+| 1.1     | 2026-09-08 | Baseline `main` at `466fd76`. Added pull request #6: step chips, the neutral dark ground, the servings stepper and the 4 panel tabs. Made Tailwind and shadcn/ui mandatory.                                                                                              |
+| 1.2     | 2026-09-08 | Added the file for each route and each component. Added §1.4 and Appendix B, the file map.                                                                                                                                                                               |
+| 1.5     | 2026-09-08 | The design closed G-01 to G-06. Added the screen `/batch-logs — Every batch log, 1280`, the `F/Skip link` component, the two batch forms, the tick-all control and the Science tab on both 360 rails. G-03 was not a gap. Opened G-07: the new route has no 360 drawing. |
+| 1.4     | 2026-09-08 | Decided K-01. Added the top level `/batch-logs` index, R-NAV-08 and R-SCR-44.                                                                                                                                                                                            |
+| 1.3     | 2026-09-08 | Adopted the design in `design/v1-design.pen`. Renamed 6 routes and the basket. Added `/science`, the literature block and the mass flow figure. Navigation grew to 9 items. Answered Q-02 and Q-04. Added §9.5, §18 gaps and §19 risks.                                  |
 
 ---
 
