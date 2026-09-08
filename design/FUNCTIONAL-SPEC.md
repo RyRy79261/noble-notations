@@ -1,16 +1,16 @@
 # Noble Notations — User Interface Functional Specification
 
-| Field | Value |
-| --- | --- |
-| Document | NN-FS-001 |
-| Version | 1.3 |
-| Status | Draft |
-| Date | 2026-09-08 |
-| Repository | `RyRy79261/noble-notations` |
-| Baseline | `main` at `466fd76` (pull request #6) |
-| Language | ASD-STE100 Simplified Technical English |
-| Target stack | Tailwind CSS and shadcn/ui. Both are mandatory. |
-| Design baseline | `design/v1-design.pen`, DIRECTION F — DOSSIER |
+| Field           | Value                                           |
+| --------------- | ----------------------------------------------- |
+| Document        | NN-FS-001                                       |
+| Version         | 1.3                                             |
+| Status          | Draft                                           |
+| Date            | 2026-09-08                                      |
+| Repository      | `RyRy79261/noble-notations`                     |
+| Baseline        | `main` at `466fd76` (pull request #6)           |
+| Language        | ASD-STE100 Simplified Technical English         |
+| Target stack    | Tailwind CSS and shadcn/ui. Both are mandatory. |
+| Design baseline | `design/v1-design.pen`, DIRECTION F — DOSSIER   |
 
 ---
 
@@ -52,20 +52,19 @@ holds the full file map.
 
 Read these 5 files first. They answer most questions.
 
-| Order | File | Why |
-| --- | --- | --- |
-| 1 | `AGENTS.md` | The working guide. Stack, layout, data model and quality gates. |
-| 2 | `src/app/globals.css` | The design system now. The tokens are at the top. Each rule has a comment that says why it exists. |
-| 3 | `src/lib/site.ts` | Each label the interface shows. |
-| 4 | `src/components/recipe-detail.tsx` | The primary screen. It assembles the 4 panels. |
-| 5 | `src/lib/queries/read.ts` | The shape of each view. It tells you which fields can be empty. |
+| Order | File                               | Why                                                                                                |
+| ----- | ---------------------------------- | -------------------------------------------------------------------------------------------------- |
+| 1     | `AGENTS.md`                        | The working guide. Stack, layout, data model and quality gates.                                    |
+| 2     | `src/app/globals.css`              | The design system now. The tokens are at the top. Each rule has a comment that says why it exists. |
+| 3     | `src/lib/site.ts`                  | Each label the interface shows.                                                                    |
+| 4     | `src/components/recipe-detail.tsx` | The primary screen. It assembles the 4 panels.                                                     |
+| 5     | `src/lib/queries/read.ts`          | The shape of each view. It tells you which fields can be empty.                                    |
 
 Do not change these directories:
 
 - `content/biltong`, `content/recipes`, `content/research` — a frozen
   archive.
 - `content/generated` — a machine writes it.
-- `.claude/` and `.planning/` — another tool manages them.
 
 ---
 
@@ -87,26 +86,26 @@ requirement by its identifier in review.
 
 ## 3. Terminology
 
-| Term | Meaning |
-| --- | --- |
-| Recipe | A dish with a name. The name does not change. |
-| Revision | One version of a recipe. A revision holds the ingredients and the steps. You cannot change a revision after you make it. |
-| Backfill | An older revision. You find it later and you add it to the history. |
-| Rationale | The text that tells you why a revision exists. |
-| Kind | The type of an entry: recipe, preparation, process or research. |
-| Term (tag) | One label in the classification. Each term has one category type. |
-| Category type | A group of terms. There are 10 category types. |
-| Note | A typed remark on a recipe, a step, an ingredient or a run. There are 8 note kinds. |
-| Experiment (run) | A record of a batch that a person cooked. It holds measurements. |
-| List | The set of recipes that a person collects in the browser. The code calls this the basket. The interface calls it the list. |
-| Shop order | The sequence of ingredient categories. It follows the walk through a shop. |
-| Scale | The batch multiplier. The range is 0.1 to 100. |
-| Servings | The number of people a revision feeds. A revision can declare it. Many do not. |
-| Yield | The quantity a revision makes, for example 4.5 kg dried. |
-| Aside | The ingredient column. It stays on screen on a desktop. |
-| Class | A tag in the classification. The route is `/classes`. |
-| Batch log | A recorded run. The code calls this an experiment. |
-| Mechanism | A block on a science note. It tells you what happens in the food and why. |
+| Term             | Meaning                                                                                                                    |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Recipe           | A dish with a name. The name does not change.                                                                              |
+| Revision         | One version of a recipe. A revision holds the ingredients and the steps. You cannot change a revision after you make it.   |
+| Backfill         | An older revision. You find it later and you add it to the history.                                                        |
+| Rationale        | The text that tells you why a revision exists.                                                                             |
+| Kind             | The type of an entry: recipe, preparation, process or research.                                                            |
+| Term (tag)       | One label in the classification. Each term has one category type.                                                          |
+| Category type    | A group of terms. There are 10 category types.                                                                             |
+| Note             | A typed remark on a recipe, a step, an ingredient or a run. There are 8 note kinds.                                        |
+| Experiment (run) | A record of a batch that a person cooked. It holds measurements.                                                           |
+| List             | The set of recipes that a person collects in the browser. The code calls this the basket. The interface calls it the list. |
+| Shop order       | The sequence of ingredient categories. It follows the walk through a shop.                                                 |
+| Scale            | The batch multiplier. The range is 0.1 to 100.                                                                             |
+| Servings         | The number of people a revision feeds. A revision can declare it. Many do not.                                             |
+| Yield            | The quantity a revision makes, for example 4.5 kg dried.                                                                   |
+| Aside            | The ingredient column. It stays on screen on a desktop.                                                                    |
+| Class            | A tag in the classification. The route is `/classes`.                                                                      |
+| Batch log        | A recorded run. The code calls this an experiment.                                                                         |
+| Mechanism        | A block on a science note. It tells you what happens in the food and why.                                                  |
 
 ---
 
@@ -114,16 +113,13 @@ requirement by its identifier in review.
 
 This is the status at the baseline commit.
 
-| Item | Status |
-| --- | --- |
-| Open pull requests | **0.** Pull request #6 merged on 8 September 2026. |
-| Branch | `main` at `466fd76` |
-| Tailwind CSS | Not installed. It is **REQUIRED**. See §14. |
-| shadcn/ui | Not installed. It is **REQUIRED**. See §14. |
-| Prior design work | None. `design/v1-design.pen` holds an empty 800 × 600 frame. |
-
-**Note.** The file `.planning/ROADMAP.md` describes a Docusaurus static site.
-That site is old. Do not use that file.
+| Item               | Status                                                       |
+| ------------------ | ------------------------------------------------------------ |
+| Open pull requests | **0.** Pull request #6 merged on 8 September 2026.           |
+| Branch             | `main` at `466fd76`                                          |
+| Tailwind CSS       | Not installed. It is **REQUIRED**. See §14.                  |
+| shadcn/ui          | Not installed. It is **REQUIRED**. See §14.                  |
+| Prior design work  | None. `design/v1-design.pen` holds an empty 800 × 600 frame. |
 
 ### 4.1 What pull request #6 changed
 
@@ -146,16 +142,16 @@ at 360px, and it covers 11 routes in the dark theme. It holds 36 components.
 
 The design renamed 6 things. This document now uses the design's names.
 
-| Old name | New name |
-| --- | --- |
-| `/categories` | `/classes` |
-| `/categories/[type]/[slug]` | `/classes/[type]/[slug]` |
-| `/shopping-list` | `/list` |
-| `/experiments` | `/recipes/[slug]/batch-logs` |
-| `/experiments/[slug]` | `/recipes/[slug]/batch-logs/[slug]` |
-| `/auth` | `/sign-in` |
-| `/oauth-return` | `/connect/done` |
-| The basket | The list |
+| Old name                    | New name                            |
+| --------------------------- | ----------------------------------- |
+| `/categories`               | `/classes`                          |
+| `/categories/[type]/[slug]` | `/classes/[type]/[slug]`            |
+| `/shopping-list`            | `/list`                             |
+| `/experiments`              | `/recipes/[slug]/batch-logs`        |
+| `/experiments/[slug]`       | `/recipes/[slug]/batch-logs/[slug]` |
+| `/auth`                     | `/sign-in`                          |
+| `/oauth-return`             | `/connect/done`                     |
+| The basket                  | The list                            |
 
 The design added 3 things.
 
@@ -188,11 +184,11 @@ To make a dish better, you add a revision. You do not edit the old one.
 
 ### 5.2 Users
 
-| User | Surface | Task |
-| --- | --- | --- |
-| The cook | Website on a phone | Read a recipe in the kitchen. Change the batch size. Shop for the ingredients. |
-| A reader | Website on a desktop | Look through the store. Search it. Read the history of a dish. |
-| An agent | MCP connector, `/llms.txt`, `.md` routes | Search the store. Add revisions to it. |
+| User     | Surface                                  | Task                                                                           |
+| -------- | ---------------------------------------- | ------------------------------------------------------------------------------ |
+| The cook | Website on a phone                       | Read a recipe in the kitchen. Change the batch size. Shop for the ingredients. |
+| A reader | Website on a desktop                     | Look through the store. Search it. Read the history of a dish.                 |
+| An agent | MCP connector, `/llms.txt`, `.md` routes | Search the store. Add revisions to it.                                         |
 
 ### 5.3 Tone
 
@@ -214,14 +210,14 @@ To make a dish better, you add a revision. You do not edit the old one.
 
 ## 6. Current Implementation
 
-| Item | Value |
-| --- | --- |
-| Framework | Next.js 16 App Router. React 19. TypeScript 5.9. |
+| Item       | Value                                                                                                                     |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Framework  | Next.js 16 App Router. React 19. TypeScript 5.9.                                                                          |
 | Styles now | One stylesheet, `src/app/globals.css`. About 1,900 lines. CSS custom properties. **Tailwind and shadcn/ui replace this.** |
-| Data | Postgres through Drizzle. All reads go through `src/lib/queries/read.ts`. |
-| Rendering | Server Components by default. There are 8 shared client components. See §9.3. |
-| Tests | 108 end-to-end tests. `pnpm audit:ui` reports 0 blockers across 144 page loads. |
-| Deployment | Vercel. CI runs format, lint, typecheck, build and end-to-end tests. |
+| Data       | Postgres through Drizzle. All reads go through `src/lib/queries/read.ts`.                                                 |
+| Rendering  | Server Components by default. There are 8 shared client components. See §9.3.                                             |
+| Tests      | 108 end-to-end tests. `pnpm audit:ui` reports 0 blockers across 144 page loads.                                           |
+| Deployment | Vercel. CI runs format, lint, typecheck, build and end-to-end tests.                                                      |
 
 ---
 
@@ -235,43 +231,43 @@ fixed. Read §13 before you make any muted colour darker.
 The dark palette changed in pull request #6. The light palette did not
 change.
 
-| Token | Dark (default) | Light |
-| --- | --- | --- |
-| `--bg` | `#131211` | `#fbfaff` |
-| `--bg-elevated` | `#1a1918` | `#ffffff` |
-| `--surface` | `#1c1b19` | `#ffffff` |
-| `--surface-2` | `#232120` | `#f4f1fb` |
-| `--border` | `#322f2d` | `#e2dcf0` |
-| `--border-strong` | `#464240` | `#cdc3e6` |
-| `--text` | `#f0eeea` | `#1b1526` |
-| `--text-muted` | `#b3aea6` | `#5f5578` |
-| `--text-faint` | `#9c968d` | `#635a7d` |
-| `--accent` | `#b794ff` | `#6d28d9` |
-| `--accent-strong` | `#9b6dff` | `#5b21b6` |
-| `--accent-dim` | `rgba(183,148,255,.16)` | `rgba(109,40,217,.10)` |
-| `--accent-contrast` | `#141210` | `#ffffff` |
-| `--warn` | `#ffb4c8` | `#9f1239` |
-| `--warn-bg` | `rgba(255,180,200,.10)` | `rgba(159,18,57,.07)` |
-| `--warn-border` | `rgba(255,180,200,.28)` | `rgba(159,18,57,.22)` |
+| Token               | Dark (default)          | Light                  |
+| ------------------- | ----------------------- | ---------------------- |
+| `--bg`              | `#131211`               | `#fbfaff`              |
+| `--bg-elevated`     | `#1a1918`               | `#ffffff`              |
+| `--surface`         | `#1c1b19`               | `#ffffff`              |
+| `--surface-2`       | `#232120`               | `#f4f1fb`              |
+| `--border`          | `#322f2d`               | `#e2dcf0`              |
+| `--border-strong`   | `#464240`               | `#cdc3e6`              |
+| `--text`            | `#f0eeea`               | `#1b1526`              |
+| `--text-muted`      | `#b3aea6`               | `#5f5578`              |
+| `--text-faint`      | `#9c968d`               | `#635a7d`              |
+| `--accent`          | `#b794ff`               | `#6d28d9`              |
+| `--accent-strong`   | `#9b6dff`               | `#5b21b6`              |
+| `--accent-dim`      | `rgba(183,148,255,.16)` | `rgba(109,40,217,.10)` |
+| `--accent-contrast` | `#141210`               | `#ffffff`              |
+| `--warn`            | `#ffb4c8`               | `#9f1239`              |
+| `--warn-bg`         | `rgba(255,180,200,.10)` | `rgba(159,18,57,.07)`  |
+| `--warn-border`     | `rgba(255,180,200,.28)` | `rgba(159,18,57,.22)`  |
 
 Measured contrast on the dark palette:
 
-| Token | On `--bg` | On `--surface-2` |
-| --- | --- | --- |
-| `--text` | 16.15:1 | 13.84:1 |
-| `--text-muted` | 8.48:1 | 7.27:1 |
-| `--text-faint` | 6.38:1 | 5.47:1 |
+| Token          | On `--bg` | On `--surface-2` |
+| -------------- | --------- | ---------------- |
+| `--text`       | 16.15:1   | 13.84:1          |
+| `--text-muted` | 8.48:1    | 7.27:1           |
+| `--text-faint` | 6.38:1    | 5.47:1           |
 
 ### 7.2 Shape, type and layout
 
-| Token | Value |
-| --- | --- |
-| `--radius` | 12px |
-| `--radius-sm` | 8px |
-| `--font-sans` | System sans stack |
-| `--font-mono` | System mono stack. All numbers use it. |
-| `--measure` | 68ch. This is the width of a text block. |
-| `--page` | 1180px. This is the width of the content. |
+| Token         | Value                                     |
+| ------------- | ----------------------------------------- |
+| `--radius`    | 12px                                      |
+| `--radius-sm` | 8px                                       |
+| `--font-sans` | System sans stack                         |
+| `--font-mono` | System mono stack. All numbers use it.    |
+| `--measure`   | 68ch. This is the width of a text block.  |
+| `--page`      | 1180px. This is the width of the content. |
 
 Type scale now: h1 `clamp(1.75rem, 1.2rem + 2vw, 2.5rem)`, h2 1.35rem,
 h3 1.05rem, body 16px with a line height of 1.6.
@@ -305,31 +301,31 @@ Each route is one file under `src/app/`. The shell for all of them is
 The **Route** column is the design's name. The **File** column is the file
 today. Where the two differ, the file must move. See R-NAV-07.
 
-| Route | Screen | File today |
-| --- | --- | --- |
-| `/` | Home | `src/app/page.tsx` |
-| `/recipes` | All entries in groups by kind | `src/app/recipes/page.tsx` |
-| `/recipes/[slug]` | Recipe, current revision. **This is the primary screen.** | `src/app/recipes/[slug]/page.tsx`, body in `src/components/recipe-detail.tsx` |
-| `/recipes/[slug]/revisions/[n]` | An old revision | `src/app/recipes/[slug]/revisions/[number]/page.tsx` |
-| `/recipes/[slug]/batch-logs` | The runs of one recipe | **Move.** Now `src/app/experiments/page.tsx` |
-| `/recipes/[slug]/batch-logs/[slug]` | One run with its measurements | **Move.** Now `src/app/experiments/[slug]/page.tsx` |
-| `/recipes/[slug].md` | Markdown copy for agents. There is no user interface. | `src/app/recipes/[slug]/md/route.ts` |
-| `/science` | Every science note in one place | **New.** No file yet. |
-| `/science/[slug]` | One science note | **New.** No file yet. |
-| `/cuisines` | Cuisine cards | `src/app/cuisines/page.tsx` |
-| `/cuisines/[slug]` | One cuisine | `src/app/cuisines/[slug]/page.tsx` |
-| `/classes` | All classification in groups by category type | **Rename.** Now `src/app/categories/page.tsx` |
-| `/classes/[type]/[slug]` | One term | **Rename.** Now `src/app/categories/[type]/[slug]/page.tsx` |
-| `/ingredients` | The ingredient table | `src/app/ingredients/page.tsx` |
-| `/ingredients/[slug]` | One ingredient | `src/app/ingredients/[slug]/page.tsx` |
-| `/list` | The combined shopping list. The URL gives the selection. | **Rename.** Now `src/app/shopping-list/page.tsx`, plus `list-recipes.tsx` and `basket-redirect.tsx` |
-| `/archive` | The frozen Markdown archive | `src/app/archive/page.tsx` |
-| `/archive/[...slug]` | One archived note | `src/app/archive/[...slug]/page.tsx` |
-| `/search` | Search with filters | `src/app/search/page.tsx` |
-| `/connect` | MCP connector help. Not indexed. Linked from the footer. | `src/app/connect/page.tsx` |
-| `/connect/done` | The agent is connected | **Rename.** Now `src/app/oauth-return/page.tsx` |
-| `/sign-in` | Administrator sign-in | **Rename.** Now `src/app/auth/page.tsx`, form in `sign-in-form.tsx` |
-| `404` | Not found | `src/app/not-found.tsx` |
+| Route                               | Screen                                                    | File today                                                                                          |
+| ----------------------------------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `/`                                 | Home                                                      | `src/app/page.tsx`                                                                                  |
+| `/recipes`                          | All entries in groups by kind                             | `src/app/recipes/page.tsx`                                                                          |
+| `/recipes/[slug]`                   | Recipe, current revision. **This is the primary screen.** | `src/app/recipes/[slug]/page.tsx`, body in `src/components/recipe-detail.tsx`                       |
+| `/recipes/[slug]/revisions/[n]`     | An old revision                                           | `src/app/recipes/[slug]/revisions/[number]/page.tsx`                                                |
+| `/recipes/[slug]/batch-logs`        | The runs of one recipe                                    | **Move.** Now `src/app/experiments/page.tsx`                                                        |
+| `/recipes/[slug]/batch-logs/[slug]` | One run with its measurements                             | **Move.** Now `src/app/experiments/[slug]/page.tsx`                                                 |
+| `/recipes/[slug].md`                | Markdown copy for agents. There is no user interface.     | `src/app/recipes/[slug]/md/route.ts`                                                                |
+| `/science`                          | Every science note in one place                           | **New.** No file yet.                                                                               |
+| `/science/[slug]`                   | One science note                                          | **New.** No file yet.                                                                               |
+| `/cuisines`                         | Cuisine cards                                             | `src/app/cuisines/page.tsx`                                                                         |
+| `/cuisines/[slug]`                  | One cuisine                                               | `src/app/cuisines/[slug]/page.tsx`                                                                  |
+| `/classes`                          | All classification in groups by category type             | **Rename.** Now `src/app/categories/page.tsx`                                                       |
+| `/classes/[type]/[slug]`            | One term                                                  | **Rename.** Now `src/app/categories/[type]/[slug]/page.tsx`                                         |
+| `/ingredients`                      | The ingredient table                                      | `src/app/ingredients/page.tsx`                                                                      |
+| `/ingredients/[slug]`               | One ingredient                                            | `src/app/ingredients/[slug]/page.tsx`                                                               |
+| `/list`                             | The combined shopping list. The URL gives the selection.  | **Rename.** Now `src/app/shopping-list/page.tsx`, plus `list-recipes.tsx` and `basket-redirect.tsx` |
+| `/archive`                          | The frozen Markdown archive                               | `src/app/archive/page.tsx`                                                                          |
+| `/archive/[...slug]`                | One archived note                                         | `src/app/archive/[...slug]/page.tsx`                                                                |
+| `/search`                           | Search with filters                                       | `src/app/search/page.tsx`                                                                           |
+| `/connect`                          | MCP connector help. Not indexed. Linked from the footer.  | `src/app/connect/page.tsx`                                                                          |
+| `/connect/done`                     | The agent is connected                                    | **Rename.** Now `src/app/oauth-return/page.tsx`                                                     |
+| `/sign-in`                          | Administrator sign-in                                     | **Rename.** Now `src/app/auth/page.tsx`, form in `sign-in-form.tsx`                                 |
+| `404`                               | Not found                                                 | `src/app/not-found.tsx`                                                                             |
 
 ### 8.2 Primary navigation
 
@@ -372,13 +368,13 @@ the decision.
 
 ### 9.1 Shell components
 
-| ID | Component | File | Function | States | Suggested |
-| --- | --- | --- | --- | --- | --- |
-| C-01 | Skip link | `src/app/layout.tsx` | Moves the keyboard focus to `#main`. | hidden, focused | — |
-| C-02 | Site header | `src/app/layout.tsx` | Holds the brand, the list control and the navigation. | — | `NavigationMenu`, `Sheet` |
-| C-03 | List control | `src/components/shopping-basket.tsx` → `BasketButton` | Shows the count of collected recipes. Links to the list. | hidden, 1 or more | `Button`, `Badge` |
-| C-04 | Site footer | `src/app/layout.tsx` | Holds the copyright, the connector link and the source link. | — | — |
-| C-20 | Header height probe | `src/components/header-height.tsx` | Measures the header. Writes the value to `--header-h`. | — | none. It has no user interface. |
+| ID   | Component           | File                                                  | Function                                                     | States            | Suggested                       |
+| ---- | ------------------- | ----------------------------------------------------- | ------------------------------------------------------------ | ----------------- | ------------------------------- |
+| C-01 | Skip link           | `src/app/layout.tsx`                                  | Moves the keyboard focus to `#main`.                         | hidden, focused   | —                               |
+| C-02 | Site header         | `src/app/layout.tsx`                                  | Holds the brand, the list control and the navigation.        | —                 | `NavigationMenu`, `Sheet`       |
+| C-03 | List control        | `src/components/shopping-basket.tsx` → `BasketButton` | Shows the count of collected recipes. Links to the list.     | hidden, 1 or more | `Button`, `Badge`               |
+| C-04 | Site footer         | `src/app/layout.tsx`                                  | Holds the copyright, the connector link and the source link. | —                 | —                               |
+| C-20 | Header height probe | `src/components/header-height.tsx`                    | Measures the header. Writes the value to `--header-h`.       | —                 | none. It has no user interface. |
 
 - R-CMP-01: The list control **MUST** be hidden when the list is empty.
 - R-CMP-02: The list control **MUST NOT** be inside the navigation or the
@@ -386,16 +382,16 @@ the decision.
 
 ### 9.2 Content components
 
-| ID | Component | File | Function | States | Suggested |
-| --- | --- | --- | --- | --- | --- |
-| C-05 | Recipe card | `src/components/recipe-card.tsx` → `RecipeCard` | Shows a kind badge, a revision badge, a title link, a subtitle, a summary and up to 4 terms. The summary is cut at 160 characters. | with or without each optional field | `Card` |
-| C-06 | Recipe grid | `src/components/recipe-card.tsx` → `RecipeGrid` | Shows recipe cards in a grid. | full, empty | — |
-| C-07 | Term tag | `src/components/tags.tsx` → `TermTag` | Shows one term. It links to the term page. It shows the term explanation. | primary, normal; with or without an explanation; with or without a type prefix | `Badge`, `Tooltip` |
-| C-08 | Term list | `src/components/tags.tsx` → `TermList` | Shows a row of term tags with a `+n` overflow chip. | — | — |
-| C-09 | Term hierarchy | `src/components/term-hierarchy.tsx` | Shows the parent term and the more specific terms. | — | — |
-| C-10 | Note block | `src/components/notes.tsx` | Shows one note: a kind badge, a title, a Markdown body and the sources. There are **8 kinds**. | 8 kinds; with or without a title; with or without sources | `Alert`, `Card` |
-| C-11 | Markdown | `src/components/markdown.tsx` | Renders Markdown with GFM. | — | `Typography` |
-| C-12 | Database notice | `src/components/database-notice.tsx` | Tells the reader that the database is not available. It tells the reader what to do. | not configured, read failed | `Alert` |
+| ID   | Component       | File                                            | Function                                                                                                                           | States                                                                         | Suggested          |
+| ---- | --------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ------------------ |
+| C-05 | Recipe card     | `src/components/recipe-card.tsx` → `RecipeCard` | Shows a kind badge, a revision badge, a title link, a subtitle, a summary and up to 4 terms. The summary is cut at 160 characters. | with or without each optional field                                            | `Card`             |
+| C-06 | Recipe grid     | `src/components/recipe-card.tsx` → `RecipeGrid` | Shows recipe cards in a grid.                                                                                                      | full, empty                                                                    | —                  |
+| C-07 | Term tag        | `src/components/tags.tsx` → `TermTag`           | Shows one term. It links to the term page. It shows the term explanation.                                                          | primary, normal; with or without an explanation; with or without a type prefix | `Badge`, `Tooltip` |
+| C-08 | Term list       | `src/components/tags.tsx` → `TermList`          | Shows a row of term tags with a `+n` overflow chip.                                                                                | —                                                                              | —                  |
+| C-09 | Term hierarchy  | `src/components/term-hierarchy.tsx`             | Shows the parent term and the more specific terms.                                                                                 | —                                                                              | —                  |
+| C-10 | Note block      | `src/components/notes.tsx`                      | Shows one note: a kind badge, a title, a Markdown body and the sources. There are **8 kinds**.                                     | 8 kinds; with or without a title; with or without sources                      | `Alert`, `Card`    |
+| C-11 | Markdown        | `src/components/markdown.tsx`                   | Renders Markdown with GFM.                                                                                                         | —                                                                              | `Typography`       |
+| C-12 | Database notice | `src/components/database-notice.tsx`            | Tells the reader that the database is not available. It tells the reader what to do.                                               | not configured, read failed                                                    | `Alert`            |
 
 - R-CMP-03: The term tag **MUST** show its explanation on hover **and** on
   keyboard focus.
@@ -417,16 +413,16 @@ the decision.
 These 8 components run in the browser. There are no others in
 `src/components/`.
 
-| ID | Component | File | Function | States | Suggested |
-| --- | --- | --- | --- | --- | --- |
-| C-13 | Recipe tabs | `src/components/recipe-tabs.tsx` | Shows up to 4 panels. On a phone each panel is a tab. On a desktop the ingredients are an aside and the tabs switch the main column. | see §10.2.2 | `Tabs` |
-| C-14 | Ingredient checklist | `src/components/ingredient-checklist.tsx` | Shows the ingredients as a list with tick boxes. It has two orders, a batch control, a count and a clear control. | see §10.2.6 | `Checkbox`, `ToggleGroup` |
-| C-15 | Scale provider | `src/components/scale.tsx` | Holds the batch value for the full page. | scale 1, scale not 1 | none. It has no user interface. |
-| C-16 | Shopping checklist | `src/components/shopping-checklist.tsx` | Shows the combined list in groups by shop area. It has a tick-all control. | none, some, all ticked | `Checkbox` |
-| C-17 | Filterable groups | `src/components/filterable-groups.tsx` | Filters any view that shows items inside groups. It has 3 layouts: row, list and table. | no query, matches, no matches | `Input`, `Command` |
-| C-18 | Add to list | `src/components/shopping-basket.tsx` → `AddToBasket` | Adds this recipe to the list. It also removes it. | not in list, in list | `Button` |
-| C-19 | Step ingredient chips | `src/components/step-ingredients.tsx` | Shows what one step uses. Each chip holds an amount and a name. | 0 chips (hidden), 1 or more | `Badge` |
-| C-20 | Header height probe | `src/components/header-height.tsx` | See §9.1. | — | — |
+| ID   | Component             | File                                                 | Function                                                                                                                             | States                        | Suggested                       |
+| ---- | --------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------- | ------------------------------- |
+| C-13 | Recipe tabs           | `src/components/recipe-tabs.tsx`                     | Shows up to 4 panels. On a phone each panel is a tab. On a desktop the ingredients are an aside and the tabs switch the main column. | see §10.2.2                   | `Tabs`                          |
+| C-14 | Ingredient checklist  | `src/components/ingredient-checklist.tsx`            | Shows the ingredients as a list with tick boxes. It has two orders, a batch control, a count and a clear control.                    | see §10.2.6                   | `Checkbox`, `ToggleGroup`       |
+| C-15 | Scale provider        | `src/components/scale.tsx`                           | Holds the batch value for the full page.                                                                                             | scale 1, scale not 1          | none. It has no user interface. |
+| C-16 | Shopping checklist    | `src/components/shopping-checklist.tsx`              | Shows the combined list in groups by shop area. It has a tick-all control.                                                           | none, some, all ticked        | `Checkbox`                      |
+| C-17 | Filterable groups     | `src/components/filterable-groups.tsx`               | Filters any view that shows items inside groups. It has 3 layouts: row, list and table.                                              | no query, matches, no matches | `Input`, `Command`              |
+| C-18 | Add to list           | `src/components/shopping-basket.tsx` → `AddToBasket` | Adds this recipe to the list. It also removes it.                                                                                    | not in list, in list          | `Button`                        |
+| C-19 | Step ingredient chips | `src/components/step-ingredients.tsx`                | Shows what one step uses. Each chip holds an amount and a name.                                                                      | 0 chips (hidden), 1 or more   | `Badge`                         |
+| C-20 | Header height probe   | `src/components/header-height.tsx`                   | See §9.1.                                                                                                                            | —                             | —                               |
 
 - R-CMP-09: The recipe tabs **MUST** use one DOM at each width. The
   stylesheet decides what a reader sees.
@@ -469,27 +465,27 @@ Tailwind utility set or a shadcn/ui component.
 The design holds 36 components. Each name starts with `F/`. This table maps
 them onto §9. A build takes its names from the design.
 
-| Design component | Covers |
-| --- | --- |
-| `F/Site header`, `F/Site header 360` | C-02, C-03 |
-| `F/Page head`, `F/Page head 360`, `F/Page hero` | The hero, §10.2.1 |
-| `F/Page foot` | C-04 |
-| `F/Breadcrumb` | The breadcrumb |
-| `F/Section label`, `F/Section 360` | The section heading |
-| `F/Mark`, `F/Mark quiet` | The kind badge and the revision badge |
-| `F/Tag`, `F/Tag CTA`, `F/Tag hierarchy` | C-07, C-08, C-09 |
-| `F/Recipe card`, `F/Index card` | C-05 |
-| `F/Ingredient row`, `F/Ingredient callout` | C-14 rows, C-19 step chips |
-| `F/List row`, `F/List mark` | The shopping row and the source recipe chip |
-| `F/Table row` | The ingredient table row |
-| `F/Revision` | The timeline entry |
-| `F/Batch line` | The batch log row |
-| `F/Provenance line` | The provenance row |
-| `F/Footnote`, `F/Warning`, `F/Note reference` | C-10, the 8 note kinds |
-| `F/Mechanism`, `F/Citation` | §10.9, new |
-| `F/Stat`, `F/Measure` | The statistic and the "At a glance" value |
-| `F/Button`, `F/Field`, `F/Filter` | The controls, C-17 |
-| `F/Notice`, `F/Empty` | C-12, the empty state |
+| Design component                                | Covers                                      |
+| ----------------------------------------------- | ------------------------------------------- |
+| `F/Site header`, `F/Site header 360`            | C-02, C-03                                  |
+| `F/Page head`, `F/Page head 360`, `F/Page hero` | The hero, §10.2.1                           |
+| `F/Page foot`                                   | C-04                                        |
+| `F/Breadcrumb`                                  | The breadcrumb                              |
+| `F/Section label`, `F/Section 360`              | The section heading                         |
+| `F/Mark`, `F/Mark quiet`                        | The kind badge and the revision badge       |
+| `F/Tag`, `F/Tag CTA`, `F/Tag hierarchy`         | C-07, C-08, C-09                            |
+| `F/Recipe card`, `F/Index card`                 | C-05                                        |
+| `F/Ingredient row`, `F/Ingredient callout`      | C-14 rows, C-19 step chips                  |
+| `F/List row`, `F/List mark`                     | The shopping row and the source recipe chip |
+| `F/Table row`                                   | The ingredient table row                    |
+| `F/Revision`                                    | The timeline entry                          |
+| `F/Batch line`                                  | The batch log row                           |
+| `F/Provenance line`                             | The provenance row                          |
+| `F/Footnote`, `F/Warning`, `F/Note reference`   | C-10, the 8 note kinds                      |
+| `F/Mechanism`, `F/Citation`                     | §10.9, new                                  |
+| `F/Stat`, `F/Measure`                           | The statistic and the "At a glance" value   |
+| `F/Button`, `F/Field`, `F/Filter`               | The controls, C-17                          |
+| `F/Notice`, `F/Empty`                           | C-12, the empty state                       |
 
 - R-CMP-16: A build **MUST** use the design's component names. Do not carry
   the class names in §9.4 forward.
@@ -546,12 +542,12 @@ The hero shows these items in this order:
 
 There are up to 4 panels. The recipe decides which panels exist.
 
-| Panel | Present when |
-| --- | --- |
-| Ingredients | The revision has ingredients or a yield. |
-| Method | Always. |
-| Science | The recipe has a science note, or it has a recorded run. |
-| Revisions | The recipe has more than one revision. |
+| Panel       | Present when                                             |
+| ----------- | -------------------------------------------------------- |
+| Ingredients | The revision has ingredients or a yield.                 |
+| Method      | Always.                                                  |
+| Science     | The recipe has a science note, or it has a recorded run. |
+| Revisions   | The recipe has more than one revision.                   |
 
 **Phone — 900px wide and less.** Each panel is a tab. The reader sees one
 panel.
@@ -579,12 +575,12 @@ Science and Revisions. The Ingredients tab is not offered.
 
 #### 10.2.3 Panel contents
 
-| Panel | Blocks, in order |
-| --- | --- |
-| Ingredients | At a glance · Ingredients |
-| Method | Why this revision · Method · Notes · Provenance · Related · Literature |
-| Science | Batch logs · The science |
-| Revisions | The revision timeline |
+| Panel       | Blocks, in order                                                       |
+| ----------- | ---------------------------------------------------------------------- |
+| Ingredients | At a glance · Ingredients                                              |
+| Method      | Why this revision · Method · Notes · Provenance · Related · Literature |
+| Science     | Batch logs · The science                                               |
+| Revisions   | The revision timeline                                                  |
 
 Each block is absent when it has no content.
 
@@ -668,10 +664,10 @@ yield but no servings. The label is "Batch". The control is a text field and
 
 **Order control.** There are two orders.
 
-- *Shop order.* The rows are in groups by ingredient category. The sequence
+- _Shop order._ The rows are in groups by ingredient category. The sequence
   follows a walk through a shop. Produce is first. Cupboard items are last.
   This is the default.
-- *As written.* The rows keep the components of the recipe, for example
+- _As written._ The rows keep the components of the recipe, for example
   "Wash", "Dredge" and "Duxelles".
 
 **Row.** Each row shows: a tick box, the amount, the name, an OPTIONAL
@@ -714,12 +710,12 @@ The form has two rows.
 
 The screen has 4 result states:
 
-| State | Content |
-| --- | --- |
-| No filters | A prompt and a link to all recipes. |
-| No matches | "Nothing matched. Try to remove a filter." |
-| Matches | The count, the filter summary and a card grid. |
-| No database | The database notice. |
+| State       | Content                                        |
+| ----------- | ---------------------------------------------- |
+| No filters  | A prompt and a link to all recipes.            |
+| No matches  | "Nothing matched. Try to remove a filter."     |
+| Matches     | The count, the filter summary and a card grid. |
+| No database | The database notice.                           |
 
 ### 10.6 Shopping list — `/list`
 
@@ -821,15 +817,15 @@ that the agent is connected.
 
 Each screen **MUST** cover these states.
 
-| ID | State | Behaviour |
-| --- | --- | --- |
-| R-STA-01 | No database | Show a notice. Tell the reader about `DATABASE_URL`. Link to the archive. |
-| R-STA-02 | Read failed | Show a notice. Tell the reader the problem is temporary. Link to the archive. |
-| R-STA-03 | Empty collection | Show one sentence with a style. |
-| R-STA-04 | No filter matches | Show `Nothing matches "<query>".` |
-| R-STA-05 | Partial data | Almost all fields can be empty. The design **MUST NOT** assume a field is present. |
-| R-STA-06 | Old revision | Show a notice with a link to the current revision. |
-| R-STA-07 | Long content | The store can hold 800 recipes. A list can hold 40 rows. A table can be wide. |
+| ID       | State             | Behaviour                                                                          |
+| -------- | ----------------- | ---------------------------------------------------------------------------------- |
+| R-STA-01 | No database       | Show a notice. Tell the reader about `DATABASE_URL`. Link to the archive.          |
+| R-STA-02 | Read failed       | Show a notice. Tell the reader the problem is temporary. Link to the archive.      |
+| R-STA-03 | Empty collection  | Show one sentence with a style.                                                    |
+| R-STA-04 | No filter matches | Show `Nothing matches "<query>".`                                                  |
+| R-STA-05 | Partial data      | Almost all fields can be empty. The design **MUST NOT** assume a field is present. |
+| R-STA-06 | Old revision      | Show a notice with a link to the current revision.                                 |
+| R-STA-07 | Long content      | The store can hold 800 recipes. A list can hold 40 rows. A table can be wide.      |
 
 - R-STA-08: A wide table **MUST** scroll inside its own container.
 - R-STA-09: The page body **MUST NOT** scroll sideways.
@@ -844,11 +840,11 @@ step chips, science and second revision.
 
 The browser keeps 3 items.
 
-| Key | Scope | Meaning |
-| --- | --- | --- |
-| `nn:checked:{slug}:{revision}` | One recipe revision | "I have this in the cupboard." |
-| `nn:shopping:{sorted slugs}` | One shopping selection | "This is in the trolley." |
-| `nn:basket` | The browser | The recipes that a person collects. The key keeps its name. It is not shown to a reader. |
+| Key                            | Scope                  | Meaning                                                                                  |
+| ------------------------------ | ---------------------- | ---------------------------------------------------------------------------------------- |
+| `nn:checked:{slug}:{revision}` | One recipe revision    | "I have this in the cupboard."                                                           |
+| `nn:shopping:{sorted slugs}`   | One shopping selection | "This is in the trolley."                                                                |
+| `nn:basket`                    | The browser            | The recipes that a person collects. The key keeps its name. It is not shown to a reader. |
 
 - R-STO-01: Each read and each write **MUST** be inside a `try/catch` block.
   A private window must degrade. It must not fail.
@@ -964,19 +960,19 @@ each empty state. It is not decorative text.
 
 The designer supplies these items.
 
-| ID | Deliverable |
-| --- | --- |
+| ID   | Deliverable                                                                                                                                 |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | D-01 | Foundations: colour for both themes, the type scale, spacing, radii, elevation, focus rings and motion. Give them as Tailwind theme tokens. |
-| D-02 | A distinct treatment for each component in §9. This is the main task. |
-| D-03 | A navigation design for a screen 360px wide. It holds 9 destinations and the list control. |
-| D-04 | The recipe screen at 360, 768 and 1280 pixels. Show the change from tabs to aside plus tabs. |
-| D-05 | The full ingredient checklist: both orders, ticked rows, unticked rows and the count. |
-| D-06 | **Both** batch controls: the servings stepper and the batch multiplier. **Open — see G-01.** |
-| D-07 | A step with chips, a note, an image and a full meta row. |
-| D-08 | The full shopping list: the indeterminate tick-all, the combined amounts and the source recipes. **Open — see G-02.** |
-| D-09 | The empty state, the error state, the loading state and the partial data state for §11. |
-| D-10 | A component map. It names the shadcn/ui component for each of our components. It also names the components that need custom work. |
-| D-11 | A token map. It maps each name in §7.1 onto a shadcn/ui token name. |
+| D-02 | A distinct treatment for each component in §9. This is the main task.                                                                       |
+| D-03 | A navigation design for a screen 360px wide. It holds 9 destinations and the list control.                                                  |
+| D-04 | The recipe screen at 360, 768 and 1280 pixels. Show the change from tabs to aside plus tabs.                                                |
+| D-05 | The full ingredient checklist: both orders, ticked rows, unticked rows and the count.                                                       |
+| D-06 | **Both** batch controls: the servings stepper and the batch multiplier. **Open — see G-01.**                                                |
+| D-07 | A step with chips, a note, an image and a full meta row.                                                                                    |
+| D-08 | The full shopping list: the indeterminate tick-all, the combined amounts and the source recipes. **Open — see G-02.**                       |
+| D-09 | The empty state, the error state, the loading state and the partial data state for §11.                                                     |
+| D-10 | A component map. It names the shadcn/ui component for each of our components. It also names the components that need custom work.           |
+| D-11 | A token map. It maps each name in §7.1 onto a shadcn/ui token name.                                                                         |
 
 D-02 must cover these sets:
 
@@ -991,15 +987,15 @@ D-02 must cover these sets:
 
 The designer answers these questions. Each answer changes the design.
 
-| ID | Question | Context |
-| --- | --- | --- |
-| Q-01 | Is there a theme control? | The site follows the system setting today. |
-| ~~Q-02~~ | ~~Is the mobile navigation a drawer or a bottom bar?~~ | **Answered.** The design chose a drawer. See R-NAV-03. |
-| Q-03 | Does a recipe card show an image? | Images are optional. They come from any host through the MCP. Text first is the choice today. |
-| ~~Q-04~~ | ~~Is the revision timeline more prominent?~~ | **Answered.** It is its own tab, and the design gives it a full section. |
-| Q-05 | Is there a cooking mode? | One step at a time. The screen stays awake. The type is large. It is not built. `durationMinutes` is stored for each step, so a timer would read real data. |
-| Q-06 | How do 8 note kinds differ? | The recipe page must not become a colour chart. |
-| Q-07 | Do the step chips repeat the ingredient list, or replace it on a phone? | Both are on screen today. A phone shows them in two different tabs. |
+| ID       | Question                                                                | Context                                                                                                                                                     |
+| -------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Q-01     | Is there a theme control?                                               | The site follows the system setting today.                                                                                                                  |
+| ~~Q-02~~ | ~~Is the mobile navigation a drawer or a bottom bar?~~                  | **Answered.** The design chose a drawer. See R-NAV-03.                                                                                                      |
+| Q-03     | Does a recipe card show an image?                                       | Images are optional. They come from any host through the MCP. Text first is the choice today.                                                               |
+| ~~Q-04~~ | ~~Is the revision timeline more prominent?~~                            | **Answered.** It is its own tab, and the design gives it a full section.                                                                                    |
+| Q-05     | Is there a cooking mode?                                                | One step at a time. The screen stays awake. The type is large. It is not built. `durationMinutes` is stored for each step, so a timer would read real data. |
+| Q-06     | How do 8 note kinds differ?                                             | The recipe page must not become a colour chart.                                                                                                             |
+| Q-07     | Do the step chips repeat the ingredient list, or replace it on a phone? | Both are on screen today. A phone shows them in two different tabs.                                                                                         |
 
 ---
 
@@ -1007,23 +1003,23 @@ The designer answers these questions. Each answer changes the design.
 
 ### 17.1 Normative
 
-| Reference | Content |
-| --- | --- |
-| RFC 2119 | The key words in §2. |
-| `src/lib/site.ts` | Each label the interface shows. Category types, ingredient categories in shop order, recipe kinds and note kinds. |
-| `src/lib/queries/read.ts` | The shape of each view the interface receives. |
-| `scripts/audit-ui.ts` | The geometric audit in R-ACC-11. |
-| `e2e/` | 108 Playwright tests. They lock the behaviour in this document. |
-| `e2e/recipe-layout.spec.ts` | The panel geometry tests for §10.2.2. |
+| Reference                   | Content                                                                                                           |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| RFC 2119                    | The key words in §2.                                                                                              |
+| `src/lib/site.ts`           | Each label the interface shows. Category types, ingredient categories in shop order, recipe kinds and note kinds. |
+| `src/lib/queries/read.ts`   | The shape of each view the interface receives.                                                                    |
+| `scripts/audit-ui.ts`       | The geometric audit in R-ACC-11.                                                                                  |
+| `e2e/`                      | 108 Playwright tests. They lock the behaviour in this document.                                                   |
+| `e2e/recipe-layout.spec.ts` | The panel geometry tests for §10.2.2.                                                                             |
 
 ### 17.2 Informative
 
-| Reference | Content |
-| --- | --- |
-| `AGENTS.md` | Conventions, the data model and the quality gates. |
-| `docs/mcp-connector.md` | The connector design. |
-| `src/app/globals.css` | The current design system with its reasons. |
-| Pull request #6 | The recipe screen changes in §4.1. |
+| Reference               | Content                                            |
+| ----------------------- | -------------------------------------------------- |
+| `AGENTS.md`             | Conventions, the data model and the quality gates. |
+| `docs/mcp-connector.md` | The connector design.                              |
+| `src/app/globals.css`   | The current design system with its reasons.        |
+| Pull request #6         | The recipe screen changes in §4.1.                 |
 
 ---
 
@@ -1032,35 +1028,35 @@ The designer answers these questions. Each answer changes the design.
 The design does not yet cover these 5 items. Each one is a requirement in
 this document. Close each gap in the design before the build starts.
 
-| ID | Gap | Requirement |
-| --- | --- | --- |
-| G-01 | **Form A, the servings stepper, is missing.** The design draws Form B only, as `BATCH ×0.5 ×1 ×2 ×3`. Every recipe that declares servings needs Form A. | §10.2.5, D-06 |
-| G-02 | **The tick-all control is missing.** The shopping list has no tick-all and no indeterminate state. It also has no "n of m in the trolley" readout. | R-CMP-12, D-08 |
-| G-03 | **The clear ticks control is missing** from the ingredient checklist. | R-SCR-15 |
-| G-04 | **The skip link is missing.** | C-01, R-ACC-04 |
+| ID   | Gap                                                                                                                                                                                                                               | Requirement        |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| G-01 | **Form A, the servings stepper, is missing.** The design draws Form B only, as `BATCH ×0.5 ×1 ×2 ×3`. Every recipe that declares servings needs Form A.                                                                           | §10.2.5, D-06      |
+| G-02 | **The tick-all control is missing.** The shopping list has no tick-all and no indeterminate state. It also has no "n of m in the trolley" readout.                                                                                | R-CMP-12, D-08     |
+| G-03 | **The clear ticks control is missing** from the ingredient checklist.                                                                                                                                                             | R-SCR-15           |
+| G-04 | **The skip link is missing.**                                                                                                                                                                                                     | C-01, R-ACC-04     |
 | G-05 | **The 360 recipe drops the Science tab.** Its tab rail reads `INGREDIENTS · METHOD · REVISIONS`. The 1280 version of the same recipe reads `METHOD · SCIENCE · REVISIONS`. One recipe must offer one set of panels at each width. | R-SCR-27, R-CMP-09 |
 
 ---
 
 ## 19. Open Risks
 
-| ID | Risk | What to decide |
-| --- | --- | --- |
+| ID   | Risk                                                                                                                                                                                                                                                         | What to decide                                                                            |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
 | K-01 | **A batch log can have no recipe.** `ExperimentView.recipe` is `null` when a run names no recipe, and the query is a left join. The design nests the route under a recipe, at `/recipes/[slug]/batch-logs/[slug]`. A run with no recipe then has no address. | Either keep a top-level index for the orphans, or make the recipe link required on a run. |
-| K-02 | **A rename breaks a public address.** The site is indexed. 5 routes change. | R-NAV-07 requires a permanent redirect for each one. |
-| K-03 | **The navigation grew from 8 items to 9.** Science was added. R-NAV-01 still applies at 360px. | The drawer answers it. Check it at 360 with `pnpm audit:ui`. |
-| K-04 | **`/science` needs a query that does not exist.** `src/lib/queries/read.ts` reads notes for one recipe. It has no read for every science note across recipes. | Add the query, or build the index from the recipe list. |
+| K-02 | **A rename breaks a public address.** The site is indexed. 5 routes change.                                                                                                                                                                                  | R-NAV-07 requires a permanent redirect for each one.                                      |
+| K-03 | **The navigation grew from 8 items to 9.** Science was added. R-NAV-01 still applies at 360px.                                                                                                                                                               | The drawer answers it. Check it at 360 with `pnpm audit:ui`.                              |
+| K-04 | **`/science` needs a query that does not exist.** `src/lib/queries/read.ts` reads notes for one recipe. It has no read for every science note across recipes.                                                                                                | Add the query, or build the index from the recipe list.                                   |
 
 ---
 
 ## Appendix A — Change History
 
-| Version | Date | Change |
-| --- | --- | --- |
-| 1.0 | 2026-09-08 | First issue. Baseline `main` at `f72fbb6`. |
-| 1.1 | 2026-09-08 | Baseline `main` at `466fd76`. Added pull request #6: step chips, the neutral dark ground, the servings stepper and the 4 panel tabs. Made Tailwind and shadcn/ui mandatory. |
-| 1.2 | 2026-09-08 | Added the file for each route and each component. Added §1.4 and Appendix B, the file map. |
-| 1.3 | 2026-09-08 | Adopted the design in `design/v1-design.pen`. Renamed 6 routes and the basket. Added `/science`, the literature block and the mass flow figure. Navigation grew to 9 items. Answered Q-02 and Q-04. Added §9.5, §18 gaps and §19 risks. |
+| Version | Date       | Change                                                                                                                                                                                                                                  |
+| ------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.0     | 2026-09-08 | First issue. Baseline `main` at `f72fbb6`.                                                                                                                                                                                              |
+| 1.1     | 2026-09-08 | Baseline `main` at `466fd76`. Added pull request #6: step chips, the neutral dark ground, the servings stepper and the 4 panel tabs. Made Tailwind and shadcn/ui mandatory.                                                             |
+| 1.2     | 2026-09-08 | Added the file for each route and each component. Added §1.4 and Appendix B, the file map.                                                                                                                                              |
+| 1.3     | 2026-09-08 | Adopted the design in `design/v1-design.pen`. Renamed 6 routes and the basket. Added `/science`, the literature block and the mass flow figure. Navigation grew to 9 items. Answered Q-02 and Q-04. Added §9.5, §18 gaps and §19 risks. |
 
 ---
 
@@ -1070,21 +1066,21 @@ Where to find each thing named in this document.
 
 ### B.1 The design system now
 
-| Thing | Where |
-| --- | --- |
-| All tokens in §7.1 and §7.2 | `src/app/globals.css`, the `:root` block at the top |
-| The light theme | `src/app/globals.css`, the `@media (prefers-color-scheme: light)` block |
-| Each layout class in §9.4 | `src/app/globals.css`. Search for the class name. |
+| Thing                        | Where                                                                                         |
+| ---------------------------- | --------------------------------------------------------------------------------------------- |
+| All tokens in §7.1 and §7.2  | `src/app/globals.css`, the `:root` block at the top                                           |
+| The light theme              | `src/app/globals.css`, the `@media (prefers-color-scheme: light)` block                       |
+| Each layout class in §9.4    | `src/app/globals.css`. Search for the class name.                                             |
 | The recipe layout in §10.2.2 | `src/app/globals.css`, the `@media (min-width: 901px)` and `@media (max-width: 900px)` blocks |
-| The reason for a rule | The comment above it. Each rule that looks odd has one. |
+| The reason for a rule        | The comment above it. Each rule that looks odd has one.                                       |
 
 ### B.2 The shell
 
-| Thing | Where |
-| --- | --- |
-| The page shell, the header, the navigation, the footer, the skip link | `src/app/layout.tsx` |
-| The 8 navigation items | `src/app/layout.tsx`, the `NAV` array |
-| The header height probe | `src/components/header-height.tsx` |
+| Thing                                                                 | Where                                 |
+| --------------------------------------------------------------------- | ------------------------------------- |
+| The page shell, the header, the navigation, the footer, the skip link | `src/app/layout.tsx`                  |
+| The 8 navigation items                                                | `src/app/layout.tsx`, the `NAV` array |
+| The header height probe                                               | `src/components/header-height.tsx`    |
 
 ### B.3 The screens
 
@@ -1099,27 +1095,27 @@ it to see which block goes in which panel.
 
 ### B.5 The labels and the data
 
-| Thing | Where |
-| --- | --- |
-| The 10 category types | `src/lib/site.ts`, `CATEGORY_TYPE_LABELS` |
-| The 16 ingredient categories, in shop order | `src/lib/site.ts`, `CATEGORY_ORDER` and `CATEGORY_LABELS` |
-| The 4 recipe kinds | `src/lib/site.ts`, `KIND_LABELS` |
-| The 7 note kinds, plus science | `src/lib/site.ts`, `NOTE_KIND_LABELS` |
-| The site name, the tagline, the URL | `src/lib/site.ts`, `site` |
-| The shape of each view | `src/lib/queries/read.ts`. Search for `RecipeView`, `RecipeSummaryView`, `TermView`, `NoteView`, `IngredientLineView` and `StepView`. |
-| Which fields can be empty | The same types. A `\| null` in a type means the field can be empty. |
-| The units and the number format | `src/lib/domain/units.ts` |
+| Thing                                       | Where                                                                                                                                 |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| The 10 category types                       | `src/lib/site.ts`, `CATEGORY_TYPE_LABELS`                                                                                             |
+| The 16 ingredient categories, in shop order | `src/lib/site.ts`, `CATEGORY_ORDER` and `CATEGORY_LABELS`                                                                             |
+| The 4 recipe kinds                          | `src/lib/site.ts`, `KIND_LABELS`                                                                                                      |
+| The 7 note kinds, plus science              | `src/lib/site.ts`, `NOTE_KIND_LABELS`                                                                                                 |
+| The site name, the tagline, the URL         | `src/lib/site.ts`, `site`                                                                                                             |
+| The shape of each view                      | `src/lib/queries/read.ts`. Search for `RecipeView`, `RecipeSummaryView`, `TermView`, `NoteView`, `IngredientLineView` and `StepView`. |
+| Which fields can be empty                   | The same types. A `\| null` in a type means the field can be empty.                                                                   |
+| The units and the number format             | `src/lib/domain/units.ts`                                                                                                             |
 
 ### B.6 The tests
 
-| Thing | Where |
-| --- | --- |
-| The geometric audit in R-ACC-11 | `scripts/audit-ui.ts`. Run `pnpm audit:ui`. |
-| The panel geometry tests for §10.2.2 | `e2e/recipe-layout.spec.ts` |
-| The checklist tests | `e2e/recipe-checklist.spec.ts` |
-| The shopping tests | `e2e/shopping-list.spec.ts` and `e2e/shopping-journey.spec.ts` |
-| The filter tests | `e2e/filtering.spec.ts` |
-| All tests | `e2e/`. Run `pnpm test:e2e`. |
+| Thing                                | Where                                                          |
+| ------------------------------------ | -------------------------------------------------------------- |
+| The geometric audit in R-ACC-11      | `scripts/audit-ui.ts`. Run `pnpm audit:ui`.                    |
+| The panel geometry tests for §10.2.2 | `e2e/recipe-layout.spec.ts`                                    |
+| The checklist tests                  | `e2e/recipe-checklist.spec.ts`                                 |
+| The shopping tests                   | `e2e/shopping-list.spec.ts` and `e2e/shopping-journey.spec.ts` |
+| The filter tests                     | `e2e/filtering.spec.ts`                                        |
+| All tests                            | `e2e/`. Run `pnpm test:e2e`.                                   |
 
 ### B.7 The commands
 

@@ -16,5 +16,3 @@ Quick reminders:
   `withTransaction`.
 - `content/biltong|recipes|research` is a frozen archive — history, not a
   place to change a recipe. `content/generated/` is machine-written.
-- Do not hand-edit `.claude/` or `.planning/` (GSD-managed). `.planning/`
-  predates this rebuild and describes the old static-site architecture.
