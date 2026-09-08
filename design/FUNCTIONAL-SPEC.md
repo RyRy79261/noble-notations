@@ -3,7 +3,7 @@
 | Field           | Value                                           |
 | --------------- | ----------------------------------------------- |
 | Document        | NN-FS-001                                       |
-| Version         | 1.3                                             |
+| Version         | 1.4                                             |
 | Status          | Draft                                           |
 | Date            | 2026-09-08                                      |
 | Repository      | `RyRy79261/noble-notations`                     |
@@ -147,7 +147,7 @@ The design renamed 6 things. This document now uses the design's names.
 | `/categories`               | `/classes`                          |
 | `/categories/[type]/[slug]` | `/classes/[type]/[slug]`            |
 | `/shopping-list`            | `/list`                             |
-| `/experiments`              | `/recipes/[slug]/batch-logs`        |
+| `/experiments`              | `/batch-logs`                       |
 | `/experiments/[slug]`       | `/recipes/[slug]/batch-logs/[slug]` |
 | `/auth`                     | `/sign-in`                          |
 | `/oauth-return`             | `/connect/done`                     |
@@ -307,7 +307,8 @@ today. Where the two differ, the file must move. See R-NAV-07.
 | `/recipes`                          | All entries in groups by kind                             | `src/app/recipes/page.tsx`                                                                          |
 | `/recipes/[slug]`                   | Recipe, current revision. **This is the primary screen.** | `src/app/recipes/[slug]/page.tsx`, body in `src/components/recipe-detail.tsx`                       |
 | `/recipes/[slug]/revisions/[n]`     | An old revision                                           | `src/app/recipes/[slug]/revisions/[number]/page.tsx`                                                |
-| `/recipes/[slug]/batch-logs`        | The runs of one recipe                                    | **Move.** Now `src/app/experiments/page.tsx`                                                        |
+| `/batch-logs`                       | Every run, including a run with no recipe                 | **Rename.** Now `src/app/experiments/page.tsx`                                                      |
+| `/recipes/[slug]/batch-logs`        | The runs of one recipe                                    | **New.** No file yet.                                                                               |
 | `/recipes/[slug]/batch-logs/[slug]` | One run with its measurements                             | **Move.** Now `src/app/experiments/[slug]/page.tsx`                                                 |
 | `/recipes/[slug].md`                | Markdown copy for agents. There is no user interface.     | `src/app/recipes/[slug]/md/route.ts`                                                                |
 | `/science`                          | Every science note in one place                           | **New.** No file yet.                                                                               |
@@ -349,6 +350,9 @@ The list control sits beside the navigation. It shows a count.
 - R-NAV-07: A renamed route **MUST** redirect from its old address. The site
   is public and indexed. `/shopping-list`, `/categories`, `/experiments`,
   `/auth` and `/oauth-return` each need a permanent redirect.
+- R-NAV-08: Every run **MUST** be reachable from `/batch-logs`. A run with
+  no recipe has no nested address, so the top level index is its only
+  address. See K-01.
 - R-NAV-04: The header **MUST** stay at the top of the screen when the page
   scrolls.
 - R-NAV-05: The height of the header changes with its content. Any element
@@ -768,10 +772,17 @@ class.
 `/cuisines` shows a card grid of label, explanation and recipe count.
 Cuisine is the only category type with its own top level route.
 
-`/recipes/[slug]/batch-logs` shows a card grid of title, summary, start date and source
-recipe. The detail page shows the outcome, the measurements and the notes.
-The measurements are a data table. It holds the weight of each piece, the
-drying times and the costs.
+`/batch-logs` shows a card grid of title, summary, start date and source
+recipe. It lists every run. A run with no recipe shows an empty source and
+is listed with the rest. `/recipes/[slug]/batch-logs` shows the same grid
+filtered to one recipe.
+
+The detail page shows the outcome, the measurements and the notes. The
+measurements are a data table. It holds the weight of each piece, the drying
+times and the costs.
+
+- R-SCR-30: The batch log card **MUST** read correctly with no source
+  recipe. The design **MUST** draw this state.
 
 `/archive` shows a card grid in groups by section. Each card shows the
 title, the summary and the original file path. The detail page shows frozen
@@ -1025,7 +1036,7 @@ The designer answers these questions. Each answer changes the design.
 
 ## 18. Gaps in the Design
 
-The design does not yet cover these 5 items. Each one is a requirement in
+The design does not yet cover these 6 items. Each one is a requirement in
 this document. Close each gap in the design before the build starts.
 
 | ID   | Gap                                                                                                                                                                                                                               | Requirement        |
@@ -1035,17 +1046,18 @@ this document. Close each gap in the design before the build starts.
 | G-03 | **The clear ticks control is missing** from the ingredient checklist.                                                                                                                                                             | R-SCR-15           |
 | G-04 | **The skip link is missing.**                                                                                                                                                                                                     | C-01, R-ACC-04     |
 | G-05 | **The 360 recipe drops the Science tab.** Its tab rail reads `INGREDIENTS · METHOD · REVISIONS`. The 1280 version of the same recipe reads `METHOD · SCIENCE · REVISIONS`. One recipe must offer one set of panels at each width. | R-SCR-27, R-CMP-09 |
+| G-06 | **The batch log card with no source recipe is not drawn.** Every card in the design names a recipe. `/batch-logs` must also list a run that names none.                                                                           | R-SCR-30, R-NAV-08 |
 
 ---
 
 ## 19. Open Risks
 
-| ID   | Risk                                                                                                                                                                                                                                                         | What to decide                                                                            |
-| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| K-01 | **A batch log can have no recipe.** `ExperimentView.recipe` is `null` when a run names no recipe, and the query is a left join. The design nests the route under a recipe, at `/recipes/[slug]/batch-logs/[slug]`. A run with no recipe then has no address. | Either keep a top-level index for the orphans, or make the recipe link required on a run. |
-| K-02 | **A rename breaks a public address.** The site is indexed. 5 routes change.                                                                                                                                                                                  | R-NAV-07 requires a permanent redirect for each one.                                      |
-| K-03 | **The navigation grew from 8 items to 9.** Science was added. R-NAV-01 still applies at 360px.                                                                                                                                                               | The drawer answers it. Check it at 360 with `pnpm audit:ui`.                              |
-| K-04 | **`/science` needs a query that does not exist.** `src/lib/queries/read.ts` reads notes for one recipe. It has no read for every science note across recipes.                                                                                                | Add the query, or build the index from the recipe list.                                   |
+| ID       | Risk                                                                                                                                                          | What to decide                                                                                                                                                                                                                                                                                                  |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ~~K-01~~ | ~~**A batch log can have no recipe.**~~ `ExperimentView.recipe` is `null` when a run names no recipe, and the query is a left join.                           | **Decided 2026-09-08.** Keep a top level `/batch-logs` index. It lists every run, with or without a recipe. The nested `/recipes/[slug]/batch-logs` is the same grid filtered to one recipe. The recipe link stays optional, because a run is often logged before its recipe exists. See R-NAV-08 and R-SCR-30. |
+| K-02     | **A rename breaks a public address.** The site is indexed. 5 routes change.                                                                                   | R-NAV-07 requires a permanent redirect for each one.                                                                                                                                                                                                                                                            |
+| K-03     | **The navigation grew from 8 items to 9.** Science was added. R-NAV-01 still applies at 360px.                                                                | The drawer answers it. Check it at 360 with `pnpm audit:ui`.                                                                                                                                                                                                                                                    |
+| K-04     | **`/science` needs a query that does not exist.** `src/lib/queries/read.ts` reads notes for one recipe. It has no read for every science note across recipes. | Add the query, or build the index from the recipe list.                                                                                                                                                                                                                                                         |
 
 ---
 
@@ -1056,6 +1068,7 @@ this document. Close each gap in the design before the build starts.
 | 1.0     | 2026-09-08 | First issue. Baseline `main` at `f72fbb6`.                                                                                                                                                                                              |
 | 1.1     | 2026-09-08 | Baseline `main` at `466fd76`. Added pull request #6: step chips, the neutral dark ground, the servings stepper and the 4 panel tabs. Made Tailwind and shadcn/ui mandatory.                                                             |
 | 1.2     | 2026-09-08 | Added the file for each route and each component. Added §1.4 and Appendix B, the file map.                                                                                                                                              |
+| 1.4     | 2026-09-08 | Decided K-01. Added the top level `/batch-logs` index, R-NAV-08 and R-SCR-30.                                                                                                                                                           |
 | 1.3     | 2026-09-08 | Adopted the design in `design/v1-design.pen`. Renamed 6 routes and the basket. Added `/science`, the literature block and the mass flow figure. Navigation grew to 9 items. Answered Q-02 and Q-04. Added §9.5, §18 gaps and §19 risks. |
 
 ---
