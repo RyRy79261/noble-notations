@@ -1,7 +1,46 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { Geist, Geist_Mono, Newsreader } from 'next/font/google';
 import { site } from '@/lib/site';
-import './globals.css';
+// theme.css is the only stylesheet the layout imports. It pulls globals.css
+// in under a cascade layer of its own, which is what lets a Tailwind utility
+// beat an old element rule. Importing globals.css here as well would add it
+// back unlayered and undo that. See the note at the top of theme.css.
+import './theme.css';
+
+/*
+ * The three faces of DIRECTION F. next/font/google downloads each WOFF2 at
+ * build time and serves it from /_next/static/media, so the CSP in
+ * next.config.ts is satisfied: the file is same-origin for
+ * `font-src 'self' data:` and the generated @font-face is inline for
+ * `style-src 'self' 'unsafe-inline'`. A <link> to fonts.googleapis.com is a
+ * stylesheet from a host that is not in style-src and would be blocked.
+ *
+ * The variable names avoid --font-sans and --font-mono. globals.css still
+ * declares those two for its own rules and keeps them until M7.
+ */
+const newsreader = Newsreader({
+  subsets: ['latin'],
+  display: 'swap',
+  // Newsreader is an optical-size design and the titles run from 24px to
+  // 72px, so opsz has to be asked for by name. wght is always included and
+  // naming it is an error.
+  axes: ['opsz'],
+  style: ['normal', 'italic'],
+  variable: '--font-serif',
+});
+
+const geistSans = Geist({
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-sans-ui',
+});
+
+const geistMono = Geist_Mono({
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-mono-ui',
+});
 
 export const metadata: Metadata = {
   metadataBase: new URL(site.url),
@@ -52,7 +91,10 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    <html
+      lang="en"
+      className={`${newsreader.variable} ${geistSans.variable} ${geistMono.variable}`}
+    >
       <body>
         <div className="shell">
           <a className="skip-link" href="#main">
