@@ -301,10 +301,6 @@ own.
 
 ## Do not touch
 
-- `.claude/` and `.planning/` are managed by the GSD tooling — do not
-  hand-edit or reformat them. Note that `.planning/PROJECT.md` predates this
-  rebuild and describes the old static-site architecture; treat this file as
-  authoritative where they disagree.
 - Do not commit `.next/` or `build/` (git-ignored).
 - This is Next.js 16. Several conventions moved: `middleware.ts` is now
   `proxy.ts`, and route params are Promises. The version's own docs ship in

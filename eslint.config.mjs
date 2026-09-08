@@ -10,8 +10,6 @@ export default tseslint.config(
       'out/**',
       'node_modules/**',
       'drizzle/**',
-      '.claude/**',
-      '.planning/**',
       'content/**',
       'next-env.d.ts',
     ],
