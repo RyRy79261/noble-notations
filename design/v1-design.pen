@@ -4031,6 +4031,55 @@
                               "children": [
                                 {
                                   "type": "frame",
+                                  "id": "OjRgd",
+                                  "name": "Skip link specimen",
+                                  "width": "fill_container",
+                                  "gap": 20,
+                                  "alignItems": "center",
+                                  "children": [
+                                    {
+                                      "type": "frame",
+                                      "id": "Ayj9s",
+                                      "name": "F/Skip link",
+                                      "reusable": true,
+                                      "fill": "$f-accent",
+                                      "stroke": "$f-ink",
+                                      "strokeWidth": 2,
+                                      "strokeAlignment": "outer",
+                                      "padding": [
+                                        8,
+                                        14
+                                      ],
+                                      "alignItems": "center",
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "gGEmz",
+                                          "name": "L",
+                                          "fill": "$f-on-accent",
+                                          "content": "SKIP TO CONTENT",
+                                          "fontFamily": "$f-mono",
+                                          "fontSize": 10,
+                                          "fontWeight": "normal",
+                                          "letterSpacing": 1.2
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "text",
+                                      "id": "w9IlUB",
+                                      "name": "Caption",
+                                      "fill": "$f-ink-3",
+                                      "content": "FIRST CONTROL IN THE PAGE · OFF SCREEN UNTIL IT TAKES KEYBOARD FOCUS · MOVES FOCUS TO #MAIN",
+                                      "fontFamily": "$f-mono",
+                                      "fontSize": 9,
+                                      "fontWeight": "normal",
+                                      "letterSpacing": 1.2
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
                                   "id": "pngpl",
                                   "name": "F/Site header",
                                   "reusable": true,
@@ -6399,6 +6448,326 @@
                                       "fontStyle": "italic"
                                     }
                                   ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "LZOLV",
+                                  "name": "Batch control — two forms",
+                                  "width": "fill_container",
+                                  "layout": "vertical",
+                                  "gap": 10,
+                                  "children": [
+                                    {
+                                      "type": "frame",
+                                      "id": "ysypm",
+                                      "name": "Form A — servings stepper",
+                                      "width": "fill_container",
+                                      "fill": "$f-desk",
+                                      "gap": 16,
+                                      "padding": [
+                                        16,
+                                        18
+                                      ],
+                                      "alignItems": "center",
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "Z8Up4",
+                                          "name": "L",
+                                          "fill": "$f-ink-3",
+                                          "content": "FOR",
+                                          "fontFamily": "$f-mono",
+                                          "fontSize": 9,
+                                          "fontWeight": "normal",
+                                          "letterSpacing": 1.5
+                                        },
+                                        {
+                                          "type": "frame",
+                                          "id": "m4qFho",
+                                          "name": "Stepper",
+                                          "gap": 4,
+                                          "alignItems": "center",
+                                          "children": [
+                                            {
+                                              "type": "frame",
+                                              "id": "ja7q5",
+                                              "name": "Minus",
+                                              "fill": "$f-paper",
+                                              "padding": [
+                                                7,
+                                                13
+                                              ],
+                                              "justifyContent": "center",
+                                              "alignItems": "center",
+                                              "children": [
+                                                {
+                                                  "type": "text",
+                                                  "id": "r01eBq",
+                                                  "name": "L",
+                                                  "fill": "$f-ink-2",
+                                                  "content": "−",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 14,
+                                                  "fontWeight": "normal"
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "type": "frame",
+                                              "id": "eD9Ld",
+                                              "name": "Field",
+                                              "fill": "$f-paper",
+                                              "padding": [
+                                                7,
+                                                18
+                                              ],
+                                              "justifyContent": "center",
+                                              "alignItems": "center",
+                                              "children": [
+                                                {
+                                                  "type": "text",
+                                                  "id": "S2Sq3I",
+                                                  "name": "L",
+                                                  "fill": "$f-ink",
+                                                  "content": "6",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 14,
+                                                  "fontWeight": "normal"
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "type": "frame",
+                                              "id": "Tj9rl",
+                                              "name": "Plus",
+                                              "fill": "$f-paper",
+                                              "padding": [
+                                                7,
+                                                13
+                                              ],
+                                              "justifyContent": "center",
+                                              "alignItems": "center",
+                                              "children": [
+                                                {
+                                                  "type": "text",
+                                                  "id": "KKNRc",
+                                                  "name": "L",
+                                                  "fill": "$f-ink-2",
+                                                  "content": "+",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 14,
+                                                  "fontWeight": "normal"
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        },
+                                        {
+                                          "type": "text",
+                                          "id": "TH6xo",
+                                          "name": "Readout",
+                                          "fill": "$f-ink-3",
+                                          "content": "6 SERVINGS · ×1.5",
+                                          "fontFamily": "$f-mono",
+                                          "fontSize": 10,
+                                          "fontWeight": "normal",
+                                          "letterSpacing": 1.2
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "text",
+                                      "id": "ol4Yj",
+                                      "name": "Caption A",
+                                      "fill": "$f-ink-3",
+                                      "content": "FORM A · THE REVISION DECLARES SERVINGS · ONE STEP IS ONE SERVING · THE READOUT SHOWS THE MULTIPLIER ONLY WHEN IT IS NOT ×1",
+                                      "fontFamily": "$f-mono",
+                                      "fontSize": 9,
+                                      "fontWeight": "normal",
+                                      "letterSpacing": 1.2
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "s8LYfF",
+                                      "name": "Form B — batch multiplier",
+                                      "width": "fill_container",
+                                      "fill": "$f-desk",
+                                      "gap": 16,
+                                      "padding": [
+                                        16,
+                                        18
+                                      ],
+                                      "alignItems": "center",
+                                      "children": [
+                                        {
+                                          "type": "frame",
+                                          "id": "drRVl",
+                                          "name": "Batch",
+                                          "gap": 16,
+                                          "alignItems": "center",
+                                          "children": [
+                                            {
+                                              "type": "text",
+                                              "id": "JP77t",
+                                              "name": "L",
+                                              "fill": "$f-ink-3",
+                                              "content": "BATCH",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 9,
+                                              "fontWeight": "normal",
+                                              "letterSpacing": 1.5
+                                            },
+                                            {
+                                              "type": "frame",
+                                              "id": "pno60",
+                                              "name": "Field",
+                                              "fill": "$f-paper",
+                                              "padding": [
+                                                7,
+                                                12
+                                              ],
+                                              "alignItems": "center",
+                                              "children": [
+                                                {
+                                                  "type": "text",
+                                                  "id": "ZEVaC",
+                                                  "name": "V",
+                                                  "fill": "$f-ink",
+                                                  "content": "×1",
+                                                  "fontFamily": "$f-mono",
+                                                  "fontSize": 14,
+                                                  "fontWeight": "normal"
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "type": "frame",
+                                              "id": "tvRb4",
+                                              "name": "Presets",
+                                              "gap": 4,
+                                              "alignItems": "center",
+                                              "children": [
+                                                {
+                                                  "type": "frame",
+                                                  "id": "IqHMq",
+                                                  "name": "×0.5",
+                                                  "fill": "$f-paper",
+                                                  "padding": [
+                                                    7,
+                                                    11
+                                                  ],
+                                                  "alignItems": "center",
+                                                  "children": [
+                                                    {
+                                                      "type": "text",
+                                                      "id": "lW6hJ",
+                                                      "name": "L",
+                                                      "fill": "$f-ink-2",
+                                                      "content": "×0.5",
+                                                      "fontFamily": "$f-mono",
+                                                      "fontSize": 12,
+                                                      "fontWeight": "normal"
+                                                    }
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "frame",
+                                                  "id": "b4gOsE",
+                                                  "name": "×1",
+                                                  "fill": "$f-accent",
+                                                  "padding": [
+                                                    7,
+                                                    11
+                                                  ],
+                                                  "alignItems": "center",
+                                                  "children": [
+                                                    {
+                                                      "type": "text",
+                                                      "id": "rXjPg",
+                                                      "name": "L",
+                                                      "fill": "$f-on-accent",
+                                                      "content": "×1",
+                                                      "fontFamily": "$f-mono",
+                                                      "fontSize": 12,
+                                                      "fontWeight": "normal"
+                                                    }
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "frame",
+                                                  "id": "mVcZy",
+                                                  "name": "×2",
+                                                  "fill": "$f-paper",
+                                                  "padding": [
+                                                    7,
+                                                    11
+                                                  ],
+                                                  "alignItems": "center",
+                                                  "children": [
+                                                    {
+                                                      "type": "text",
+                                                      "id": "i8BMFF",
+                                                      "name": "L",
+                                                      "fill": "$f-ink-2",
+                                                      "content": "×2",
+                                                      "fontFamily": "$f-mono",
+                                                      "fontSize": 12,
+                                                      "fontWeight": "normal"
+                                                    }
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "frame",
+                                                  "id": "zU77v",
+                                                  "name": "×3",
+                                                  "fill": "$f-paper",
+                                                  "padding": [
+                                                    7,
+                                                    11
+                                                  ],
+                                                  "alignItems": "center",
+                                                  "children": [
+                                                    {
+                                                      "type": "text",
+                                                      "id": "CCn5l",
+                                                      "name": "L",
+                                                      "fill": "$f-ink-2",
+                                                      "content": "×3",
+                                                      "fontFamily": "$f-mono",
+                                                      "fontSize": 12,
+                                                      "fontWeight": "normal"
+                                                    }
+                                                  ]
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "type": "text",
+                                              "id": "l6ayqC",
+                                              "name": "Readout",
+                                              "fill": "$f-ink-3",
+                                              "content": "MAKES 4.5 KG DRIED FROM 10 KG RAW",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 10,
+                                              "fontWeight": "normal",
+                                              "letterSpacing": 1.2
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "text",
+                                      "id": "GvVOg",
+                                      "name": "Caption B",
+                                      "fill": "$f-ink-3",
+                                      "content": "FORM B · THE REVISION DECLARES A YIELD BUT NO SERVINGS · ONE STEP IS ×0.5 · ONE SCREEN SHOWS ONE FORM ONLY",
+                                      "fontFamily": "$f-mono",
+                                      "fontSize": 9,
+                                      "fontWeight": "normal",
+                                      "letterSpacing": 1.2
+                                    }
+                                  ]
                                 }
                               ]
                             }
@@ -7007,6 +7376,124 @@
                                       "fontFamily": "$f-mono",
                                       "fontSize": 12,
                                       "fontWeight": "normal"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "AsqJZ",
+                                  "name": "Tick all — three states",
+                                  "width": "fill_container",
+                                  "gap": 28,
+                                  "alignItems": "center",
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "vEueO",
+                                      "name": "L",
+                                      "fill": "$f-ink-3",
+                                      "content": "TICK ALL",
+                                      "fontFamily": "$f-mono",
+                                      "fontSize": 10,
+                                      "fontWeight": "normal",
+                                      "letterSpacing": 1.2
+                                    },
+                                    {
+                                      "id": "VYXsf",
+                                      "type": "ref",
+                                      "ref": "tccsI",
+                                      "name": "None ticked",
+                                      "descendants": {
+                                        "cFZeu": {
+                                          "width": 13,
+                                          "height": 13,
+                                          "fill": "$f-paper",
+                                          "stroke": "$f-ink-3",
+                                          "strokeWidth": 1,
+                                          "strokeAlignment": "inner"
+                                        },
+                                        "hB0TC": {
+                                          "content": "NONE TICKED",
+                                          "fontFamily": "$f-mono",
+                                          "fontSize": 10,
+                                          "letterSpacing": 1.2,
+                                          "fill": "$f-ink-2"
+                                        },
+                                        "hbbIF": {
+                                          "enabled": false
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "id": "ZWW9N",
+                                      "type": "ref",
+                                      "ref": "tccsI",
+                                      "name": "Some ticked",
+                                      "descendants": {
+                                        "cFZeu": {
+                                          "width": 13,
+                                          "height": 13,
+                                          "fill": "$f-paper",
+                                          "stroke": "$f-accent",
+                                          "strokeWidth": 4,
+                                          "strokeAlignment": "inner"
+                                        },
+                                        "hB0TC": {
+                                          "content": "SOME TICKED",
+                                          "fontFamily": "$f-mono",
+                                          "fontSize": 10,
+                                          "letterSpacing": 1.2,
+                                          "fill": "$f-ink-2"
+                                        },
+                                        "hbbIF": {
+                                          "enabled": false
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "id": "R8hsbQ",
+                                      "type": "ref",
+                                      "ref": "tccsI",
+                                      "name": "All ticked",
+                                      "descendants": {
+                                        "cFZeu": {
+                                          "width": 13,
+                                          "height": 13,
+                                          "fill": "$f-accent"
+                                        },
+                                        "hB0TC": {
+                                          "content": "ALL TICKED",
+                                          "fontFamily": "$f-mono",
+                                          "fontSize": 10,
+                                          "letterSpacing": 1.2,
+                                          "fill": "$f-ink-2"
+                                        },
+                                        "hbbIF": {
+                                          "enabled": false
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "id": "ZxdHu",
+                                      "type": "ref",
+                                      "ref": "tccsI",
+                                      "name": "Caption",
+                                      "fill": "#00000000",
+                                      "descendants": {
+                                        "cFZeu": {
+                                          "enabled": false
+                                        },
+                                        "hB0TC": {
+                                          "content": "THE MIDDLE STATE IS INDETERMINATE · A READOUT GIVES N OF M IN THE TROLLEY",
+                                          "fontFamily": "$f-mono",
+                                          "fontSize": 10,
+                                          "letterSpacing": 1.2,
+                                          "fill": "$f-ink-3"
+                                        },
+                                        "hbbIF": {
+                                          "enabled": false
+                                        }
+                                      }
                                     }
                                   ]
                                 },
@@ -15774,7 +16261,7 @@
                                                               "fill": {
                                                                 "type": "image",
                                                                 "enabled": true,
-                                                                "url": "./images/generated-1788870419325.png",
+                                                                "url": "images/generated-1788870419325.png",
                                                                 "mode": "fill"
                                                               }
                                                             },
@@ -28695,6 +29182,1399 @@
                           }
                         }
                       ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "QqY5h",
+                      "name": "/batch-logs — Every batch log, 1280",
+                      "clip": true,
+                      "width": 1280,
+                      "fill": "$f-paper",
+                      "layout": "vertical",
+                      "children": [
+                        {
+                          "id": "Iflhz",
+                          "type": "ref",
+                          "ref": "pngpl",
+                          "name": "Site header",
+                          "width": "fill_container",
+                          "descendants": {
+                            "xD2Qp": {
+                              "fill": "#00000000"
+                            },
+                            "j1AbA": {
+                              "fill": "$f-ink-3"
+                            },
+                            "o7nKV": {
+                              "fill": "#00000000"
+                            },
+                            "V7zOj6": {
+                              "fill": "$f-ink-3"
+                            },
+                            "d1GZI": {
+                              "fill": "#00000000"
+                            },
+                            "O08MjB": {
+                              "fill": "$f-ink-3"
+                            },
+                            "AQBsO": {
+                              "fill": "#00000000"
+                            },
+                            "fZuG5": {
+                              "fill": "$f-ink-3"
+                            },
+                            "DaHfU": {
+                              "fill": "#00000000"
+                            },
+                            "WLmc0": {
+                              "fill": "$f-ink-3"
+                            },
+                            "H6leH": {
+                              "fill": "$f-accent"
+                            },
+                            "ckB2i": {
+                              "fill": "$f-on-accent"
+                            },
+                            "X9VQG": {
+                              "fill": "#00000000"
+                            },
+                            "GAwwp": {
+                              "fill": "$f-ink-3"
+                            },
+                            "mWZvh": {
+                              "fill": "#00000000"
+                            },
+                            "V9Awz": {
+                              "fill": "$f-ink-3"
+                            }
+                          }
+                        },
+                        {
+                          "id": "CpJs8",
+                          "type": "ref",
+                          "ref": "vWB0t",
+                          "name": "Page head",
+                          "width": "fill_container",
+                          "descendants": {
+                            "lis9h": {
+                              "content": "NN · BATCH LOGS"
+                            },
+                            "euIcF": {
+                              "content": "SIX RUNS · JUN 2024 — SEP 2026"
+                            }
+                          }
+                        },
+                        {
+                          "type": "frame",
+                          "id": "AzlHx",
+                          "name": "Main",
+                          "width": "fill_container",
+                          "layout": "vertical",
+                          "gap": 44,
+                          "padding": [
+                            34,
+                            60,
+                            72,
+                            60
+                          ],
+                          "children": [
+                            {
+                              "id": "N4HDN",
+                              "type": "ref",
+                              "ref": "XqDSx",
+                              "name": "Breadcrumb",
+                              "descendants": {
+                                "vQVjE": {
+                                  "content": "BATCH LOGS",
+                                  "fill": "$f-ink"
+                                },
+                                "pcoby": {
+                                  "enabled": false
+                                },
+                                "uTFqD": {
+                                  "content": "BAUMY BILTONG",
+                                  "enabled": false
+                                },
+                                "MaDzP": {
+                                  "enabled": false
+                                },
+                                "Oqtk7": {
+                                  "enabled": false,
+                                  "content": "BATCH LOGS"
+                                }
+                              }
+                            },
+                            {
+                              "id": "UjCwG",
+                              "type": "ref",
+                              "ref": "Lce6E",
+                              "name": "Page hero",
+                              "width": "fill_container",
+                              "descendants": {
+                                "DuNwi": {
+                                  "content": "INDEX · EVERY RUN"
+                                },
+                                "f1FBt": {
+                                  "content": "Batch logs"
+                                },
+                                "RthUF": {
+                                  "content": "Every run that has been cooked, newest at the foot. A run usually names the recipe it came from, but it does not have to: a trial is often logged before the recipe that describes it exists. Those runs live here and nowhere else.",
+                                  "width": 760
+                                }
+                              }
+                            },
+                            {
+                              "type": "frame",
+                              "id": "fD9Pu",
+                              "name": "Totals",
+                              "width": "fill_container",
+                              "fill": "$f-desk",
+                              "padding": [
+                                22,
+                                26
+                              ],
+                              "children": [
+                                {
+                                  "id": "L1jBj",
+                                  "type": "ref",
+                                  "ref": "C1FDR",
+                                  "name": "Stat — BATCH LOGS",
+                                  "width": "fill_container",
+                                  "descendants": {
+                                    "nCA1p": {
+                                      "content": "BATCH LOGS"
+                                    },
+                                    "CvPJT": {
+                                      "content": "6"
+                                    }
+                                  }
+                                },
+                                {
+                                  "id": "moy61",
+                                  "type": "ref",
+                                  "ref": "C1FDR",
+                                  "name": "Stat — RAW, TOTAL",
+                                  "width": "fill_container",
+                                  "descendants": {
+                                    "nCA1p": {
+                                      "content": "RAW, TOTAL"
+                                    },
+                                    "CvPJT": {
+                                      "content": "35.28 kg"
+                                    }
+                                  }
+                                },
+                                {
+                                  "id": "hheRO",
+                                  "type": "ref",
+                                  "ref": "C1FDR",
+                                  "name": "Stat — DRIED, TOTAL",
+                                  "width": "fill_container",
+                                  "descendants": {
+                                    "nCA1p": {
+                                      "content": "DRIED, TOTAL"
+                                    },
+                                    "CvPJT": {
+                                      "content": "15.86 kg"
+                                    }
+                                  }
+                                },
+                                {
+                                  "id": "J2jnpi",
+                                  "type": "ref",
+                                  "ref": "C1FDR",
+                                  "name": "Stat — MEAN YIELD",
+                                  "width": "fill_container",
+                                  "descendants": {
+                                    "nCA1p": {
+                                      "content": "MEAN YIELD"
+                                    },
+                                    "CvPJT": {
+                                      "content": "44.9%"
+                                    }
+                                  }
+                                },
+                                {
+                                  "id": "Snnvn",
+                                  "type": "ref",
+                                  "ref": "C1FDR",
+                                  "name": "Stat — SPENT",
+                                  "width": "fill_container",
+                                  "descendants": {
+                                    "nCA1p": {
+                                      "content": "SPENT"
+                                    },
+                                    "CvPJT": {
+                                      "content": "€903.06"
+                                    }
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "id": "hbHpJ",
+                              "type": "ref",
+                              "ref": "AsnQn",
+                              "name": "Section — Every run, oldest first",
+                              "width": "fill_container",
+                              "descendants": {
+                                "HxVXm": {
+                                  "content": "I"
+                                },
+                                "Phvbr": {
+                                  "content": "Every run, oldest first"
+                                },
+                                "brO1x": {
+                                  "content": "SIX · 12 JUN 2024 — 22 SEP 2026"
+                                }
+                              }
+                            },
+                            {
+                              "type": "frame",
+                              "id": "WK2Sj",
+                              "name": "Batch log list",
+                              "width": "fill_container",
+                              "layout": "vertical",
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "F7BP5R",
+                                  "name": "Batch one",
+                                  "width": "fill_container",
+                                  "stroke": "$f-hair",
+                                  "strokeWidth": {
+                                    "top": 1
+                                  },
+                                  "strokeAlignment": "inner",
+                                  "gap": 32,
+                                  "padding": [
+                                    16,
+                                    0,
+                                    18,
+                                    0
+                                  ],
+                                  "children": [
+                                    {
+                                      "id": "ygMFO",
+                                      "type": "ref",
+                                      "ref": "u0q1i",
+                                      "name": "Line",
+                                      "width": "fill_container",
+                                      "padding": 0,
+                                      "descendants": {
+                                        "bf8Y9": {
+                                          "content": "12 JUN 2024"
+                                        },
+                                        "s96Cn": {
+                                          "content": "Batch one"
+                                        },
+                                        "ZpMt5": {
+                                          "content": "4.20 kg German silverside from the butcher on Sonnenallee. Wash mixed by eye and by the batch rather than by the kilogram — it tasted right, and not one gram of it can be repeated."
+                                        },
+                                        "pHRo1": {
+                                          "content": "€88.20 · €46.68 PER KG FINISHED · FIRST REVISION"
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "V465N",
+                                      "name": "Source",
+                                      "width": 150,
+                                      "layout": "vertical",
+                                      "gap": 4,
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "s2UWp",
+                                          "name": "L",
+                                          "fill": "$f-ink-3",
+                                          "content": "SOURCE",
+                                          "fontFamily": "$f-mono",
+                                          "fontSize": 9,
+                                          "fontWeight": "normal",
+                                          "letterSpacing": 1.2
+                                        },
+                                        {
+                                          "type": "text",
+                                          "id": "oJtrB",
+                                          "name": "V",
+                                          "fill": "$f-ink",
+                                          "textGrowth": "fixed-width",
+                                          "width": "fill_container",
+                                          "content": "Baumy Biltong",
+                                          "fontFamily": "$f-serif",
+                                          "fontSize": 15,
+                                          "fontWeight": "500"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "CkCu3",
+                                      "name": "Weights",
+                                      "width": 210,
+                                      "fill": "$f-desk",
+                                      "layout": "vertical",
+                                      "gap": 8,
+                                      "padding": [
+                                        12,
+                                        14
+                                      ],
+                                      "children": [
+                                        {
+                                          "type": "frame",
+                                          "id": "Ui1UK",
+                                          "name": "RAW",
+                                          "width": "fill_container",
+                                          "justifyContent": "space_between",
+                                          "alignItems": "center",
+                                          "children": [
+                                            {
+                                              "type": "text",
+                                              "id": "YiTrG",
+                                              "name": "L",
+                                              "fill": "$f-ink-3",
+                                              "content": "RAW",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 9,
+                                              "fontWeight": "normal",
+                                              "letterSpacing": 1.2
+                                            },
+                                            {
+                                              "type": "text",
+                                              "id": "zkwC8",
+                                              "name": "V",
+                                              "fill": "$f-ink",
+                                              "content": "4.20 kg",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 13,
+                                              "fontWeight": "normal"
+                                            }
+                                          ]
+                                        },
+                                        {
+                                          "type": "frame",
+                                          "id": "M1zaGt",
+                                          "name": "DRIED",
+                                          "width": "fill_container",
+                                          "justifyContent": "space_between",
+                                          "alignItems": "center",
+                                          "children": [
+                                            {
+                                              "type": "text",
+                                              "id": "L0T1va",
+                                              "name": "L",
+                                              "fill": "$f-ink-3",
+                                              "content": "DRIED",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 9,
+                                              "fontWeight": "normal",
+                                              "letterSpacing": 1.2
+                                            },
+                                            {
+                                              "type": "text",
+                                              "id": "duuRS",
+                                              "name": "V",
+                                              "fill": "$f-ink",
+                                              "content": "1.89 kg",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 13,
+                                              "fontWeight": "normal"
+                                            }
+                                          ]
+                                        },
+                                        {
+                                          "type": "frame",
+                                          "id": "LFh2d",
+                                          "name": "YIELD",
+                                          "width": "fill_container",
+                                          "justifyContent": "space_between",
+                                          "alignItems": "center",
+                                          "children": [
+                                            {
+                                              "type": "text",
+                                              "id": "hkVGI",
+                                              "name": "L",
+                                              "fill": "$f-ink-3",
+                                              "content": "YIELD",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 9,
+                                              "fontWeight": "normal",
+                                              "letterSpacing": 1.2
+                                            },
+                                            {
+                                              "type": "text",
+                                              "id": "bMFty",
+                                              "name": "V",
+                                              "fill": "$f-accent",
+                                              "content": "45.0%",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 13,
+                                              "fontWeight": "normal"
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "W0wGL",
+                                  "name": "Batch two",
+                                  "width": "fill_container",
+                                  "stroke": "$f-hair",
+                                  "strokeWidth": {
+                                    "top": 1
+                                  },
+                                  "strokeAlignment": "inner",
+                                  "gap": 32,
+                                  "padding": [
+                                    16,
+                                    0,
+                                    18,
+                                    0
+                                  ],
+                                  "children": [
+                                    {
+                                      "id": "zbgwH",
+                                      "type": "ref",
+                                      "ref": "u0q1i",
+                                      "name": "Line",
+                                      "width": "fill_container",
+                                      "padding": 0,
+                                      "descendants": {
+                                        "bf8Y9": {
+                                          "content": "31 AUG 2024"
+                                        },
+                                        "s96Cn": {
+                                          "content": "Batch two"
+                                        },
+                                        "ZpMt5": {
+                                          "content": "5.60 kg. Salt doubled on a guess after batch one read flat. The thin pieces came out inedible and were thrown away; only the thick end was worth keeping."
+                                        },
+                                        "pHRo1": {
+                                          "content": "€142.80 · €57.35 PER KG FINISHED · SECOND REVISION"
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "ZvRkF",
+                                      "name": "Source",
+                                      "width": 150,
+                                      "layout": "vertical",
+                                      "gap": 4,
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "QTw6y",
+                                          "name": "L",
+                                          "fill": "$f-ink-3",
+                                          "content": "SOURCE",
+                                          "fontFamily": "$f-mono",
+                                          "fontSize": 9,
+                                          "fontWeight": "normal",
+                                          "letterSpacing": 1.2
+                                        },
+                                        {
+                                          "type": "text",
+                                          "id": "wHoVz",
+                                          "name": "V",
+                                          "fill": "$f-ink",
+                                          "textGrowth": "fixed-width",
+                                          "width": "fill_container",
+                                          "content": "Baumy Biltong",
+                                          "fontFamily": "$f-serif",
+                                          "fontSize": 15,
+                                          "fontWeight": "500"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "ZrjWo",
+                                      "name": "Weights",
+                                      "width": 210,
+                                      "fill": "$f-desk",
+                                      "layout": "vertical",
+                                      "gap": 8,
+                                      "padding": [
+                                        12,
+                                        14
+                                      ],
+                                      "children": [
+                                        {
+                                          "type": "frame",
+                                          "id": "zkOEG",
+                                          "name": "RAW",
+                                          "width": "fill_container",
+                                          "justifyContent": "space_between",
+                                          "alignItems": "center",
+                                          "children": [
+                                            {
+                                              "type": "text",
+                                              "id": "e6h5SP",
+                                              "name": "L",
+                                              "fill": "$f-ink-3",
+                                              "content": "RAW",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 9,
+                                              "fontWeight": "normal",
+                                              "letterSpacing": 1.2
+                                            },
+                                            {
+                                              "type": "text",
+                                              "id": "cLCCx",
+                                              "name": "V",
+                                              "fill": "$f-ink",
+                                              "content": "5.60 kg",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 13,
+                                              "fontWeight": "normal"
+                                            }
+                                          ]
+                                        },
+                                        {
+                                          "type": "frame",
+                                          "id": "loO30",
+                                          "name": "DRIED",
+                                          "width": "fill_container",
+                                          "justifyContent": "space_between",
+                                          "alignItems": "center",
+                                          "children": [
+                                            {
+                                              "type": "text",
+                                              "id": "CTXU0",
+                                              "name": "L",
+                                              "fill": "$f-ink-3",
+                                              "content": "DRIED",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 9,
+                                              "fontWeight": "normal",
+                                              "letterSpacing": 1.2
+                                            },
+                                            {
+                                              "type": "text",
+                                              "id": "y16IY",
+                                              "name": "V",
+                                              "fill": "$f-ink",
+                                              "content": "2.49 kg",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 13,
+                                              "fontWeight": "normal"
+                                            }
+                                          ]
+                                        },
+                                        {
+                                          "type": "frame",
+                                          "id": "Jlqjw",
+                                          "name": "YIELD",
+                                          "width": "fill_container",
+                                          "justifyContent": "space_between",
+                                          "alignItems": "center",
+                                          "children": [
+                                            {
+                                              "type": "text",
+                                              "id": "GlTYR",
+                                              "name": "L",
+                                              "fill": "$f-ink-3",
+                                              "content": "YIELD",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 9,
+                                              "fontWeight": "normal",
+                                              "letterSpacing": 1.2
+                                            },
+                                            {
+                                              "type": "text",
+                                              "id": "ZE9UG",
+                                              "name": "V",
+                                              "fill": "$f-accent",
+                                              "content": "44.5%",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 13,
+                                              "fontWeight": "normal"
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "sS1j0",
+                                  "name": "Batch three",
+                                  "width": "fill_container",
+                                  "stroke": "$f-hair",
+                                  "strokeWidth": {
+                                    "top": 1
+                                  },
+                                  "strokeAlignment": "inner",
+                                  "gap": 32,
+                                  "padding": [
+                                    16,
+                                    0,
+                                    18,
+                                    0
+                                  ],
+                                  "children": [
+                                    {
+                                      "id": "osHRx",
+                                      "type": "ref",
+                                      "ref": "u0q1i",
+                                      "name": "Line",
+                                      "width": "fill_container",
+                                      "padding": 0,
+                                      "descendants": {
+                                        "bf8Y9": {
+                                          "content": "26 OCT 2024"
+                                        },
+                                        "s96Cn": {
+                                          "content": "Batch three"
+                                        },
+                                        "ZpMt5": {
+                                          "content": "6.40 kg. First run where the box held temperature for the whole five days. The dredge went on before the wash had gone tacky, and most of it ended up on the floor of the box."
+                                        },
+                                        "pHRo1": {
+                                          "content": "€166.40 · €58.18 PER KG FINISHED · THIRD REVISION"
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "ySlCb",
+                                      "name": "Source",
+                                      "width": 150,
+                                      "layout": "vertical",
+                                      "gap": 4,
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "bTsQm",
+                                          "name": "L",
+                                          "fill": "$f-ink-3",
+                                          "content": "SOURCE",
+                                          "fontFamily": "$f-mono",
+                                          "fontSize": 9,
+                                          "fontWeight": "normal",
+                                          "letterSpacing": 1.2
+                                        },
+                                        {
+                                          "type": "text",
+                                          "id": "y00wIm",
+                                          "name": "V",
+                                          "fill": "$f-ink",
+                                          "textGrowth": "fixed-width",
+                                          "width": "fill_container",
+                                          "content": "Baumy Biltong",
+                                          "fontFamily": "$f-serif",
+                                          "fontSize": 15,
+                                          "fontWeight": "500"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "y4jBKU",
+                                      "name": "Weights",
+                                      "width": 210,
+                                      "fill": "$f-desk",
+                                      "layout": "vertical",
+                                      "gap": 8,
+                                      "padding": [
+                                        12,
+                                        14
+                                      ],
+                                      "children": [
+                                        {
+                                          "type": "frame",
+                                          "id": "Kjjjy",
+                                          "name": "RAW",
+                                          "width": "fill_container",
+                                          "justifyContent": "space_between",
+                                          "alignItems": "center",
+                                          "children": [
+                                            {
+                                              "type": "text",
+                                              "id": "kCVTV",
+                                              "name": "L",
+                                              "fill": "$f-ink-3",
+                                              "content": "RAW",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 9,
+                                              "fontWeight": "normal",
+                                              "letterSpacing": 1.2
+                                            },
+                                            {
+                                              "type": "text",
+                                              "id": "T5UzNq",
+                                              "name": "V",
+                                              "fill": "$f-ink",
+                                              "content": "6.40 kg",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 13,
+                                              "fontWeight": "normal"
+                                            }
+                                          ]
+                                        },
+                                        {
+                                          "type": "frame",
+                                          "id": "J37mC",
+                                          "name": "DRIED",
+                                          "width": "fill_container",
+                                          "justifyContent": "space_between",
+                                          "alignItems": "center",
+                                          "children": [
+                                            {
+                                              "type": "text",
+                                              "id": "RkGID",
+                                              "name": "L",
+                                              "fill": "$f-ink-3",
+                                              "content": "DRIED",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 9,
+                                              "fontWeight": "normal",
+                                              "letterSpacing": 1.2
+                                            },
+                                            {
+                                              "type": "text",
+                                              "id": "ZKIjF",
+                                              "name": "V",
+                                              "fill": "$f-ink",
+                                              "content": "2.86 kg",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 13,
+                                              "fontWeight": "normal"
+                                            }
+                                          ]
+                                        },
+                                        {
+                                          "type": "frame",
+                                          "id": "tBwFi",
+                                          "name": "YIELD",
+                                          "width": "fill_container",
+                                          "justifyContent": "space_between",
+                                          "alignItems": "center",
+                                          "children": [
+                                            {
+                                              "type": "text",
+                                              "id": "TtHhd",
+                                              "name": "L",
+                                              "fill": "$f-ink-3",
+                                              "content": "YIELD",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 9,
+                                              "fontWeight": "normal",
+                                              "letterSpacing": 1.2
+                                            },
+                                            {
+                                              "type": "text",
+                                              "id": "GYjKu",
+                                              "name": "V",
+                                              "fill": "$f-accent",
+                                              "content": "44.7%",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 13,
+                                              "fontWeight": "normal"
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "Ibab8",
+                                  "name": "Batch four",
+                                  "width": "fill_container",
+                                  "stroke": "$f-hair",
+                                  "strokeWidth": {
+                                    "top": 1
+                                  },
+                                  "strokeAlignment": "inner",
+                                  "gap": 32,
+                                  "padding": [
+                                    16,
+                                    0,
+                                    18,
+                                    0
+                                  ],
+                                  "children": [
+                                    {
+                                      "id": "qYswP",
+                                      "type": "ref",
+                                      "ref": "u0q1i",
+                                      "name": "Line",
+                                      "width": "fill_container",
+                                      "padding": 0,
+                                      "descendants": {
+                                        "bf8Y9": {
+                                          "content": "29 NOV 2024"
+                                        },
+                                        "s96Cn": {
+                                          "content": "Batch four"
+                                        },
+                                        "ZpMt5": {
+                                          "content": "7.98 kg Irish silverside, Gourmet Experts, Berlin. Wash properly scaled for the first time; the dredge ran short on the last 1.6 kg."
+                                        },
+                                        "pHRo1": {
+                                          "content": "€209.26 · €57.97 PER KG FINISHED · FOURTH REVISION"
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "nz8lv",
+                                      "name": "Source",
+                                      "width": 150,
+                                      "layout": "vertical",
+                                      "gap": 4,
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "ct9S2",
+                                          "name": "L",
+                                          "fill": "$f-ink-3",
+                                          "content": "SOURCE",
+                                          "fontFamily": "$f-mono",
+                                          "fontSize": 9,
+                                          "fontWeight": "normal",
+                                          "letterSpacing": 1.2
+                                        },
+                                        {
+                                          "type": "text",
+                                          "id": "EaJY6",
+                                          "name": "V",
+                                          "fill": "$f-ink",
+                                          "textGrowth": "fixed-width",
+                                          "width": "fill_container",
+                                          "content": "Baumy Biltong",
+                                          "fontFamily": "$f-serif",
+                                          "fontSize": 15,
+                                          "fontWeight": "500"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "Kxdn9",
+                                      "name": "Weights",
+                                      "width": 210,
+                                      "fill": "$f-desk",
+                                      "layout": "vertical",
+                                      "gap": 8,
+                                      "padding": [
+                                        12,
+                                        14
+                                      ],
+                                      "children": [
+                                        {
+                                          "type": "frame",
+                                          "id": "v4K5B4",
+                                          "name": "RAW",
+                                          "width": "fill_container",
+                                          "justifyContent": "space_between",
+                                          "alignItems": "center",
+                                          "children": [
+                                            {
+                                              "type": "text",
+                                              "id": "rtQ8r",
+                                              "name": "L",
+                                              "fill": "$f-ink-3",
+                                              "content": "RAW",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 9,
+                                              "fontWeight": "normal",
+                                              "letterSpacing": 1.2
+                                            },
+                                            {
+                                              "type": "text",
+                                              "id": "siSBW",
+                                              "name": "V",
+                                              "fill": "$f-ink",
+                                              "content": "7.98 kg",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 13,
+                                              "fontWeight": "normal"
+                                            }
+                                          ]
+                                        },
+                                        {
+                                          "type": "frame",
+                                          "id": "qziUA",
+                                          "name": "DRIED",
+                                          "width": "fill_container",
+                                          "justifyContent": "space_between",
+                                          "alignItems": "center",
+                                          "children": [
+                                            {
+                                              "type": "text",
+                                              "id": "uhJeO",
+                                              "name": "L",
+                                              "fill": "$f-ink-3",
+                                              "content": "DRIED",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 9,
+                                              "fontWeight": "normal",
+                                              "letterSpacing": 1.2
+                                            },
+                                            {
+                                              "type": "text",
+                                              "id": "iNxKw",
+                                              "name": "V",
+                                              "fill": "$f-ink",
+                                              "content": "3.61 kg",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 13,
+                                              "fontWeight": "normal"
+                                            }
+                                          ]
+                                        },
+                                        {
+                                          "type": "frame",
+                                          "id": "lNCDd",
+                                          "name": "YIELD",
+                                          "width": "fill_container",
+                                          "justifyContent": "space_between",
+                                          "alignItems": "center",
+                                          "children": [
+                                            {
+                                              "type": "text",
+                                              "id": "kv6In",
+                                              "name": "L",
+                                              "fill": "$f-ink-3",
+                                              "content": "YIELD",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 9,
+                                              "fontWeight": "normal",
+                                              "letterSpacing": 1.2
+                                            },
+                                            {
+                                              "type": "text",
+                                              "id": "H9SCh4",
+                                              "name": "V",
+                                              "fill": "$f-accent",
+                                              "content": "45.2%",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 13,
+                                              "fontWeight": "normal"
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "e2plfg",
+                                  "name": "Batch five",
+                                  "width": "fill_container",
+                                  "stroke": "$f-hair",
+                                  "strokeWidth": {
+                                    "top": 1
+                                  },
+                                  "strokeAlignment": "inner",
+                                  "gap": 32,
+                                  "padding": [
+                                    16,
+                                    0,
+                                    18,
+                                    0
+                                  ],
+                                  "children": [
+                                    {
+                                      "id": "lhuiH",
+                                      "type": "ref",
+                                      "ref": "u0q1i",
+                                      "name": "Line",
+                                      "width": "fill_container",
+                                      "padding": 0,
+                                      "descendants": {
+                                        "bf8Y9": {
+                                          "content": "06 SEP 2026"
+                                        },
+                                        "s96Cn": {
+                                          "content": "Batch five"
+                                        },
+                                        "ZpMt5": {
+                                          "content": "10.00 kg Irish silverside, same supplier. Ten kilograms at last and the wash held. The dredge ran short again over the final two kilograms — that shortfall is what the sixth revision was written to correct."
+                                        },
+                                        "pHRo1": {
+                                          "content": "€268.00 · €59.29 PER KG FINISHED · FIFTH REVISION"
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "kHhbl",
+                                      "name": "Source",
+                                      "width": 150,
+                                      "layout": "vertical",
+                                      "gap": 4,
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "Mo6mr",
+                                          "name": "L",
+                                          "fill": "$f-ink-3",
+                                          "content": "SOURCE",
+                                          "fontFamily": "$f-mono",
+                                          "fontSize": 9,
+                                          "fontWeight": "normal",
+                                          "letterSpacing": 1.2
+                                        },
+                                        {
+                                          "type": "text",
+                                          "id": "eXpjW",
+                                          "name": "V",
+                                          "fill": "$f-ink",
+                                          "textGrowth": "fixed-width",
+                                          "width": "fill_container",
+                                          "content": "Baumy Biltong",
+                                          "fontFamily": "$f-serif",
+                                          "fontSize": 15,
+                                          "fontWeight": "500"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "DTz46",
+                                      "name": "Weights",
+                                      "width": 210,
+                                      "fill": "$f-desk",
+                                      "layout": "vertical",
+                                      "gap": 8,
+                                      "padding": [
+                                        12,
+                                        14
+                                      ],
+                                      "children": [
+                                        {
+                                          "type": "frame",
+                                          "id": "ZEvoV",
+                                          "name": "RAW",
+                                          "width": "fill_container",
+                                          "justifyContent": "space_between",
+                                          "alignItems": "center",
+                                          "children": [
+                                            {
+                                              "type": "text",
+                                              "id": "nKV6v",
+                                              "name": "L",
+                                              "fill": "$f-ink-3",
+                                              "content": "RAW",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 9,
+                                              "fontWeight": "normal",
+                                              "letterSpacing": 1.2
+                                            },
+                                            {
+                                              "type": "text",
+                                              "id": "C1Efk",
+                                              "name": "V",
+                                              "fill": "$f-ink",
+                                              "content": "10.00 kg",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 13,
+                                              "fontWeight": "normal"
+                                            }
+                                          ]
+                                        },
+                                        {
+                                          "type": "frame",
+                                          "id": "DoXWy",
+                                          "name": "DRIED",
+                                          "width": "fill_container",
+                                          "justifyContent": "space_between",
+                                          "alignItems": "center",
+                                          "children": [
+                                            {
+                                              "type": "text",
+                                              "id": "XoHnu",
+                                              "name": "L",
+                                              "fill": "$f-ink-3",
+                                              "content": "DRIED",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 9,
+                                              "fontWeight": "normal",
+                                              "letterSpacing": 1.2
+                                            },
+                                            {
+                                              "type": "text",
+                                              "id": "r8a86",
+                                              "name": "V",
+                                              "fill": "$f-ink",
+                                              "content": "4.52 kg",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 13,
+                                              "fontWeight": "normal"
+                                            }
+                                          ]
+                                        },
+                                        {
+                                          "type": "frame",
+                                          "id": "fU9Fv",
+                                          "name": "YIELD",
+                                          "width": "fill_container",
+                                          "justifyContent": "space_between",
+                                          "alignItems": "center",
+                                          "children": [
+                                            {
+                                              "type": "text",
+                                              "id": "MAdBy",
+                                              "name": "L",
+                                              "fill": "$f-ink-3",
+                                              "content": "YIELD",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 9,
+                                              "fontWeight": "normal",
+                                              "letterSpacing": 1.2
+                                            },
+                                            {
+                                              "type": "text",
+                                              "id": "h2lKhK",
+                                              "name": "V",
+                                              "fill": "$f-accent",
+                                              "content": "45.2%",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 13,
+                                              "fontWeight": "normal"
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "gt2C9",
+                                  "name": "Trial — chilli wash, no recipe",
+                                  "width": "fill_container",
+                                  "stroke": "$f-hair",
+                                  "strokeWidth": {
+                                    "top": 1
+                                  },
+                                  "strokeAlignment": "inner",
+                                  "gap": 32,
+                                  "padding": [
+                                    16,
+                                    0,
+                                    18,
+                                    0
+                                  ],
+                                  "children": [
+                                    {
+                                      "id": "cD3z1",
+                                      "type": "ref",
+                                      "ref": "u0q1i",
+                                      "name": "Line",
+                                      "width": "fill_container",
+                                      "padding": 0,
+                                      "descendants": {
+                                        "bf8Y9": {
+                                          "content": "22 SEP 2026"
+                                        },
+                                        "s96Cn": {
+                                          "content": "Chilli wash trial"
+                                        },
+                                        "ZpMt5": {
+                                          "content": "1.10 kg Irish silverside cut thin and washed in a chilli and vinegar mix that has no written recipe yet. Logged on the day it was hung, so the weights are not lost while the method is still being argued over."
+                                        },
+                                        "pHRo1": {
+                                          "content": "€28.40 · €63.06 PER KG FINISHED · NOT LINKED TO A RECIPE"
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "YRpUo",
+                                      "name": "Source",
+                                      "width": 150,
+                                      "layout": "vertical",
+                                      "gap": 4,
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "K67oy",
+                                          "name": "L",
+                                          "fill": "$f-ink-3",
+                                          "content": "SOURCE",
+                                          "fontFamily": "$f-mono",
+                                          "fontSize": 9,
+                                          "fontWeight": "normal",
+                                          "letterSpacing": 1.2
+                                        },
+                                        {
+                                          "type": "text",
+                                          "id": "lQgz8",
+                                          "name": "V",
+                                          "fill": "$f-ink-3",
+                                          "textGrowth": "fixed-width",
+                                          "width": "fill_container",
+                                          "content": "Not yet linked",
+                                          "fontFamily": "$f-serif",
+                                          "fontSize": 15,
+                                          "fontWeight": "500"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "U2K3T",
+                                      "name": "Weights",
+                                      "width": 210,
+                                      "fill": "$f-desk",
+                                      "layout": "vertical",
+                                      "gap": 8,
+                                      "padding": [
+                                        12,
+                                        14
+                                      ],
+                                      "children": [
+                                        {
+                                          "type": "frame",
+                                          "id": "Lj2FB",
+                                          "name": "RAW",
+                                          "width": "fill_container",
+                                          "justifyContent": "space_between",
+                                          "alignItems": "center",
+                                          "children": [
+                                            {
+                                              "type": "text",
+                                              "id": "xvxEs",
+                                              "name": "L",
+                                              "fill": "$f-ink-3",
+                                              "content": "RAW",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 9,
+                                              "fontWeight": "normal",
+                                              "letterSpacing": 1.2
+                                            },
+                                            {
+                                              "type": "text",
+                                              "id": "UiaDc",
+                                              "name": "V",
+                                              "fill": "$f-ink",
+                                              "content": "1.10 kg",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 13,
+                                              "fontWeight": "normal"
+                                            }
+                                          ]
+                                        },
+                                        {
+                                          "type": "frame",
+                                          "id": "eQ5cu",
+                                          "name": "DRIED",
+                                          "width": "fill_container",
+                                          "justifyContent": "space_between",
+                                          "alignItems": "center",
+                                          "children": [
+                                            {
+                                              "type": "text",
+                                              "id": "j48EtD",
+                                              "name": "L",
+                                              "fill": "$f-ink-3",
+                                              "content": "DRIED",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 9,
+                                              "fontWeight": "normal",
+                                              "letterSpacing": 1.2
+                                            },
+                                            {
+                                              "type": "text",
+                                              "id": "XuHTb",
+                                              "name": "V",
+                                              "fill": "$f-ink",
+                                              "content": "0.49 kg",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 13,
+                                              "fontWeight": "normal"
+                                            }
+                                          ]
+                                        },
+                                        {
+                                          "type": "frame",
+                                          "id": "k8xtO",
+                                          "name": "YIELD",
+                                          "width": "fill_container",
+                                          "justifyContent": "space_between",
+                                          "alignItems": "center",
+                                          "children": [
+                                            {
+                                              "type": "text",
+                                              "id": "mfKYi",
+                                              "name": "L",
+                                              "fill": "$f-ink-3",
+                                              "content": "YIELD",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 9,
+                                              "fontWeight": "normal",
+                                              "letterSpacing": 1.2
+                                            },
+                                            {
+                                              "type": "text",
+                                              "id": "JOfd9",
+                                              "name": "V",
+                                              "fill": "$f-accent",
+                                              "content": "44.5%",
+                                              "fontFamily": "$f-mono",
+                                              "fontSize": 13,
+                                              "fontWeight": "normal"
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "id": "tLt4A",
+                              "type": "ref",
+                              "ref": "iqGkO",
+                              "name": "Note — hooks",
+                              "width": "fill_container",
+                              "descendants": {
+                                "RJ0oo": {
+                                  "content": "1"
+                                },
+                                "hCfUs": {
+                                  "content": "NOTE · METHOD"
+                                },
+                                "yzCTh": {
+                                  "content": "What the weights are measured against"
+                                },
+                                "x6hpfW": {
+                                  "content": "Thirty steel hooks, 7 cm, 13 g each. Every gross weight on this page has had the hooks subtracted before it was written down, so a piece recorded at 118 g came off the scale at 131 g. Yield is dried weight over raw weight, and it has sat between 44 and 46 per cent in every run so far."
+                                }
+                              }
+                            }
+                          ]
+                        },
+                        {
+                          "id": "u4wTei",
+                          "type": "ref",
+                          "ref": "zh3oi",
+                          "name": "Page foot",
+                          "width": "fill_container",
+                          "descendants": {
+                            "oDLDD": {
+                              "content": "NN-04-02 · COOKING BATCH LOGS"
+                            },
+                            "DbWM6": {
+                              "content": "NN/RECIPES/BAUMY-BILTONG/BATCH-LOGS"
+                            }
+                          }
+                        }
+                      ]
                     }
                   ]
                 }
@@ -29074,6 +30954,138 @@
                                   "content": "45.2 g and 2 oz of red wine vinegar are both weights, so the list adds them and reads 101.9 g. Two cloves of garlic and ten heads of garlic are not the same measure of anything, so they are kept apart on one line rather than guessed at. Four ingredients are held apart this way. Where an recipe gives no quantity at all the amount reads “some” and the original words are printed beside it."
                                 }
                               }
+                            },
+                            {
+                              "type": "frame",
+                              "id": "iMzBS",
+                              "name": "Tick all",
+                              "width": "fill_container",
+                              "fill": "$f-desk",
+                              "padding": [
+                                14,
+                                16
+                              ],
+                              "justifyContent": "space_between",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "OCnFC",
+                                  "name": "Left",
+                                  "gap": 8,
+                                  "alignItems": "center",
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "Wk5hp",
+                                      "x": 0,
+                                      "y": 7.5,
+                                      "name": "L",
+                                      "enabled": false,
+                                      "fill": "$f-ink-3",
+                                      "content": "DRAWN FROM",
+                                      "fontFamily": "$f-mono",
+                                      "fontSize": 9,
+                                      "fontWeight": "normal",
+                                      "letterSpacing": 1.2
+                                    },
+                                    {
+                                      "id": "w0PIwo",
+                                      "type": "ref",
+                                      "ref": "tccsI",
+                                      "name": "Tick all box",
+                                      "descendants": {
+                                        "cFZeu": {
+                                          "width": 13,
+                                          "height": 13,
+                                          "fill": "$f-paper",
+                                          "stroke": "$f-accent",
+                                          "strokeWidth": 4,
+                                          "strokeAlignment": "inner"
+                                        },
+                                        "hB0TC": {
+                                          "content": "TICK EVERYTHING",
+                                          "fontFamily": "$f-mono",
+                                          "fontSize": 10,
+                                          "letterSpacing": 1.2,
+                                          "fill": "$f-ink-2"
+                                        },
+                                        "hbbIF": {
+                                          "enabled": false
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "id": "Q9vmW5",
+                                      "type": "ref",
+                                      "ref": "tccsI",
+                                      "enabled": false,
+                                      "name": "Chip — Pickled Jalapeños",
+                                      "descendants": {
+                                        "hB0TC": {
+                                          "content": "Pickled Jalapeños"
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "id": "a6e1uI",
+                                      "type": "ref",
+                                      "ref": "tccsI",
+                                      "enabled": false,
+                                      "name": "Chip — Beef Shin Ragù",
+                                      "descendants": {
+                                        "hB0TC": {
+                                          "content": "Beef Shin Ragù"
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "id": "zfqQm",
+                                      "type": "ref",
+                                      "ref": "tccsI",
+                                      "enabled": false,
+                                      "name": "Chip — Sourdough Focaccia",
+                                      "descendants": {
+                                        "hB0TC": {
+                                          "content": "Sourdough Focaccia"
+                                        }
+                                      }
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "L2ak28",
+                                  "name": "Right",
+                                  "gap": 16,
+                                  "alignItems": "center",
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "D0dnfd",
+                                      "name": "Sort",
+                                      "fill": "$f-ink-3",
+                                      "content": "9 OF 24 IN THE TROLLEY",
+                                      "fontFamily": "$f-mono",
+                                      "fontSize": 10,
+                                      "fontWeight": "normal",
+                                      "letterSpacing": 1.2
+                                    },
+                                    {
+                                      "id": "z5876Q",
+                                      "type": "ref",
+                                      "ref": "n8d4TF",
+                                      "enabled": false,
+                                      "name": "Button — PRINT",
+                                      "descendants": {
+                                        "SYnVD": {
+                                          "content": "PRINT THE LIST"
+                                        }
+                                      }
+                                    }
+                                  ]
+                                }
+                              ]
                             },
                             {
                               "type": "frame",
@@ -37099,6 +39111,32 @@
                                       "name": "L",
                                       "fill": "$f-ink-3",
                                       "content": "METHOD",
+                                      "fontFamily": "$f-mono",
+                                      "fontSize": 8,
+                                      "fontWeight": "normal",
+                                      "letterSpacing": 1.2
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "oslyX",
+                                  "name": "SCIENCE",
+                                  "width": "fill_container",
+                                  "fill": "$f-desk",
+                                  "padding": [
+                                    8,
+                                    0
+                                  ],
+                                  "justifyContent": "center",
+                                  "alignItems": "center",
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "n8hCY",
+                                      "name": "L",
+                                      "fill": "$f-ink-3",
+                                      "content": "SCIENCE",
                                       "fontFamily": "$f-mono",
                                       "fontSize": 8,
                                       "fontWeight": "normal",
@@ -69316,7 +71354,7 @@
                                                               "fill": {
                                                                 "type": "image",
                                                                 "enabled": true,
-                                                                "url": "./images/generated-1788870419325.png",
+                                                                "url": "images/generated-1788870419325.png",
                                                                 "mode": "fill"
                                                               }
                                                             },
@@ -81325,6 +83363,32 @@
                                       "name": "L",
                                       "fill": "$fd-ink-3",
                                       "content": "METHOD",
+                                      "fontFamily": "$f-mono",
+                                      "fontSize": 8,
+                                      "fontWeight": "normal",
+                                      "letterSpacing": 1.2
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "Lwo9n",
+                                  "name": "SCIENCE",
+                                  "width": "fill_container",
+                                  "fill": "$fd-desk",
+                                  "padding": [
+                                    8,
+                                    0
+                                  ],
+                                  "justifyContent": "center",
+                                  "alignItems": "center",
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "eXomz",
+                                      "name": "L",
+                                      "fill": "$fd-ink-3",
+                                      "content": "SCIENCE",
                                       "fontFamily": "$f-mono",
                                       "fontSize": 8,
                                       "fontWeight": "normal",
