@@ -160,9 +160,16 @@ const COL = 'flex flex-1 basis-0 flex-col items-start gap-1';
 /*
  * `Name row` is a `gap-[ 8px ] items-center` row that holds exactly one child
  * in all 181 instances across the eighteen exports. It is a slot the design
- * provisions and never fills — the "(optional)" mark of §10.2.6 would go
- * there, and the word "optional" occurs zero times in the whole export set.
- * The row is kept, and the mark is NOT invented. See the M4 report.
+ * provisions and never fills — the "(optional)" mark of §10.2.6 goes there,
+ * and the word "optional" occurs zero times in the whole export set. M4 kept
+ * the row and did not invent the mark; M5 is the first call site that has one
+ * to put in it, so the slot is now a `mark` prop.
+ *
+ * IT IS A SIBLING OF THE LINK AND NOT A CHILD OF IT. Folding the mark into
+ * `name` — the only route a caller had before the prop existed — put it
+ * inside the `<Link>`, so a line's link was named "Kombu (optional)" while it
+ * points at the Kombu ingredient page, which is not optional. "Optional" is a
+ * property of this recipe line, not of the ingredient.
  */
 const NAME_ROW = 'flex w-full flex-row items-center gap-2';
 
@@ -191,6 +198,12 @@ export type IngredientRowProps = Omit<
     name: ReactNode;
     /** R-SCR-13. Set only when the ingredient is in the ingredient list. */
     href?: string;
+    /**
+     * The `Name row` slot beside the name — §10.2.6's "(optional)" mark. It
+     * sits OUTSIDE the link, because it describes the line and not the
+     * ingredient the link points at.
+     */
+    mark?: ReactNode;
     /** The preparation, in serif italic under the name. */
     preparation?: ReactNode;
   };
@@ -212,6 +225,7 @@ export function IngredientRow({
   unit,
   name,
   href,
+  mark,
   preparation,
   ticked = false,
   onTick,
@@ -254,7 +268,15 @@ export function IngredientRow({
           ) : (
             <span className={cn(NAME, quiet)}>{name}</span>
           )}
-        </span>
+          {mark ? <> {mark}</> : null}
+        </span>{' '}
+        {/* The two `{' '}` above and the one below are real text nodes and
+            not decoration. `NAME_ROW` and `COL` are both flex containers, so
+            CSS Flexbox §4 drops a white-space-only run from the rendering and
+            the drawing is unchanged — while `textContent` keeps the space. A
+            flex gap alone read `Beef silversidecut into strips along the
+            grain`, which is the fault class R-CMP-14 records and BUILD-PLAN
+            §4.1 closed in four row components. This is the fifth. */}
         {preparation ? <p className={PREP}>{preparation}</p> : null}
       </span>
     </div>

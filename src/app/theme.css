@@ -166,6 +166,21 @@
   --breakpoint-shell: 1080px;
 
   /*
+   * The RECIPE layout's own breakpoint, and why it is not `shell`.
+   *
+   * §10.2.2 fixes 901px: at 901 and above the ingredients are an aside and
+   * the tab strip switches only the main column. The shell's drawer swaps
+   * at 1080. Both are correct and they are different numbers — at 768 the
+   * header is a drawer AND the recipe is tabs; at 1024 the header is a
+   * drawer AND the recipe is an aside. `globals.css` writes the literal at
+   * lines 901, 950 and 1073 today, and it goes at M7.
+   *
+   * Mirrored in `src/lib/utils.ts`, or `cn()` will not treat `text-11` and
+   * `recipe:text-12` as separate groups.
+   */
+  --breakpoint-recipe: 901px;
+
+  /*
    * Type. The seventeen steps of BUILD-PLAN §2.2. The name is the size in
    * pixels, with a leading zero below ten.
    *

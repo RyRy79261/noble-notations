@@ -131,9 +131,11 @@ test.describe('scaling a recipe', () => {
     await page.goto('/recipes/baumy-biltong');
 
     const beef = page
-      .locator('.ingredient-list li', { hasText: 'Beef silverside' })
+      .locator('[data-checklist] [role=listitem]', {
+        hasText: 'Beef silverside',
+      })
       .first()
-      .locator('.amount');
+      .locator('> span:nth-of-type(2)');
 
     await expect(beef).toHaveText('10 kg');
     await page.getByRole('button', { name: '×2', exact: true }).click();
@@ -149,9 +151,9 @@ test.describe('scaling a recipe', () => {
     // of salt rendered as "139 g" on a page nobody had scaled. Rounding a
     // scaled amount is helpful; rounding the recipe's own is a rewrite.
     const salt = page
-      .locator('.ingredient-list li', { hasText: 'Salt' })
+      .locator('[data-checklist] [role=listitem]', { hasText: 'Salt' })
       .first()
-      .locator('.amount');
+      .locator('> span:nth-of-type(2)');
 
     await expect(salt).toHaveText('138.5 g');
     await page.getByRole('button', { name: '×2', exact: true }).click();
@@ -165,11 +167,13 @@ test.describe('scaling a recipe', () => {
   }) => {
     await page.goto('/recipes/baumy-biltong');
 
-    const box = page.locator('.scale-custom input');
+    const box = page.locator('[data-batch-control] input');
     const beef = page
-      .locator('.ingredient-list li', { hasText: 'Beef silverside' })
+      .locator('[data-checklist] [role=listitem]', {
+        hasText: 'Beef silverside',
+      })
       .first()
-      .locator('.amount');
+      .locator('> span:nth-of-type(2)');
 
     // The first version held one controlled number, so "0" and "0." were
     // rejected mid-word and React snapped the box back with the caret after
@@ -196,7 +200,7 @@ test.describe('scaling a recipe', () => {
     page,
   }) => {
     await page.goto('/recipes/baumy-biltong');
-    const box = page.locator('.scale-custom input');
+    const box = page.locator('[data-batch-control] input');
 
     await box.click();
     await page.keyboard.press('Control+a');
@@ -211,9 +215,9 @@ test.describe('scaling a recipe', () => {
   }) => {
     await page.goto('/recipes/baumy-biltong');
 
-    const yieldCell = page
-      .locator('table tr', { hasText: 'Yield' })
-      .locator('td.numeric');
+    // "At a glance" is F/Stat now, not a table: an accent micro-label over a
+    // mono figure, with `data-stat` naming the row it replaces.
+    const yieldCell = page.locator('[data-stat=yield]');
 
     // The scale used to live inside the ingredient list, where nothing else
     // could see it: at ×3 the table said "4.5 kg dried" while the readout
@@ -223,15 +227,19 @@ test.describe('scaling a recipe', () => {
     await page.getByRole('button', { name: '×3', exact: true }).click();
     await expect(yieldCell).toContainText('13.5 kg');
     await expect(yieldCell).toContainText('×3 batch');
-    await expect(page.locator('.scale-yield')).toContainText('13.5 kg');
+    await expect(page.locator('[data-batch-readout]')).toContainText('13.5 kg');
   });
 
   test('scaling reports the yield it produces', async ({ page }) => {
     await page.goto('/recipes/baumy-biltong');
 
-    await expect(page.locator('.scale-yield')).toHaveCount(0);
+    // Form B's readout is drawn at ×1 too now — `recipe-1280.html:855` draws
+    // MAKES 4.5 KG with ×1 selected, and that line is Form B's only statement
+    // of what one batch is. The old build showed it only when the scale was
+    // not 1, which is what this line used to assert.
+    await expect(page.locator('[data-batch-readout]')).toContainText('4.5 kg');
     await page.getByRole('button', { name: '×2', exact: true }).click();
-    await expect(page.locator('.scale-yield')).toContainText('9 kg');
+    await expect(page.locator('[data-batch-readout]')).toContainText('9 kg');
   });
 });
 

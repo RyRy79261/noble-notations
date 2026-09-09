@@ -12,7 +12,7 @@ test.describe('the science section', () => {
     // tests below check from the other side.
     await page.getByRole('tab', { name: 'Science' }).click();
 
-    const science = page.locator('.science-section');
+    const science = page.locator('[data-science]');
     await expect(science).toBeVisible();
     await expect(
       science.getByRole('heading', { name: /the science/i }),
@@ -28,12 +28,12 @@ test.describe('the science section', () => {
     await page.goto('/recipes/berlin-crayfish-boil');
 
     await expect(page.getByText(/where to buy crayfish/i)).toBeVisible();
-    await expect(page.locator('.science-section')).toHaveCount(0);
+    await expect(page.locator('[data-science]')).toHaveCount(0);
   });
 
   test('a recipe with no science shows no empty section', async ({ page }) => {
     await page.goto('/recipes/pickled-jalapenos');
-    await expect(page.locator('.science-section')).toHaveCount(0);
+    await expect(page.locator('[data-science]')).toHaveCount(0);
     // And no tab offering it. A tab that opens an empty panel is worse
     // than no tab: it reads as missing content rather than as content this
     // recipe never had.
@@ -68,16 +68,11 @@ test.describe('mobile tabs', () => {
     // would make the checklist useless on the device it matters most on.
     await page.goto('/recipes/berlin-crayfish-boil');
 
-    await page
-      .locator('.ingredient-list.checklist input[type=checkbox]')
-      .first()
-      .check();
+    await page.locator('[data-checklist] input[type=checkbox]').first().check();
     await page.getByRole('tab', { name: 'Method' }).click();
     await page.getByRole('tab', { name: 'Ingredients' }).click();
 
-    await expect(
-      page.locator('.ingredient-list.checklist li[data-checked]'),
-    ).toHaveCount(1);
+    await expect(page.locator('[data-checklist] [data-ticked]')).toHaveCount(1);
   });
 });
 
@@ -132,10 +127,14 @@ test.describe('a step names what it uses', () => {
   test('shows the amount beside the instruction', async ({ page }) => {
     await page.goto('/recipes/pickled-jalapenos');
 
-    await expect(page.locator('.step-uses li').first()).toBeVisible();
+    // `[data-step-uses] > *` and not `.step-uses li`: M5 rebuilt the chip on
+    // `F/Ingredient callout`, which is a two-celled hairline box rather than
+    // a pill, and the `.step-uses` rules in `globals.css` still draw the old
+    // 999px shape. The hook carries no stylesheet (R-CMP-16).
+    await expect(page.locator('[data-step-uses] > *').first()).toBeVisible();
 
     // Not just the name: the quantity, or the chip saves nobody a scroll.
-    const chips = await page.locator('.step-uses li').allTextContents();
+    const chips = await page.locator('[data-step-uses] > *').allTextContents();
     expect(chips.length).toBeGreaterThan(3);
     expect(chips.some((chip) => /\d/.test(chip))).toBe(true);
 
@@ -151,11 +150,11 @@ test.describe('a step names what it uses', () => {
     // otherwise surface as a chip for an ingredient the recipe lacks.
     // Every group, not the first: the list is split by component, so
     // "White distilled vinegar" sits under Brine rather than at the top.
-    const panel = (await page.locator('.ingredient-list').allInnerTexts())
+    const panel = (await page.locator('[data-checklist]').allInnerTexts())
       .join(' ')
       .toLowerCase();
     const names = await page
-      .locator('.step-uses li a, .step-uses li span')
+      .locator('[data-step-uses] [data-chip-name]')
       .allTextContents();
     for (const name of names) {
       expect(panel).toContain(name.trim().toLowerCase());
@@ -165,7 +164,9 @@ test.describe('a step names what it uses', () => {
   test('the chips scale with the batch', async ({ page }) => {
     await page.goto('/recipes/baumy-biltong');
 
-    const salt = page.locator('.step-uses li', { hasText: 'Salt' }).first();
+    const salt = page
+      .locator('[data-step-uses] > *', { hasText: 'Salt' })
+      .first();
     await expect(salt).toContainText('138.5 g');
 
     // A chip that says "138.5 g" beside a list that says "277 g" is worse
@@ -180,17 +181,17 @@ test.describe('the batch control', () => {
     // The boil feeds 50, and the box opens on 50 rather than on "×1".
     await page.goto('/recipes/berlin-crayfish-boil');
 
-    const box = page.locator('.scale-custom input');
+    const box = page.locator('[data-batch-control] input');
     await expect(box).toHaveValue('50');
-    await expect(page.locator('.scale-bar')).toHaveAttribute(
+    await expect(page.locator('[data-batch-control]')).toHaveAttribute(
       'data-mode',
       'servings',
     );
 
     const salt = page
-      .locator('.ingredient-list li', { hasText: 'Salt' })
+      .locator('[data-checklist] [role=listitem]', { hasText: 'Salt' })
       .first()
-      .locator('.amount');
+      .locator('> span:nth-of-type(2)');
     await expect(salt).toHaveText('500 g');
 
     // "For 50 −/+" is a question a cook can answer. "×1" asks them to know
@@ -212,7 +213,7 @@ test.describe('the batch control', () => {
     // there would be counting something the recipe never claimed.
     await page.goto('/recipes/baumy-biltong');
 
-    await expect(page.locator('.scale-bar')).toHaveAttribute(
+    await expect(page.locator('[data-batch-control]')).toHaveAttribute(
       'data-mode',
       'batch',
     );
@@ -243,18 +244,56 @@ test.describe('a selected panel is where you are looking', () => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto('/recipes/baumy-biltong');
 
-    for (const name of ['Science', 'Revisions']) {
+    for (const name of ['Method', 'Science', 'Revisions']) {
       await page.getByRole('tab', { name }).click();
+      // The 360 strip is sticky, and a sticky box reports where it is now,
+      // not where it belongs. Measure from the top of the document.
+      await page.evaluate(() => window.scrollTo(0, 0));
 
       const strip = await page.locator('.recipe-tabs').boundingBox();
+      const column = await page.locator('[data-recipe-column]').boundingBox();
+      const aside = await page.locator('.recipe-aside').boundingBox();
       const panel = await page
         .locator(`[data-tab="${name.toLowerCase()}"]`)
         .boundingBox();
 
       expect(panel).not.toBeNull();
-      // Directly under the strip that switched to it — a panel a screen or
-      // more below its own tab reads as an empty tab.
-      expect(panel!.y - (strip!.y + strip!.height)).toBeLessThan(120);
+
+      // R-ACC-13: the panel STARTS where the strip ENDS. `Main column` is
+      // `gap-0` in the design, so this is an equality and not a tolerance —
+      // the 30px of air above the method is padding INSIDE the panel box.
+      // The old assertion allowed 120px, which let a stray 24px margin
+      // through and would have let a 100px one through too.
+      expect(panel!.y - (strip!.y + strip!.height)).toBeGreaterThanOrEqual(-1);
+      expect(panel!.y - (strip!.y + strip!.height)).toBeLessThanOrEqual(1);
+
+      // R-SCR-28, on the other axis: the strip and the panel are ONE
+      // column. A panel a screen down and a panel in the wrong column are
+      // the same fault seen from two directions, and only one of them was
+      // ever measured.
+      expect(Math.abs(panel!.x - strip!.x)).toBeLessThanOrEqual(1);
+      expect(Math.abs(panel!.width - strip!.width)).toBeLessThanOrEqual(1);
+
+      // And the cause, not only the effect: a tall aside must not push the
+      // strip down. This is the 2185px fault stated as what went wrong.
+      expect(Math.abs(strip!.y - column!.y)).toBeLessThanOrEqual(1);
+      expect(Math.abs(strip!.y - aside!.y)).toBeLessThanOrEqual(1);
+
+      // The rule under the strip is a rule, not a box. R-ACC-13 measures
+      // zero either way — a border is inside the border box — so nothing
+      // above catches `border-b` beside a bare `border-solid`, which with
+      // the preflight off gives the other three sides the CSS initial
+      // `medium` and draws a 3px `f-hair` rectangle around the whole rail.
+      const rule = await page.locator('.recipe-tabs').evaluate((el) => {
+        const style = getComputedStyle(el);
+        return [
+          style.borderTopWidth,
+          style.borderRightWidth,
+          style.borderBottomWidth,
+          style.borderLeftWidth,
+        ];
+      });
+      expect(rule).toEqual(['0px', '0px', '1px', '0px']);
     }
   });
 

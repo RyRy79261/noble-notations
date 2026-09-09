@@ -96,6 +96,8 @@ export type Section360Props = HTMLAttributes<HTMLDivElement> & {
   label: ReactNode;
   /** The quiet run at the right edge. Optional; the plate draws none. */
   meta?: ReactNode;
+  /** The heading level. A section heading is an `h2` unless it is nested. */
+  as?: ElementType;
   children?: ReactNode;
 };
 
@@ -107,10 +109,21 @@ export type Section360Props = HTMLAttributes<HTMLDivElement> & {
  * off-scale value here; `--spacing-list-360` also holds 7px but it is named
  * for the 360 list control, and a misleading name is worse than an arbitrary
  * value.
+ *
+ * THE LABEL IS A HEADING, the same `as` prop F/Section label carries. It was
+ * a `<span>` inside an unnamed `<section>`, which made the two most-read
+ * blocks of the recipe screen — AT A GLANCE and INGREDIENTS — reachable
+ * neither by heading navigation nor as a region, while every other band on
+ * the same screen kept its `<h2>`. The three overrides below are what a real
+ * heading costs with the preflight off: `globals.css:125` sets `h1..h4` to
+ * `line-height: 1.25; letter-spacing: -0.015em; margin: 0 0 0.5rem`, `h2` to
+ * `font-size: 1.35rem`, and the user agent draws it bold. Every one of them
+ * is answered here, so the drawn label is unchanged to the pixel.
  */
 export function Section360({
   label,
   meta,
+  as: Heading = 'h2',
   children,
   className,
   ...props
@@ -130,11 +143,16 @@ export function Section360({
           SECTION_RULE,
         )}
       >
-        <span className="text-09 font-mono tracking-spine uppercase text-accent">
+        <Heading className="m-0 text-09 leading-normal font-mono font-normal tracking-spine uppercase text-accent">
           {label}
-        </span>
+        </Heading>
+        {/* `tracking-label`, 1.2px, and not the 1.5px of the label beside
+            it. The design draws both section metas at 1.2px — the `3 / 16`
+            tally at `recipe-1280.html:980` and the band meta at `:3303` —
+            and the band head in `recipe-detail.tsx` already writes it, so
+            1.5px here put two heads in adjacent columns at two trackings. */}
         {meta ? (
-          <span className="ml-auto text-09 font-mono tracking-spine uppercase text-ink-3">
+          <span className="ml-auto text-09 font-mono tabular-nums tracking-label uppercase text-ink-3">
             {meta}
           </span>
         ) : null}

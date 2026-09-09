@@ -210,7 +210,10 @@ test.describe('the website serves what the MCP wrote', () => {
     await expect(
       page.getByRole('heading', { name: /dan dan noodles/i, level: 1 }),
     ).toBeVisible();
-    await expect(page.getByText(/revision 2/i).first()).toBeVisible();
+    // The revision badge spells its ordinal — `SECOND REVISION`, which is
+    // what `revisionOrdinal` returns and what the design draws on every
+    // revision mark, timeline entry and page kicker.
+    await expect(page.getByText(/second revision/i).first()).toBeVisible();
   });
 
   test('the equipment tag carries the blurb the MCP wrote', async ({

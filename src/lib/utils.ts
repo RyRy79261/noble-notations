@@ -74,8 +74,12 @@ const CONTAINERS = ['col-narrow', 'col-wide'];
 /** `--spacing-*` in theme.css: the three provisional 360 gaps. */
 const SPACINGS = ['list-360', 'brand-360', 'section-360'];
 
-/** `--breakpoint-*` in theme.css. The shell has exactly one, at 1080px. */
-const BREAKPOINTS = ['shell'];
+/**
+ * `--breakpoint-*` in theme.css. Two, and they are not the same number: the
+ * shell swaps to the drawer at 1080, and the recipe layout swaps from tabs
+ * to an aside at 901 (§10.2.2).
+ */
+const BREAKPOINTS = ['shell', 'recipe'];
 
 const twMerge = extendTailwindMerge({
   extend: {

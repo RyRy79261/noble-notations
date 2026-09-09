@@ -15,6 +15,14 @@ export interface PageHeadProps {
   leftNarrow?: ReactNode;
   /** The 360 wording of `right`, where the design shortens it. */
   rightNarrow?: ReactNode;
+  /**
+   * The right slot's ink. `quiet` is `f-ink-3` and is what 25 of the 26
+   * screens draw. `warn` is `f-warn`, and the design uses it on exactly one
+   * band: the superseded revision, `recipe-revision-1280.html:195`, where
+   * the left slot stays `f-ink-3` — so the contrast is the signal, not the
+   * colour on its own. It is the only colour this band ever carries.
+   */
+  rightTone?: 'quiet' | 'warn';
 }
 
 /**
@@ -59,6 +67,7 @@ export function PageHead({
   right,
   leftNarrow,
   rightNarrow,
+  rightTone = 'quiet',
 }: PageHeadProps) {
   const slot = cn(
     'text-09 leading-normal font-mono tracking-head-360 whitespace-nowrap text-ink-3',
@@ -78,7 +87,11 @@ export function PageHead({
         narrow={leftNarrow}
       />
       <Slot
-        className={cn(slot, 'shrink-0')}
+        className={cn(
+          slot,
+          'shrink-0',
+          rightTone === 'warn' ? 'text-warn' : undefined,
+        )}
         wide={right}
         narrow={rightNarrow}
       />

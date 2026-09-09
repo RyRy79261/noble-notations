@@ -8,10 +8,31 @@ import { test, expect } from '@playwright/test';
 
 const RECIPE = '/recipes/berlin-crayfish-boil';
 
+/**
+ * M5 SELECTOR MIGRATION. The §9.4 class names this file used to select on —
+ * `.ingredient-list`, `.checklist`, `.ingredient-group`, `.amount`, `.what` —
+ * are gone (R-CMP-16). Keeping them would have re-applied the `globals.css`
+ * rules that hang on them, including the strikethrough at line 1714, which
+ * the design does not draw. Each is replaced by the data hook C-14 emits in
+ * its place: `[data-checklist]` for the panel, `[data-group]` for a category
+ * group, `[data-ticked]` for a ticked row and `[role=listitem]` for a row.
+ *
+ * F/Ingredient row draws four fixed columns as direct children — the tick
+ * label, the 24px reference, the 96px amount and the flowing name column —
+ * so the amount is `> span:nth-of-type(2)` and the name column is the third.
+ * They are addressed positionally because `src/components/f/ingredient-row.tsx`
+ * carries no attribute for them.
+ *
+ * The group heading is `h3` and no longer `h4`. F/Section 360 draws the
+ * `INGREDIENTS` head as an `h2`, so an `h4` under it skipped a level on the
+ * primary screen's outline.
+ */
+const CHECKLIST = '[data-checklist]';
+
 test('ingredients are tickable and the count keeps up', async ({ page }) => {
   await page.goto(RECIPE);
 
-  const boxes = page.locator('.ingredient-list.checklist input[type=checkbox]');
+  const boxes = page.locator(`${CHECKLIST} input[type=checkbox]`);
   const total = await boxes.count();
   expect(total).toBeGreaterThan(1);
 
@@ -19,27 +40,23 @@ test('ingredients are tickable and the count keeps up', async ({ page }) => {
 
   await boxes.first().check();
   await expect(page.getByText(`1 / ${total}`)).toBeVisible();
-  await expect(
-    page.locator('.ingredient-list.checklist li[data-checked]'),
-  ).toHaveCount(1);
+  await expect(page.locator(`${CHECKLIST} [data-ticked]`)).toHaveCount(1);
 });
 
 test('ticks survive a reload', async ({ page }) => {
   await page.goto(RECIPE);
 
-  const boxes = page.locator('.ingredient-list.checklist input[type=checkbox]');
+  const boxes = page.locator(`${CHECKLIST} input[type=checkbox]`);
   await boxes.first().check();
   await expect(boxes.first()).toBeChecked();
 
   await page.reload();
-  await expect(
-    page.locator('.ingredient-list.checklist li[data-checked]'),
-  ).toHaveCount(1);
+  await expect(page.locator(`${CHECKLIST} [data-ticked]`)).toHaveCount(1);
 
-  await page.getByRole('button', { name: /clear ticks/i }).click();
-  await expect(
-    page.locator('.ingredient-list.checklist li[data-checked]'),
-  ).toHaveCount(0);
+  // The control spells its count — "Clear one tick", "Clear three ticks" —
+  // so the old `/clear ticks/i` no longer matches any string it renders.
+  await page.getByRole('button', { name: /clear .+ ticks?/i }).click();
+  await expect(page.locator(`${CHECKLIST} [data-ticked]`)).toHaveCount(0);
 });
 
 test('defaults to shop order and can switch to as written', async ({
@@ -53,7 +70,7 @@ test('defaults to shop order and can switch to as written', async ({
   await expect(shop).toHaveAttribute('aria-pressed', 'true');
 
   // Shop order groups by category, so the headings are aisle names.
-  const headings = page.locator('.ingredient-group h4');
+  const headings = page.locator(`${CHECKLIST} [data-group] h3`);
   await expect(headings.first()).toBeVisible();
   const shopHeadings = await headings.allInnerTexts();
   expect(shopHeadings.join(' ')).toMatch(/produce|meat|spice|sauce/i);
@@ -61,7 +78,7 @@ test('defaults to shop order and can switch to as written', async ({
   await written.click();
   await expect(written).toHaveAttribute('aria-pressed', 'true');
   const writtenHeadings = await page
-    .locator('.ingredient-group h4')
+    .locator(`${CHECKLIST} [data-group] h3`)
     .allInnerTexts();
   expect(writtenHeadings.join(' ')).not.toBe(shopHeadings.join(' '));
 });
@@ -69,7 +86,9 @@ test('defaults to shop order and can switch to as written', async ({
 test('shop order puts produce before spices', async ({ page }) => {
   await page.goto(RECIPE);
 
-  const headings = await page.locator('.ingredient-group h4').allInnerTexts();
+  const headings = await page
+    .locator(`${CHECKLIST} [data-group] h3`)
+    .allInnerTexts();
   const produce = headings.findIndex((h) => /produce/i.test(h));
   const spice = headings.findIndex((h) => /spice/i.test(h));
 
@@ -88,10 +107,10 @@ test('the amount never overruns the ingredient name', async ({ page }) => {
   const overlaps = await page.evaluate(() => {
     const bad: string[] = [];
     for (const li of document.querySelectorAll(
-      '.ingredient-list.checklist li',
+      '[data-checklist] [role=listitem]',
     )) {
-      const amount = li.querySelector('.amount');
-      const what = li.querySelector('.what');
+      const amount = li.querySelector(':scope > span:nth-of-type(2)');
+      const what = li.querySelector(':scope > span:nth-of-type(3)');
       if (!amount || !what) continue;
       const a = amount.getBoundingClientRect();
       const w = what.getBoundingClientRect();

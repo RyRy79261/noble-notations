@@ -507,3 +507,74 @@ Restore `truncate(text, 160)` in `src/components/recipe-card.tsx` and pass
 `summary={truncate(recipe.summary, 160)}`. Do not put it in
 `src/components/f/recipe-card.tsx`: that file is the drawing and holds no
 data rule.
+
+---
+
+## D-12 — Three things the design draws that the data cannot fill
+
+**Status:** Decided for now. **Two of the three need your ruling.**
+**Date:** 2026-09-09
+**Touches:** R-SCR-39, §4.2, §10.2
+
+The recipe screen in `design/exports/png/zMdv1.png` draws three things that
+the build leaves out. Each one is missing because the repository holds no
+data for it, not because the build skipped it.
+
+### 1. The mass flow figure
+
+The design draws `FIG. 1 — MASS FLOW`: seven stages across the page.
+
+```
+RAW 10 kg · CUT 24 pieces · WASH 321.7 g · DREDGE 498.3 g ·
+CURE 24–48 h · HANG 13–15 d · DRIED 4.5 kg
+NET WEIGHT LOSS ~55%   RATE 4.21% PER DAY
+```
+
+R-SCR-39 makes it a **MAY**, so the build is correct without it. But it is
+the largest visible difference on the primary screen, and §4.2 lists it as
+one of the three things the design added.
+
+The schema holds one finished mass, `yield_quantity`. It holds no raw mass
+and no per-stage mass. Adding the ingredient lines is a different figure and
+would need cross-unit conversion, which this build refuses everywhere else.
+
+**Option A — add the data.** A `mass_flow` table, or a JSON column on the
+revision, holding an ordered list of stages with a label and a value. One
+migration, one MCP tool change, and a backfill for Baumy Biltong.
+
+**Option B — leave it out.** R-SCR-39 permits this.
+
+**I would take Option A**, together with D-02. Both are the same shape: the
+design draws structured data the schema does not hold. One migration can
+carry both. The figure is the clearest thing on the screen and a cook
+planning a batch reads it first.
+
+### 2. The change apparatus
+
+The design draws a toggle, `SHOWING CHANGES SINCE THE FIFTH REVISION`, an
+`S6` marker beside each changed step, and a reserved gutter on every step
+that did not change.
+
+This is a revision-diff feature. It has no requirement number, no component
+in §9.3 and no query. It is a new feature, not a style.
+
+**I left it out and I recommend leaving it out of this build.** Raise it as
+its own piece of work if you want it.
+
+### 3. The chapter kicker
+
+The hero's right slot reads `CHAPTER 04 · CURED AND DRIED`. There is no
+chapter in the data model and no requirement asks for one.
+
+**I left it out.** It is a label from the design's own mock data.
+
+### What is NOT missing
+
+Two things look absent on the seeded site and are correct:
+
+- **Total time and Active time** in "At a glance". Both columns are null for
+  every seeded revision. R-STA-05 says the design must not assume a field is
+  present, so the block draws only Yield.
+- **The literature block** on Baumy Biltong. That recipe cites nothing.
+  R-SCR-38 says the block is absent then. Demi-Glace cites four works and
+  draws it.
