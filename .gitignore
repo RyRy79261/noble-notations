@@ -27,3 +27,7 @@ npm-debug.log*
 
 # Throwaway browser probes written while auditing.
 _audit_*.mjs
+
+# Design reference exported from design/v1-design.pen via the pencil MCP.
+# Regenerate with Export([...], "html-tailwind", "./exports/<name>.html").
+/design/exports

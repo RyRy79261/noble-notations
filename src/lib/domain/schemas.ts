@@ -127,6 +127,26 @@ const unitField = z
       'Volume and count are accepted and preserved as written.',
   );
 
+/**
+ * The conditions a mechanism holds under.
+ *
+ * R-SCR-41 wants them as separate values, and the tool description is the
+ * only instruction the model gets, so it says what "separate" means and
+ * gives the two cases that get it wrong: joining them into a sentence, and
+ * splitting a range that is one condition.
+ */
+const conditionsField = z
+  .array(z.string().min(1).max(120))
+  .max(12)
+  .describe(
+    'Conditions, as separate values: ["232 °C", "45 min", "single layer ' +
+      'on a rack"]. Give one value for each condition. Do not write them ' +
+      'into a sentence. Do not join them with a comma or a dot — the page ' +
+      'draws the separators. Keep a range in one value: "4 °C → 71 °C" is ' +
+      'one condition, not two. Write them as you would say them; the page ' +
+      'puts them in capitals.',
+  );
+
 export const noteSchema = z.object({
   kind: z
     .enum(NOTE_KINDS)
@@ -140,9 +160,44 @@ export const noteSchema = z.object({
     ),
   title: z.string().max(200).optional(),
   body: z.string().min(1).max(20000).describe('Markdown'),
+  /**
+   * Meaningful on a `science` note, which the site draws as a mechanism.
+   * Accepted on every kind: an empty list on the other seven costs nothing,
+   * and refusing them there would have to be undone the first time a
+   * `warning` wants to say at what temperature it applies.
+   */
+  conditions: conditionsField.optional(),
   sources: z.array(noteSourceSchema).max(100).optional(),
 });
 export type NoteInput = z.infer<typeof noteSchema>;
+
+/**
+ * **`position` is deliberately NOT in this shape, and not in any MCP tool.**
+ *
+ * `notes.position` and `note_sources.position` were added so a note holds a
+ * fixed place in the list it is drawn in — `/science` numbers a study's
+ * mechanisms `M1…Mn` from that order. The obvious next step is to let a
+ * client name the position, and it is the wrong one.
+ *
+ * The order a client can express, it already expresses: `notes` is an array
+ * and `writeNotes` stores it in the order given, so a caller writing four
+ * mechanisms in the order a cook meets them gets exactly that back. A
+ * `position` field on top of that is a second way to say the same thing,
+ * and the two disagree the first time a caller sets one and not the other.
+ *
+ * What a writable position would add is the one thing the model refuses
+ * everywhere else: writing into a list somebody else made. `add_note`
+ * appends to a recipe whose other notes it did not write, and choosing
+ * their slot would renumber a mechanism a reader has already cited, and
+ * change what `M2` means on a page that is already published — an edit of
+ * stored notes dressed as an insert. A note is append-only, its answer to a
+ * wrong claim is a `correction`, and the same rule holds for where it sits:
+ * a new note goes at the end of its subject, at `MAX(position) + 1`.
+ *
+ * To change it, add `position` here, drop it from the assignment in
+ * `writeNotes`, and decide what happens to the notes it pushes down —
+ * which is the design work this note is declining, not the code.
+ */
 
 /**
  * A research note without a source is not research.
@@ -222,6 +277,177 @@ export const stepSchema = z.object({
   note: z.string().max(2000).nullish(),
 });
 export type StepInput = z.infer<typeof stepSchema>;
+
+/**
+ * One stage of the mass flow figure — "RAW 10 kg", "CURE 24–48 h".
+ *
+ * A stage carries one figure: a weight or a count in `quantity`/`unit`, or
+ * a wait in `durationMinutes`. Never both — the figure draws one value line
+ * per stage — and a wait carries no unit, because the unit vocabulary holds
+ * no time unit and widening it to caption a figure would make "24 h of
+ * beef" a legal ingredient line.
+ */
+export const massFlowStageSchema = z.object({
+  label: z
+    .string()
+    .min(1)
+    .max(60)
+    .describe('"Raw", "Cut", "Dried". The page puts it in capitals.'),
+  /*
+   * EVERY FIELD HERE CARRIES A `.describe()`, and that is not tidiness.
+   * A JSDoc comment never reaches the wire: the tool advertises this shape
+   * as JSON Schema, so a field explained only in a comment is a field the
+   * model meets as a bare `{"type":"number"}`. Three of the four the
+   * repository's own reference figure uses — `quantityMax`,
+   * `durationMaxMinutes` and `rawText` — were exactly that.
+   */
+  quantity: z
+    .number()
+    .finite()
+    .nonnegative()
+    .nullish()
+    .describe('For a stage that is a weight or a count. Give `unit` with it.'),
+  quantityMax: z
+    .number()
+    .finite()
+    .nonnegative()
+    .nullish()
+    .describe(
+      'The top of a range. Give `quantity` as the bottom: 25 and 30 draw ' +
+        '"25–30 pieces". Leave it out for a single figure.',
+    ),
+  unit: unitField.nullish(),
+  durationMinutes: z
+    .number()
+    .int()
+    .nonnegative()
+    .nullish()
+    .describe('For a stage that is a wait. Minutes: 1440 is one day.'),
+  durationMaxMinutes: z
+    .number()
+    .int()
+    .nonnegative()
+    .nullish()
+    .describe(
+      'The top of a wait that is a range. Give `durationMinutes` as the ' +
+        'bottom: 1440 and 2880 draw "24–48 h". The page picks the unit.',
+    ),
+  emphasis: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe('Draw this stage as the one that matters. Usually the last.'),
+  rawText: z
+    .string()
+    .max(120)
+    .nullish()
+    .describe(
+      'The value as written, for a stage that is neither a figure nor a ' +
+        'wait: "held under 100 °C". It is read only when the stage has no ' +
+        'quantity and no duration. Do not use it to spell one of those again.',
+    ),
+});
+export type MassFlowStageInput = z.infer<typeof massFlowStageSchema>;
+
+export const massFlowSchema = z.object({
+  /**
+   * In order, first to last. Two at least: R-SCR-39 describes the figure as
+   * "10 kg raw to 4.5 kg dried", and a flow needs a from and a to. One box
+   * on its own is not the figure, so it is refused here rather than
+   * accepted and then drawn as nothing.
+   */
+  stages: z.array(massFlowStageSchema).min(2).max(24),
+  netChangePercent: z
+    .number()
+    .finite()
+    .min(-9999.99)
+    .max(9999.99)
+    .nullish()
+    .describe(
+      'The whole change, as a signed percentage. -55 is a loss of 55 per ' +
+        'cent. Give the number you measured. The tool does not calculate ' +
+        'it. The first stage and the last stage do not have to share a unit.',
+    ),
+  ratePercentPerDay: z
+    .number()
+    .finite()
+    .min(-9999.99)
+    .max(9999.99)
+    .nullish()
+    .describe('Percent of the starting weight for each day. 4.21 is 4.21%.'),
+  note: z
+    .string()
+    .max(2000)
+    .nullish()
+    .describe('Where the numbers came from. Not shown on the page.'),
+});
+export type MassFlowInput = z.infer<typeof massFlowSchema>;
+
+/**
+ * The same three rules the database checks, applied at the boundary so a
+ * caller reads a sentence rather than a constraint name.
+ */
+function checkMassFlowStages(
+  stages: MassFlowStageInput[] | undefined,
+  ctx: z.RefinementCtx,
+  base: (string | number)[],
+): void {
+  (stages ?? []).forEach((stage, index) => {
+    const at = (field: string) => [...base, index, field];
+    if (stage.quantity != null && stage.durationMinutes != null) {
+      ctx.addIssue({
+        code: 'custom',
+        path: at('durationMinutes'),
+        message:
+          `Stage ${index + 1} ("${stage.label}") gives both a quantity and ` +
+          'a duration. A stage draws one figure. Split it into two stages.',
+      });
+    }
+    if (
+      stage.quantity == null &&
+      stage.durationMinutes == null &&
+      !stage.rawText
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: at('quantity'),
+        message:
+          `Stage ${index + 1} ("${stage.label}") has nothing to draw. Give ` +
+          'a quantity, a durationMinutes, or a rawText.',
+      });
+    }
+    if (stage.quantityMax != null) {
+      if (stage.quantity == null) {
+        ctx.addIssue({
+          code: 'custom',
+          path: at('quantityMax'),
+          message: `Stage ${index + 1} has an upper bound and no quantity.`,
+        });
+      } else if (stage.quantityMax < stage.quantity) {
+        ctx.addIssue({
+          code: 'custom',
+          path: at('quantityMax'),
+          message: `Stage ${index + 1} has an upper bound below its quantity.`,
+        });
+      }
+    }
+    if (stage.durationMaxMinutes != null) {
+      if (stage.durationMinutes == null) {
+        ctx.addIssue({
+          code: 'custom',
+          path: at('durationMaxMinutes'),
+          message: `Stage ${index + 1} has an upper bound and no duration.`,
+        });
+      } else if (stage.durationMaxMinutes < stage.durationMinutes) {
+        ctx.addIssue({
+          code: 'custom',
+          path: at('durationMaxMinutes'),
+          message: `Stage ${index + 1} has an upper bound below its duration.`,
+        });
+      }
+    }
+  });
+}
 
 export const recipeLinkSchema = z.object({
   kind: z.enum(RECIPE_LINK_KINDS),
@@ -307,6 +533,17 @@ export const recipeBodyShape = {
   activeTimeMinutes: z.number().int().nonnegative().nullish(),
   ingredients: z.array(ingredientLineSchema).max(300).optional(),
   steps: z.array(stepSchema).max(200).optional(),
+  /**
+   * What the food weighs at each stage. Optional, and normally absent —
+   * R-SCR-39 asks for it only where a dish loses or gains weight in a way
+   * the reader has to plan for.
+   *
+   * It belongs to the revision it is sent with. It is never carried forward
+   * into the next one: the numbers come off a batch that was actually
+   * weighed, and copying them into a version nobody weighed would invent a
+   * measurement.
+   */
+  massFlow: massFlowSchema.optional(),
   notes: z
     .array(noteSchema.superRefine(requireSourcesForResearch))
     .max(100)
@@ -367,7 +604,10 @@ export const createRecipeShape = {
 
 export const createRecipeSchema = z
   .object(createRecipeShape)
-  .superRefine(checkStepReferences);
+  .superRefine(checkStepReferences)
+  .superRefine((value, ctx) =>
+    checkMassFlowStages(value.massFlow?.stages, ctx, ['massFlow', 'stages']),
+  );
 
 /**
  * `Input` is what a caller sends (defaults not yet applied); `CreateRecipeInput`
@@ -407,6 +647,7 @@ export const reviseRecipeShape = {
   activeTimeMinutes: recipeBodyShape.activeTimeMinutes,
   ingredients: recipeBodyShape.ingredients,
   steps: recipeBodyShape.steps,
+  massFlow: recipeBodyShape.massFlow,
   notes: recipeBodyShape.notes,
   links: recipeBodyShape.links,
   heroImageUrl: recipeBodyShape.heroImageUrl,
@@ -420,6 +661,7 @@ export const reviseRecipeSchema = z
     // steps-only revision is checked against the carried-forward ingredients
     // at write time, where the previous revision is in hand.
     if (value.ingredients && value.steps) checkStepReferences(value, ctx);
+    checkMassFlowStages(value.massFlow?.stages, ctx, ['massFlow', 'stages']);
   });
 export type ReviseRecipeArgs = z.input<typeof reviseRecipeSchema>;
 export type ReviseRecipeInput = z.infer<typeof reviseRecipeSchema>;
@@ -466,6 +708,7 @@ export const backfillRevisionShape = {
   activeTimeMinutes: recipeBodyShape.activeTimeMinutes,
   ingredients: recipeBodyShape.ingredients,
   steps: recipeBodyShape.steps,
+  massFlow: recipeBodyShape.massFlow,
   notes: recipeBodyShape.notes,
 };
 
@@ -489,6 +732,7 @@ export const backfillRevisionSchema = z
       });
     }
     if (value.ingredients && value.steps) checkStepReferences(value, ctx);
+    checkMassFlowStages(value.massFlow?.stages, ctx, ['massFlow', 'stages']);
   });
 export type BackfillRevisionArgs = z.input<typeof backfillRevisionSchema>;
 export type BackfillRevisionInput = z.infer<typeof backfillRevisionSchema>;
@@ -532,6 +776,77 @@ export const addNoteSchema = z
     }
   });
 export type AddNoteInput = z.infer<typeof addNoteSchema>;
+
+/**
+ * Give a revision that was written before this field existed its mass flow.
+ *
+ * Every recipe in the archive was stored before the figure had anywhere to
+ * live, and no write path reaches back into a stored revision: a revise
+ * makes a new version, and a version whose only change is a diagram is a
+ * version with no story. So this names a revision that already exists and
+ * adds the figure to it.
+ *
+ * That is an addition, never an edit. R-SCR-39 makes the figure optional,
+ * so a revision without one is already drawn correctly; this turns absent
+ * into present. A revision that has one is refused, and the refusal says
+ * what is stored.
+ */
+export const addMassFlowShape = {
+  slug: z.string().min(1).max(120),
+  /*
+   * `.describe()` and not a comment, and this is the field that most needed
+   * it. The write is add-once — `writeMassFlow` and `uq_mass_flow_revision`
+   * both refuse a second figure — so a caller that omits this, silently
+   * lands on the current version and meant an older one has no way back.
+   */
+  revisionNumber: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe(
+      'Which version the figure describes. The current one by default. ' +
+        'Give a number when the batch you weighed was an older version. ' +
+        'get_recipe lists every revision number.',
+    ),
+  ...massFlowSchema.shape,
+};
+
+export const addMassFlowSchema = z
+  .object(addMassFlowShape)
+  .superRefine((value, ctx) =>
+    checkMassFlowStages(value.stages, ctx, ['stages']),
+  );
+export type AddMassFlowArgs = z.input<typeof addMassFlowSchema>;
+export type AddMassFlowInput = z.infer<typeof addMassFlowSchema>;
+
+/**
+ * Give a science note that was written before this field existed its
+ * conditions.
+ *
+ * The same shape of problem as `addMassFlow`, one level down. A note is
+ * append-only — the model's answer to a wrong note is a `correction`, not
+ * an edit — so this adds the one field the note could not carry when it was
+ * written, and refuses a note that already has conditions.
+ */
+export const describeMechanismShape = {
+  /**
+   * `z.guid()` and not `z.uuid()`. The strict form also checks the version
+   * and variant nibbles, and this is an id that was READ from the
+   * repository, not one the caller invents — refusing a value the database
+   * gave out would be a fault in the tool, not in the caller.
+   */
+  noteId: z
+    .guid()
+    .describe(
+      'The id of the note. get_recipe gives it for every note on a recipe.',
+    ),
+  conditions: conditionsField.min(1),
+};
+
+export const describeMechanismSchema = z.object(describeMechanismShape);
+export type DescribeMechanismArgs = z.input<typeof describeMechanismSchema>;
+export type DescribeMechanismInput = z.infer<typeof describeMechanismSchema>;
 
 export const upsertIngredientShape = {
   name: z.string().min(1).max(200),

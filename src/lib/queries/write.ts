@@ -21,6 +21,8 @@ import {
   notes,
   recipeIngredients,
   recipeLinks,
+  recipeMassFlowStages,
+  recipeMassFlows,
   recipeRevisions,
   recipeStepIngredients,
   recipeSteps,
@@ -35,11 +37,14 @@ import {
   unitKind,
 } from '@/lib/domain/units';
 import type {
+  AddMassFlowInput,
   AddNoteInput,
   BackfillRevisionInput,
   CreateRecipeInput,
+  DescribeMechanismInput,
   IngredientLineInput,
   LogExperimentInput,
+  MassFlowInput,
   NoteInput,
   ReviseRecipeInput,
   StepInput,
@@ -289,29 +294,96 @@ async function writeRevisionBody(
   }
 }
 
+type NoteSubject = {
+  recipeId?: string;
+  revisionId?: string;
+  stepId?: string;
+  ingredientId?: string;
+  experimentId?: string;
+};
+
+/**
+ * The next free `notes.position` for one subject.
+ *
+ * A subject is whichever of the five columns is set — the check constraint
+ * `note_has_exactly_one_subject` guarantees there is exactly one — so this
+ * is `MAX(position) + 1` over the notes already hanging off it, and the
+ * first note on a subject gets 1.
+ *
+ * The predicate names the one column that is set rather than testing all
+ * five, so `idx_notes_recipe`, `idx_notes_revision` and
+ * `idx_notes_ingredient` are usable and the lookup stays bounded by the
+ * notes on that one subject.
+ *
+ * **No lock, and no unique index behind it.** Two connectors adding a note
+ * to the same recipe at the same moment can both read the same maximum and
+ * both write it. That is harmless here and locking for it would be worse:
+ * `position` is the *tiebreak* under `created_at`, not the sort key, and
+ * two concurrent transactions have two different `now()` values, so the
+ * pair is still totally ordered and still stable. A unique index would
+ * turn a harmless collision into a refused write on the second author.
+ */
+async function nextNotePosition(tx: Tx, subject: NoteSubject): Promise<number> {
+  const where = subject.recipeId
+    ? eq(notes.recipeId, subject.recipeId)
+    : subject.revisionId
+      ? eq(notes.revisionId, subject.revisionId)
+      : subject.stepId
+        ? eq(notes.stepId, subject.stepId)
+        : subject.ingredientId
+          ? eq(notes.ingredientId, subject.ingredientId)
+          : subject.experimentId
+            ? eq(notes.experimentId, subject.experimentId)
+            : null;
+  // No subject at all is a programming error the check constraint would
+  // catch on insert; there is nothing to count against, so start at 1.
+  if (!where) return 1;
+
+  const [row] = await tx
+    .select({ max: sql<number | null>`MAX(${notes.position})` })
+    .from(notes)
+    .where(where);
+  return (row?.max ?? 0) + 1;
+}
+
 /**
  * Insert notes and their citations against a single subject column.
  * Returns the new note ids in the order given.
+ *
+ * **This is the only insert path for `notes` and `note_sources`**, which is
+ * what lets `position` be assigned in one place. `createRecipe`,
+ * `reviseRecipe`, `backfillRevision`, `addNote` and `logExperiment` all
+ * come through here; nothing else touches either table except
+ * `describeMechanism`, which updates one column on a note that exists.
+ *
+ * The array's own order is the order that gets stored — a caller writing
+ * four mechanisms in the order a cook meets them gets them back that way,
+ * on the recipe page and on both science screens. Before this column the
+ * order came back as whatever the planner returned, because every note in
+ * one call shares `created_at`; see the comment on `notes.position`.
  */
 async function writeNotes(
   tx: Tx,
-  subject: {
-    recipeId?: string;
-    revisionId?: string;
-    stepId?: string;
-    ingredientId?: string;
-    experimentId?: string;
-  },
+  subject: NoteSubject,
   list: NoteInput[] | undefined,
 ): Promise<string[]> {
   const ids: string[] = [];
-  for (const note of list ?? []) {
+  if (!list?.length) return ids;
+
+  // Read once, then count up. One statement per call rather than one per
+  // note, and correct inside the call because nothing else writes to this
+  // subject while the transaction is open.
+  let position = await nextNotePosition(tx, subject);
+
+  for (const note of list) {
     const inserted = await tx
       .insert(notes)
       .values({
         kind: note.kind,
         title: note.title ?? null,
         body: note.body,
+        conditions: note.conditions ?? [],
+        position: position++,
         recipeId: subject.recipeId ?? null,
         revisionId: subject.revisionId ?? null,
         stepId: subject.stepId ?? null,
@@ -322,6 +394,11 @@ async function writeNotes(
 
     const noteId = inserted[0]!.id;
     ids.push(noteId);
+    // A note is written once and its citations with it, so the position of
+    // a source is simply its index in the list — there is no earlier
+    // source on this note to count past. 1-based to match the backfill in
+    // migration 0006, which numbers from row_number().
+    let sourcePosition = 1;
     for (const source of note.sources ?? []) {
       await tx.insert(noteSources).values({
         noteId,
@@ -329,10 +406,74 @@ async function writeNotes(
         title: source.title ?? null,
         citation: source.citation ?? null,
         accessedAt: source.accessedAt ?? null,
+        position: sourcePosition++,
       });
     }
   }
   return ids;
+}
+
+/**
+ * Write the mass flow figure for a revision.
+ *
+ * Append-only, and the only shape of write this table has. There is no
+ * update path and no delete path, for the reason the whole model has none:
+ * the numbers are a record of a batch that was actually weighed, and a
+ * figure that can be rewritten is a measurement that can be quietly
+ * replaced. A revision may be given one figure, once.
+ *
+ * The refusal is the half that makes the addition legal. `UNIQUE
+ * (revision_id)` would raise a constraint violation on its own; this reads
+ * the stored row first so the caller is told what is already there and that
+ * a revise is the way to record a different batch.
+ */
+async function writeMassFlow(
+  tx: Tx,
+  revisionId: string,
+  massFlow: MassFlowInput,
+): Promise<string> {
+  const existing = await tx
+    .select({ id: recipeMassFlows.id, createdAt: recipeMassFlows.createdAt })
+    .from(recipeMassFlows)
+    .where(eq(recipeMassFlows.revisionId, revisionId))
+    .limit(1);
+  if (existing[0]) {
+    throw new ConflictError(
+      'This revision already has a mass flow figure, recorded on ' +
+        `${existing[0].createdAt.toISOString().slice(0, 10)}. A figure ` +
+        'cannot be changed once it is written: it records what a batch ' +
+        'weighed. To record a different batch, add a revision with ' +
+        'revise_recipe and send the figure with it.',
+    );
+  }
+
+  const flowRow = await tx
+    .insert(recipeMassFlows)
+    .values({
+      revisionId,
+      netChangePercent: num(massFlow.netChangePercent),
+      ratePercentPerDay: num(massFlow.ratePercentPerDay),
+      note: massFlow.note ?? null,
+    })
+    .returning({ id: recipeMassFlows.id });
+  const massFlowId = flowRow[0]!.id;
+
+  for (const [index, stage] of massFlow.stages.entries()) {
+    await tx.insert(recipeMassFlowStages).values({
+      massFlowId,
+      position: index,
+      label: stage.label,
+      quantity: num(stage.quantity),
+      quantityMax: num(stage.quantityMax),
+      unit: normaliseUnit(stage.unit),
+      durationMinutes: stage.durationMinutes ?? null,
+      durationMaxMinutes: stage.durationMaxMinutes ?? null,
+      emphasis: stage.emphasis ?? false,
+      rawText: stage.rawText ?? null,
+    });
+  }
+
+  return massFlowId;
 }
 
 /** Replace a recipe's outgoing links. Unknown targets are reported, not silent. */
@@ -546,6 +687,7 @@ export async function createRecipe(
       input.ingredients ?? [],
       input.steps ?? [],
     );
+    if (input.massFlow) await writeMassFlow(tx, revisionId, input.massFlow);
     await applyTaxonomy(tx, recipeId, input.categories);
     await writeNotes(tx, { recipeId }, input.notes);
     const unresolvedLinks = await applyLinks(tx, recipeId, input.links);
@@ -684,6 +826,11 @@ export async function reviseRecipe(
     }
 
     await writeRevisionBody(tx, revisionId, ingredientLines, stepList);
+    // Deliberately not carried forward when omitted, unlike the ingredients
+    // and the steps above. Those describe intent, and an unchanged intent
+    // is still true of the new version. A mass flow is a measurement of one
+    // batch, and copying it into a version nobody weighed would invent one.
+    if (input.massFlow) await writeMassFlow(tx, revisionId, input.massFlow);
     await applyTaxonomy(tx, recipe.id, input.categories);
     await writeNotes(tx, { revisionId }, input.notes);
     const unresolvedLinks = input.links
@@ -816,6 +963,7 @@ export async function backfillRevision(
       input.ingredients ?? [],
       input.steps ?? [],
     );
+    if (input.massFlow) await writeMassFlow(tx, revisionId, input.massFlow);
     await writeNotes(tx, { revisionId }, input.notes);
 
     // Deliberately no update to `recipes`: not the title, not the summary,
@@ -1009,11 +1157,173 @@ export async function addNote(
         kind: input.kind,
         title: input.title,
         body: input.body,
+        conditions: input.conditions,
         sources: input.sources,
       },
     ]);
 
     return { noteId: noteId! };
+  });
+}
+
+/**
+ * Attach a mass flow figure to a revision that already exists.
+ *
+ * **Why this is not an edit.** The append-only rule says a stored revision
+ * is never changed — its ingredients, its steps, its rationale are what
+ * they were. This adds a child row against a named revision and touches no
+ * column of it, which is exactly what `addNote` has always done: a note
+ * added today renders on a revision written last year and nobody calls that
+ * a rewrite. R-SCR-39 makes the figure a MAY, so a revision without one is
+ * already drawn correctly; this can only turn absent into present.
+ *
+ * The half that keeps it honest is `writeMassFlow`'s refusal. A revision
+ * takes one figure and then refuses another, with an error that says what
+ * is stored and that a revise is how a different batch gets recorded. So
+ * this write is add-once, never change.
+ *
+ * It exists because no other path can reach the archive. `pnpm ingest`
+ * skips a recipe that exists and `--force` adds revisions; a revise makes a
+ * new version, and a version whose only change is a diagram breaks "every
+ * revision records why it exists" and moves a number that is in URLs and in
+ * the keys that remember ticked ingredients.
+ */
+export async function addMassFlow(
+  input: AddMassFlowInput,
+): Promise<{ slug: string; revisionNumber: number; massFlowId: string }> {
+  return withTransaction(async (tx) => {
+    const found = await tx
+      .select({ id: recipes.id, currentRevisionId: recipes.currentRevisionId })
+      .from(recipes)
+      .where(eq(recipes.slug, input.slug))
+      .limit(1);
+    if (!found[0]) throw new NotFoundError(`No recipe "${input.slug}".`);
+
+    let revisionId = found[0].currentRevisionId;
+    let revisionNumber: number;
+
+    if (input.revisionNumber != null) {
+      const rev = await tx
+        .select({ id: recipeRevisions.id })
+        .from(recipeRevisions)
+        .where(
+          and(
+            eq(recipeRevisions.recipeId, found[0].id),
+            eq(recipeRevisions.revisionNumber, input.revisionNumber),
+          ),
+        )
+        .limit(1);
+      if (!rev[0]) {
+        throw new NotFoundError(
+          `Recipe "${input.slug}" has no revision ${input.revisionNumber}.`,
+        );
+      }
+      revisionId = rev[0].id;
+      revisionNumber = input.revisionNumber;
+    } else {
+      if (!revisionId) {
+        throw new NotFoundError(
+          `Recipe "${input.slug}" has no current revision to describe.`,
+        );
+      }
+      const rev = await tx
+        .select({ revisionNumber: recipeRevisions.revisionNumber })
+        .from(recipeRevisions)
+        .where(eq(recipeRevisions.id, revisionId))
+        .limit(1);
+      revisionNumber = rev[0]!.revisionNumber;
+    }
+
+    const massFlowId = await writeMassFlow(tx, revisionId, {
+      stages: input.stages,
+      netChangePercent: input.netChangePercent,
+      ratePercentPerDay: input.ratePercentPerDay,
+      note: input.note,
+    });
+
+    // Nothing on `recipes` and nothing on `recipe_revisions` moves — not the
+    // current revision pointer, not a single stored column. The same
+    // restraint `backfillRevision` keeps, and for the same reason.
+    return { slug: input.slug, revisionNumber, massFlowId };
+  });
+}
+
+/**
+ * Give a science note the conditions it holds under.
+ *
+ * The same shape of write as `addMassFlow`, one level down, and the same
+ * argument: every science note in the archive was written before the column
+ * existed, and a note is append-only — the model's answer to a wrong note
+ * is a `correction`, not an edit. This fills a field that has never held a
+ * value, so it can only turn absent into present. A note whose conditions
+ * are already written is refused, and the error says what is there.
+ *
+ * `notes.updatedAt` moves, because the record of the note did change. That
+ * column has existed since the first migration and nothing has ever moved
+ * it, which is the point: this is the first write that has anything to say.
+ *
+ * WHY THE ROW IS LOCKED AND THE TEST IS WRITTEN TWICE. "Written once" is
+ * enforced here and nowhere else. `addMassFlow` makes the same promise and
+ * has `uq_mass_flow_revision` standing behind it, so its read-then-write is
+ * belt over braces; an array column has no constraint of that shape, and a
+ * bare read-then-write is only advisory under READ COMMITTED. Two callers
+ * that describe the same note at the same time both read `{}`, both pass
+ * the guard, and the second silently replaces the first — which is the one
+ * thing this whole function exists to make impossible, and the connector is
+ * multi-client by design, so it is reachable rather than theoretical.
+ *
+ * `FOR UPDATE` makes the second caller wait on the row. READ COMMITTED then
+ * re-reads it after the first commits, so the second sees the stored
+ * conditions and is refused with the same sentence a sequential caller
+ * gets, naming what is there. The emptiness test repeated in the UPDATE's
+ * own WHERE clause is the backstop: it cannot report what is stored, but it
+ * refuses rather than overwrites if the lock is ever lost.
+ */
+export async function describeMechanism(
+  input: DescribeMechanismInput,
+): Promise<{ noteId: string; conditions: string[] }> {
+  return withTransaction(async (tx) => {
+    const found = await tx
+      .select({
+        id: notes.id,
+        kind: notes.kind,
+        title: notes.title,
+        conditions: notes.conditions,
+      })
+      .from(notes)
+      .where(eq(notes.id, input.noteId))
+      .limit(1)
+      .for('update');
+    const note = found[0];
+    if (!note) throw new NotFoundError(`No note with id "${input.noteId}".`);
+
+    if (note.conditions.length > 0) {
+      throw new ConflictError(
+        `That note already states its conditions: ` +
+          `${note.conditions.join(' · ')}. They cannot be changed. If they ` +
+          'are wrong, add a note of kind "correction" that says so.',
+      );
+    }
+
+    const written = await tx
+      .update(notes)
+      .set({ conditions: input.conditions, updatedAt: new Date() })
+      .where(
+        and(
+          eq(notes.id, input.noteId),
+          sql`cardinality(${notes.conditions}) = 0`,
+        ),
+      )
+      .returning({ id: notes.id });
+
+    if (written.length === 0) {
+      throw new ConflictError(
+        'That note states its conditions already. They cannot be changed. ' +
+          'If they are wrong, add a note of kind "correction" that says so.',
+      );
+    }
+
+    return { noteId: input.noteId, conditions: input.conditions };
   });
 }
 

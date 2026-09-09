@@ -18,20 +18,18 @@ const PHONE = { width: 390, height: 844 };
 
 /** Click through to the built list and wait for it to actually be there. */
 async function openList(page: import('@playwright/test').Page) {
-  await page.locator('.basket-button').click();
+  await page.locator('[data-basket-control]').click();
   // The control is a link, so the rows arrive after a navigation. Measuring
   // before they land reads as "0 items", which is how the first draft of
   // these tests failed.
-  await expect(page.locator('.shopping-item').first()).toBeVisible();
+  await expect(page.locator('[data-shopping-item]').first()).toBeVisible();
 }
 
 async function collect(page: import('@playwright/test').Page, slugs: string[]) {
   for (const slug of slugs) {
     await page.goto(`/recipes/${slug}`);
-    await page.getByRole('button', { name: /add to shopping list/i }).click();
-    await expect(
-      page.getByRole('button', { name: /in shopping list/i }),
-    ).toBeVisible();
+    await page.getByRole('button', { name: /add to list/i }).click();
+    await expect(page.getByRole('button', { name: /in list/i })).toBeVisible();
   }
 }
 
@@ -43,7 +41,7 @@ test.describe('shopping on a phone', () => {
   }) => {
     await collect(page, ['baumy-biltong', 'berlin-crayfish-boil']);
 
-    const control = page.locator('.basket-button');
+    const control = page.locator('[data-basket-control]');
     await expect(control).toBeVisible();
 
     const box = await control.boundingBox();
@@ -58,13 +56,13 @@ test.describe('shopping on a phone', () => {
     await collect(page, ['baumy-biltong', 'berlin-crayfish-boil']);
     await openList(page);
 
-    await expect(page).toHaveURL(/\/shopping-list\?.*r=baumy-biltong/);
+    await expect(page).toHaveURL(/\/list\?.*r=baumy-biltong/);
 
     // Ingredients, with a tickable box each — not recipe titles with a ×.
-    const rows = page.locator('.shopping-item');
+    const rows = page.locator('[data-shopping-item]');
     expect(await rows.count()).toBeGreaterThan(10);
     expect(
-      await page.locator('.shopping-item input[type=checkbox]').count(),
+      await page.locator('[data-shopping-item] input[type=checkbox]').count(),
     ).toBe(await rows.count());
   });
 
@@ -75,7 +73,7 @@ test.describe('shopping on a phone', () => {
     await openList(page);
 
     const headings = await page
-      .locator('.shopping-group-heading')
+      .locator('[data-shopping-group]')
       .allTextContents();
     // Produce leads and cupboard staples trail, the way a shop is walked.
     expect(headings[0]).toMatch(/produce/i);
@@ -83,23 +81,36 @@ test.describe('shopping on a phone', () => {
       headings.findIndex((h) => /spices/i.test(h)),
     );
 
-    // Every row names the recipe that put it there.
-    const salt = page.locator('.shopping-item', { hasText: 'Salt' }).first();
-    await expect(salt.locator('.shopping-from')).toContainText(/Biltong|Boil/);
+    // Every row names the recipe that put it there. M6 draws that as
+    // `F/List mark` — an 8px accent square and the recipe's title, linked at
+    // its page — where the old markup had a `.shopping-from` run of text, so
+    // the assertion is now on the link the chip actually is.
+    const salt = page
+      .locator('[data-shopping-item]', { hasText: 'Salt' })
+      .first();
+    await expect(salt.locator('a[href^="/recipes/"]').first()).toContainText(
+      /Biltong|Boil/,
+    );
   });
 
   test('tick all ticks everything, and unticks it again', async ({ page }) => {
     await collect(page, ['baumy-biltong']);
     await openList(page);
 
-    const total = await page.locator('.shopping-item').count();
-    const counter = page.locator('.checklist-head .faint');
+    const total = await page.locator('[data-shopping-item]').count();
+    // M6 rebuilt the bar as the design's `Tick all`: R-CMP-12 asks for an
+    // INDETERMINATE middle state, and `indeterminate` is a DOM property with
+    // no attribute that React cannot set declaratively — so the control is a
+    // `<button role="checkbox">` carrying `aria-checked="mixed"`, not an
+    // `<input>`, and it is driven by role rather than by `.check()`. The
+    // readout reads "0 of 24 in the trolley", which is the design's wording.
+    const counter = page.locator('[data-checklist-head]');
 
-    await expect(counter).toContainText(`0 / ${total}`);
-    await page.locator('.check-all input').check();
-    await expect(counter).toContainText(`${total} / ${total}`);
-    await page.locator('.check-all input').uncheck();
-    await expect(counter).toContainText(`0 / ${total}`);
+    await expect(counter).toContainText(`0 of ${total} in the trolley`);
+    await page.getByRole('checkbox', { name: /tick everything/i }).click();
+    await expect(counter).toContainText(`${total} of ${total}`);
+    await page.getByRole('checkbox', { name: /untick everything/i }).click();
+    await expect(counter).toContainText(`0 of ${total}`);
   });
 
   test('a section heading stands clear of the row above it', async ({
@@ -111,12 +122,14 @@ test.describe('shopping on a phone', () => {
     // Measured, not asserted from the markup: the complaint was that
     // headings touched their rows, which a selector cannot see.
     const gap = await page.evaluate(() => {
-      const headings = document.querySelectorAll('.shopping-group-heading');
+      const headings = document.querySelectorAll('[data-shopping-group]');
       const heading = headings[1] as HTMLElement | undefined;
       if (!heading) return null;
       const previous = heading
         .closest('section')
-        ?.previousElementSibling?.querySelector('.shopping-item:last-child');
+        ?.previousElementSibling?.querySelector(
+          '[data-shopping-item]:last-child',
+        );
       if (!previous) return null;
       return (
         heading.getBoundingClientRect().top -
@@ -133,9 +146,11 @@ test.describe('scaling a recipe', () => {
     await page.goto('/recipes/baumy-biltong');
 
     const beef = page
-      .locator('.ingredient-list li', { hasText: 'Beef silverside' })
+      .locator('[data-checklist] [role=listitem]', {
+        hasText: 'Beef silverside',
+      })
       .first()
-      .locator('.amount');
+      .locator('> span:nth-of-type(2)');
 
     await expect(beef).toHaveText('10 kg');
     await page.getByRole('button', { name: '×2', exact: true }).click();
@@ -151,9 +166,9 @@ test.describe('scaling a recipe', () => {
     // of salt rendered as "139 g" on a page nobody had scaled. Rounding a
     // scaled amount is helpful; rounding the recipe's own is a rewrite.
     const salt = page
-      .locator('.ingredient-list li', { hasText: 'Salt' })
+      .locator('[data-checklist] [role=listitem]', { hasText: 'Salt' })
       .first()
-      .locator('.amount');
+      .locator('> span:nth-of-type(2)');
 
     await expect(salt).toHaveText('138.5 g');
     await page.getByRole('button', { name: '×2', exact: true }).click();
@@ -167,11 +182,13 @@ test.describe('scaling a recipe', () => {
   }) => {
     await page.goto('/recipes/baumy-biltong');
 
-    const box = page.locator('.scale-custom input');
+    const box = page.locator('[data-batch-control] input');
     const beef = page
-      .locator('.ingredient-list li', { hasText: 'Beef silverside' })
+      .locator('[data-checklist] [role=listitem]', {
+        hasText: 'Beef silverside',
+      })
       .first()
-      .locator('.amount');
+      .locator('> span:nth-of-type(2)');
 
     // The first version held one controlled number, so "0" and "0." were
     // rejected mid-word and React snapped the box back with the caret after
@@ -198,7 +215,7 @@ test.describe('scaling a recipe', () => {
     page,
   }) => {
     await page.goto('/recipes/baumy-biltong');
-    const box = page.locator('.scale-custom input');
+    const box = page.locator('[data-batch-control] input');
 
     await box.click();
     await page.keyboard.press('Control+a');
@@ -213,9 +230,9 @@ test.describe('scaling a recipe', () => {
   }) => {
     await page.goto('/recipes/baumy-biltong');
 
-    const yieldCell = page
-      .locator('table tr', { hasText: 'Yield' })
-      .locator('td.numeric');
+    // "At a glance" is F/Stat now, not a table: an accent micro-label over a
+    // mono figure, with `data-stat` naming the row it replaces.
+    const yieldCell = page.locator('[data-stat=yield]');
 
     // The scale used to live inside the ingredient list, where nothing else
     // could see it: at ×3 the table said "4.5 kg dried" while the readout
@@ -225,15 +242,19 @@ test.describe('scaling a recipe', () => {
     await page.getByRole('button', { name: '×3', exact: true }).click();
     await expect(yieldCell).toContainText('13.5 kg');
     await expect(yieldCell).toContainText('×3 batch');
-    await expect(page.locator('.scale-yield')).toContainText('13.5 kg');
+    await expect(page.locator('[data-batch-readout]')).toContainText('13.5 kg');
   });
 
   test('scaling reports the yield it produces', async ({ page }) => {
     await page.goto('/recipes/baumy-biltong');
 
-    await expect(page.locator('.scale-yield')).toHaveCount(0);
+    // Form B's readout is drawn at ×1 too now — `recipe-1280.html:855` draws
+    // MAKES 4.5 KG with ×1 selected, and that line is Form B's only statement
+    // of what one batch is. The old build showed it only when the scale was
+    // not 1, which is what this line used to assert.
+    await expect(page.locator('[data-batch-readout]')).toContainText('4.5 kg');
     await page.getByRole('button', { name: '×2', exact: true }).click();
-    await expect(page.locator('.scale-yield')).toContainText('9 kg');
+    await expect(page.locator('[data-batch-readout]')).toContainText('9 kg');
   });
 });
 
@@ -261,22 +282,22 @@ test.describe('amounts keep the unit the recipe wrote', () => {
 
     // Volume, spoons: the reason this was noticed.
     await expect(
-      page.locator('.shopping-item', { hasText: 'Sugar' }).first(),
+      page.locator('[data-shopping-item]', { hasText: 'Sugar' }).first(),
     ).toContainText('2 tbsp');
     await expect(
-      page.locator('.shopping-item', { hasText: 'Black pepper' }).first(),
+      page.locator('[data-shopping-item]', { hasText: 'Black pepper' }).first(),
     ).toContainText('1 tsp');
     // Volume, cups.
     await expect(
-      page.locator('.shopping-item', { hasText: 'Mirepoix' }).first(),
+      page.locator('[data-shopping-item]', { hasText: 'Mirepoix' }).first(),
     ).toContainText('2 cups');
     // Mass, imperial: these convert cleanly to grams, which is exactly why
     // they were being converted. A shop still sells them by the pound.
     await expect(
-      page.locator('.shopping-item', { hasText: 'Tomato paste' }).first(),
+      page.locator('[data-shopping-item]', { hasText: 'Tomato paste' }).first(),
     ).toContainText('6 oz');
     await expect(
-      page.locator('.shopping-item', { hasText: 'Oxtail' }).first(),
+      page.locator('[data-shopping-item]', { hasText: 'Oxtail' }).first(),
     ).toContainText('1 lb');
   });
 
@@ -290,11 +311,18 @@ test.describe('amounts keep the unit the recipe wrote', () => {
     const strays = await page.evaluate(() => {
       const UNITS = /\b(g|kg|mg|oz|lb|lbs|ml|l|tsp|tbsp|cups?)\b/g;
       const bad: string[] = [];
-      for (const item of document.querySelectorAll('.shopping-item')) {
-        const amount =
-          item.querySelector('.shopping-amount')?.textContent ?? '';
-        const from = item.querySelector('.shopping-from')?.textContent ?? '';
-        const name = item.querySelector('.shopping-what')?.textContent ?? '';
+      for (const item of document.querySelectorAll('[data-shopping-item]')) {
+        // M6 draws the row as `F/List row`, whose three element children are
+        // the tick box, the amount column and the column holding the name,
+        // the source chips and the quoted original lines. The old markup's
+        // `.shopping-amount`, `.shopping-from` and `.shopping-what` hooks
+        // went with it; reading them now would leave every string empty and
+        // this sweep would pass without testing anything.
+        const row = item.firstElementChild;
+        const amount = row?.children[1]?.textContent ?? '';
+        const column = row?.children[2];
+        const from = column?.textContent ?? '';
+        const name = column?.firstElementChild?.textContent ?? '';
         for (const unit of amount.match(UNITS) ?? []) {
           const singular = unit.replace(/s$/, '');
           const written = new RegExp(`\\d\\s*${singular}s?\\b`, 'i');
@@ -314,7 +342,7 @@ test.describe('amounts keep the unit the recipe wrote', () => {
     // "12 pieces" of something you cannot buy. They stay apart, and each
     // reads as English rather than "2 clove".
     const garlic = page
-      .locator('.shopping-item', { hasText: 'Garlic' })
+      .locator('[data-shopping-item]', { hasText: 'Garlic' })
       .first();
     await expect(garlic).toContainText('2 cloves');
     await expect(garlic).toContainText('heads');

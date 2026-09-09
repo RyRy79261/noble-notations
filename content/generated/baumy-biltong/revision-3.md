@@ -4,7 +4,6 @@ slug: 'baumy-biltong'
 kind: 'recipe'
 revision: 3
 source: 'import'
-created: '2026-08-29T21:34:00.764Z'
 generated: 'true'
 ---
 
@@ -18,14 +17,14 @@ The current specification: a 10 kg batch with 321.7 g of wash and a dredge sized
 
 Added the masala base that defines the profile from here on: 54 g tandoori masala (about a third of total spice weight) plus 3 g garam masala. Coriander raised sharply from 3.53 to 5.92 g/kg. Salt settled at 10% below the batch 1 rate. The wash was left unchanged despite the batch 2 note saying to increase it.
 
-## Classification
+## Categories
 
-- **cuisine**: South African
-- **texture**: chewy
-- **preservation**: curing, air-drying
-- **technique**: dry-curing, air-drying
-- **equipment**: drying box, spice grinder
-- **course**: snack
+- **Texture**: Chewy
+- **Preservation**: Curing, Air-drying
+- **Technique**: Dry-curing, Air-drying
+- **Equipment**: Drying box, Spice grinder
+- **Course**: Snack
+- **Cuisine**: South African
 
 ## Ingredients
 
@@ -55,21 +54,21 @@ Added the masala base that defines the profile from here on: 54 g tandoori masal
 
 ### Prep
 
-1. Weigh the whole silverside, then cut it into strips along the grain. Weigh each strip and record it — this is the number every later drying calculation is measured against. _(butchery)_
-2. Grind the coriander on its own, coarsely. Grind the remaining whole spices separately and combine into the dredge. _(grinding)_
+1. Weigh the whole silverside, then cut it into strips along the grain. Weigh each strip and record it — this is the number every later drying calculation is measured against. _(Butchery)_
+2. Grind the coriander on its own, coarsely. Grind the remaining whole spices separately and combine into the dredge. _(Grinding)_
    > Coriander is the one that matters here: you want visible pieces in the finished biltong.
 
 ### Cure
 
 3. Combine the wash ingredients. Work fast and keep the meat cold — as it warms, fat and myoglobin bleed into the wash and it stops being usable.
-4. Wash each strip thoroughly, then dredge it in the spice mix until fully coated. _(dry-curing)_
+4. Wash each strip thoroughly, then dredge it in the spice mix until fully coated. _(Dry-curing)_
    > Make more dredge than you think you need. Running out part-way through leaves the last pieces bare.
-5. Rest the spiced strips in the fridge for one to two nights. This is functionally a dry brine — weigh the pieces before they go in. _(1440 min · dry-brining)_
+5. Rest the spiced strips in the fridge for one to two nights. This is functionally a dry brine — weigh the pieces before they go in. _(1440 min · Dry-brining)_
 
 ### Hang
 
 6. Hook each piece and hang it with air moving freely around it. Record the hook weight so net weights stay honest.
-7. Dry until the piece has lost roughly 55% of its net weight. Expect about 13–15 days for a medium piece; weight loss averages 4.21% of initial weight per day, and small pieces go much faster. _(18720 min · air-drying)_
+7. Dry until the piece has lost roughly 55% of its net weight. Expect about 13–15 days for a medium piece; weight loss averages 4.21% of initial weight per day, and small pieces go much faster. _(18720 min · Air-drying)_
 
 ## Notes
 

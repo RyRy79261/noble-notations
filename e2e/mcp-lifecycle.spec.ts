@@ -210,7 +210,10 @@ test.describe('the website serves what the MCP wrote', () => {
     await expect(
       page.getByRole('heading', { name: /dan dan noodles/i, level: 1 }),
     ).toBeVisible();
-    await expect(page.getByText(/revision 2/i).first()).toBeVisible();
+    // The revision badge spells its ordinal — `SECOND REVISION`, which is
+    // what `revisionOrdinal` returns and what the design draws on every
+    // revision mark, timeline entry and page kicker.
+    await expect(page.getByText(/second revision/i).first()).toBeVisible();
   });
 
   test('the equipment tag carries the blurb the MCP wrote', async ({
@@ -221,37 +224,39 @@ test.describe('the website serves what the MCP wrote', () => {
     // Located by href, not by accessible name: the name includes the facet
     // prefix ("Equipment Blender"), which is right for a screen reader and
     // brittle to assert on.
-    const tag = page.locator('a[href="/categories/equipment/blender"]');
+    const tag = page.locator('a[href="/classes/equipment/blender"]');
     await expect(tag).toBeVisible();
 
-    const tooltipId = await tag.getAttribute('aria-describedby');
-    expect(tooltipId).toBeTruthy();
+    // Absent until hover, then shown — the whole point of the tooltip. The
+    // panel is mounted only while it is open and `aria-describedby` appears
+    // on the trigger at the same moment; see `classes.spec.ts`.
+    const tooltip = page.getByRole('tooltip');
+    await expect(tooltip).toHaveCount(0);
+    await expect(tag).not.toHaveAttribute('aria-describedby', /.+/);
 
-    const tooltip = page.locator(`#${tooltipId}`);
-    await expect(tooltip).toContainText(/emulsify/i);
-
-    // Hidden until hover, then shown — the whole point of the tooltip.
-    await expect(tooltip).toBeHidden();
     await tag.hover();
+
     await expect(tooltip).toBeVisible();
+    await expect(tooltip).toContainText(/emulsify/i);
+    await expect(tag).toHaveAttribute('aria-describedby', /.+/);
   });
 
   test('renders the optional hero and step images', async ({ page }) => {
     await page.goto(`/recipes/${SLUG}`);
 
-    const hero = page.locator('.recipe-hero-image img');
+    const hero = page.locator('[data-hero-image] img');
     await expect(hero).toBeVisible();
     await expect(hero).toHaveAttribute('alt', /finished bowl/i);
 
-    const stepImage = page.locator('.step-image img');
+    const stepImage = page.locator('[data-step-image] img');
     await expect(stepImage).toBeVisible();
     await expect(stepImage).toHaveAttribute('alt', /mid-blend/i);
 
     // Both are optional: a recipe without them renders no figure at all
     // rather than an empty frame or a broken-image icon.
     await page.goto('/recipes/pickled-jalapenos');
-    await expect(page.locator('.recipe-hero-image')).toHaveCount(0);
-    await expect(page.locator('.step-image')).toHaveCount(0);
+    await expect(page.locator('[data-hero-image]')).toHaveCount(0);
+    await expect(page.locator('[data-step-image]')).toHaveCount(0);
   });
 
   test('the revision history lists why each revision exists', async ({

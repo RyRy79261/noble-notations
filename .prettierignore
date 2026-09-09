@@ -6,3 +6,4 @@ drizzle
 # The archive is a verbatim provenance record and content/generated/ is
 # machine-written. Neither should be rewritten by a formatter.
 content
+design/exports

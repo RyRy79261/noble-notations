@@ -6,6 +6,7 @@ import { RecipeDetail } from '@/components/recipe-detail';
 import { DatabaseNotice } from '@/components/database-notice';
 import { recipeJsonLd } from '@/lib/jsonld';
 import { JsonLd } from '@/components/json-ld';
+import { PageHead } from '@/components/f/page-head';
 import { site } from '@/lib/site';
 
 export const dynamic = 'force-dynamic';
@@ -55,11 +56,22 @@ export default async function RecipePage({ params }: Params) {
   } = await safeRead(() => getRecipeBySlug(slug), null);
 
   if (!configured || failed) {
+    // R-STA-01 and R-STA-02. The document kicker still names the screen a
+    // reader asked for, so the notice arrives on a page and not on a blank.
     return (
-      <div className="page">
-        <h1>{slug}</h1>
-        <DatabaseNotice failed={failed} />
-      </div>
+      <>
+        <PageHead
+          left={`Recipes · ${slug}`}
+          leftNarrow={slug}
+          right="Unavailable"
+        />
+        <div className="flex w-full flex-col items-start gap-5 px-4 pt-5.5 pb-12 shell:px-15 shell:pt-8.5 shell:pb-18">
+          <h1 className="m-0 text-40 leading-105 font-serif font-medium tracking-display text-ink shell:text-48 shell:leading-105">
+            {slug}
+          </h1>
+          <DatabaseNotice failed={failed} />
+        </div>
+      </>
     );
   }
   if (!recipe) notFound();

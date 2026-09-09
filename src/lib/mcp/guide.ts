@@ -27,6 +27,11 @@ correct behaviour, not a fault.
 You can add an older version that you find later. Call backfill_revision.
 This adds history. It does not change the recipe that people read.
 
+Two fields were added after the store was full, so two tools fill them on
+a record that is already stored. Call add_mass_flow to say what a dish
+weighs at each stage. Call describe_mechanism to give a science note its
+conditions. Each field is written once. Neither tool changes a value.
+
 Units come from a fixed list. A unit outside it is refused.
 
 After a write, read needsDescription in the result. It names the tags and
@@ -70,6 +75,7 @@ export const GUIDE = {
     'Call upsert_category for each new tag. This gives the tag an explanation.',
     'Call add_note for each thing that you learned that is not an instruction.',
     'Call log_experiment after you cook a batch and measure it.',
+    'Call add_mass_flow or describe_mechanism only for a record that is already stored.',
   ],
 
   noteKinds: {
@@ -107,6 +113,43 @@ export const GUIDE = {
     'upsert_ingredient to add the other names, the density, the category ' +
     'and the possible replacements.',
 
+  /**
+   * D-02. The conditions are a list because R-SCR-41 requires them to stay
+   * separate values, and the one instruction the model gets is this text —
+   * so it names the two mistakes: joining them into a sentence, and
+   * splitting a range that is one condition.
+   */
+  mechanismConditions:
+    'The site draws a science note as a mechanism. A mechanism can carry ' +
+    'conditions: the values that it holds under. Examples: a temperature, ' +
+    'a time, a depth of layer.\n\n' +
+    'Write each condition as a separate value: ["232 °C", "45 min", ' +
+    '"single layer on a rack"]. Do not write them into a sentence. Do not ' +
+    'join them with a comma or a dot. The page draws the separators. Keep ' +
+    'a range in one value: "4 °C → 71 °C" is one condition, not two.\n\n' +
+    'Send conditions to add_note when you write the note. If the note is ' +
+    'already stored, call describe_mechanism. A note states its ' +
+    'conditions once. If they are wrong, add a note of kind "correction".',
+
+  /**
+   * D-12, R-SCR-39. The figure is optional by requirement, so the text has
+   * to say when NOT to send one as clearly as it says how — a mass flow on
+   * every recipe is worse than none, because it stops meaning anything.
+   */
+  massFlow:
+    'A dish can lose or gain a lot of weight while it is made. Biltong of ' +
+    '10 kg raw becomes 4.5 kg dried. The mass flow figure shows what the ' +
+    'food weighs at each stage, so a cook can plan the batch.\n\n' +
+    'Send massFlow only for a dish like that. Most dishes do not need it.\n\n' +
+    'Give the stages in order, first to last. Give two stages at least. ' +
+    'Each stage has a label and one figure. The figure is a weight, a ' +
+    'count or a wait. Write a wait in minutes: 1440 is one day. Do not ' +
+    'give a weight and a wait in the same stage.\n\n' +
+    'The figure belongs to one version, because it records one batch. It ' +
+    'is not copied into the next version. Send it again only when you ' +
+    'weighed that version. To give a stored version its figure, call ' +
+    'add_mass_flow. A version takes one figure and then refuses another.',
+
   images:
     'Images are not necessary. Give a web address for each image. This ' +
     'store keeps notes, not image files. A recipe can have heroImageUrl ' +
@@ -120,8 +163,15 @@ export const GUIDE = {
     'stay on two lines. If an amount is not given, report this. Do not ' +
     'invent an amount.',
 
+  /**
+   * The count was "six" and the registry held seven, because
+   * `backfill_revision` was added and this line was not. It is nine now —
+   * `add_mass_flow` and `describe_mechanism` — and the number is worth
+   * keeping true: an agent that reads "six" and counts nine has no way to
+   * tell which three it must not trust.
+   */
   scopes:
-    'The read tools need the scope noble-notations:read. The six write ' +
+    'The read tools need the scope noble-notations:read. The nine write ' +
     'tools also need noble-notations:write. The system checks the scope on ' +
     'each call.',
 

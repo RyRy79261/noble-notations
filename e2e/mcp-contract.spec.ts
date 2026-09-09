@@ -13,6 +13,38 @@ import { mcpClient, tokens } from './helpers';
 
 const SLUG = 'mcp-contract-laab';
 const SUM_SLUG = 'mcp-contract-nam-jim';
+const FLOW_SLUG = 'mcp-contract-lardo';
+
+/**
+ * The whole registry, sorted.
+ *
+ * Asserted as a set rather than a count, and asserted at all because two
+ * tools and four advertised fields landed in M5.5 without a single test
+ * moving. The scopes on `/connect` and in `docs/mcp-connector.md` name this
+ * list; a tool that appears or disappears without those two moving with it
+ * is drift, and this is the line that says so.
+ */
+const TOOLS = [
+  'add_mass_flow',
+  'add_note',
+  'backfill_revision',
+  'build_shopping_list',
+  'create_recipe',
+  'describe_mechanism',
+  'get_experiment',
+  'get_ingredient',
+  'get_recipe',
+  'get_repository_stats',
+  'get_started',
+  'list_categories',
+  'list_experiments',
+  'list_ingredients',
+  'log_experiment',
+  'revise_recipe',
+  'search_recipes',
+  'upsert_category',
+  'upsert_ingredient',
+];
 
 interface WriteResult {
   slug: string;
@@ -34,6 +66,22 @@ interface RecipeResult {
     quantity: number | null;
     unit: string | null;
     ingredient: { slug: string; name: string } | null;
+  }[];
+}
+
+interface FlowRecipeResult {
+  slug: string;
+  revision: {
+    revisionNumber: number;
+    massFlow:
+      { label: string; value: string | null; emphasis: boolean }[] | null;
+    massFlowSummary: string[];
+  };
+  notes: {
+    id: string;
+    kind: string;
+    title: string | null;
+    conditions: string[];
   }[];
 }
 
@@ -312,6 +360,164 @@ test.describe('MCP contract', () => {
         body: 'The rice caught at the edges; a lower heat next time.',
       }),
     ).resolves.toBeTruthy();
+  });
+
+  test('the registry is exactly the set the connector documents', async () => {
+    const mcp = rw();
+    expect((await mcp.listTools()).sort()).toEqual(TOOLS);
+  });
+
+  /*
+   * D-02 and D-12 — the two fields M5.5 added.
+   *
+   * Both are optional at every layer, which is correct and is also what
+   * makes them dangerous to leave untested: R-SCR-39 makes the figure a MAY
+   * and an empty conditions list is the ordinary case for seven of the
+   * eight note kinds, so a write path that silently stopped carrying either
+   * one would draw a page that looks entirely finished. Deleting
+   * `conditions: note.conditions ?? []` from `writeNotes`, or the
+   * `if (input.massFlow)` from `createRecipe`, left the whole suite green.
+   */
+  test('a mass flow figure and note conditions survive the round trip', async () => {
+    const mcp = rw();
+
+    await mcp.call<WriteResult>('create_recipe', {
+      title: 'Cured lardo',
+      slug: FLOW_SLUG,
+      kind: 'recipe',
+      rationale: 'First working version, written through the connector.',
+      ingredients: [
+        { name: 'Pork back fat', quantity: 3, unit: 'kg' },
+        { name: 'Sea salt', quantity: 400, unit: 'g' },
+      ],
+      steps: [{ instruction: 'Bury the fat in the salt and hold it cold.' }],
+      notes: [
+        {
+          kind: 'science',
+          title: 'Salt drives the water out',
+          body: 'Salt lowers the water activity until spoilage organisms cannot grow.',
+          conditions: ['4 °C', '90 days', 'fully buried'],
+        },
+      ],
+      massFlow: {
+        stages: [
+          { label: 'Raw', quantity: 3, unit: 'kg' },
+          { label: 'Cure', durationMinutes: 129600 },
+          { label: 'Cured', quantity: 2.4, unit: 'kg', emphasis: true },
+        ],
+        netChangePercent: -20,
+        ratePercentPerDay: 0.22,
+      },
+    });
+
+    const recipe = await mcp.call<FlowRecipeResult>('get_recipe', {
+      slug: FLOW_SLUG,
+    });
+
+    const flow = recipe.revision.massFlow;
+    expect(flow?.map((stage) => stage.label)).toEqual(['Raw', 'Cure', 'Cured']);
+    // The stage keeps its own unit and the wait is drawn from minutes, so
+    // this asserts the read layer's formatting as well as the write.
+    expect(flow?.map((stage) => stage.value)).toEqual([
+      '3 kg',
+      '90 d',
+      '2.4 kg',
+    ]);
+    expect(flow?.map((stage) => stage.emphasis)).toEqual([false, false, true]);
+    expect(recipe.revision.massFlowSummary).toEqual([
+      'Net weight loss −20%',
+      'Rate 0.22% per day',
+    ]);
+
+    const mechanism = recipe.notes.find((note) => note.kind === 'science');
+    expect(mechanism?.conditions).toEqual(['4 °C', '90 days', 'fully buried']);
+  });
+
+  test('a version takes one mass flow figure and then refuses another', async () => {
+    const mcp = rw();
+
+    // The figure does not carry forward — it records one batch — so the new
+    // revision starts with none and `add_mass_flow` is the way to give it
+    // one. That is the pair of facts `revise_recipe`'s description states.
+    const revised = await mcp.call<WriteResult>('revise_recipe', {
+      slug: FLOW_SLUG,
+      rationale: 'Ninety days left the middle soft. A hundred and twenty.',
+    });
+
+    const bare = await mcp.call<FlowRecipeResult>('get_recipe', {
+      slug: FLOW_SLUG,
+    });
+    expect(bare.revision.revisionNumber).toBe(revised.revisionNumber);
+    expect(bare.revision.massFlow).toBeNull();
+
+    const stages = [
+      { label: 'Raw', quantity: 3, unit: 'kg' },
+      { label: 'Cured', quantity: 2.1, unit: 'kg', emphasis: true },
+    ];
+    await mcp.call('add_mass_flow', {
+      slug: FLOW_SLUG,
+      revisionNumber: revised.revisionNumber,
+      stages,
+    });
+
+    const filled = await mcp.call<FlowRecipeResult>('get_recipe', {
+      slug: FLOW_SLUG,
+    });
+    expect(filled.revision.massFlow?.map((stage) => stage.value)).toEqual([
+      '3 kg',
+      '2.1 kg',
+    ]);
+
+    // The refusal is the half that makes the addition legal: a figure that
+    // can be rewritten is a measurement that can be quietly replaced.
+    await expect(
+      mcp.call('add_mass_flow', {
+        slug: FLOW_SLUG,
+        revisionNumber: revised.revisionNumber,
+        stages,
+      }),
+    ).rejects.toThrow(/already has a mass flow figure/);
+  });
+
+  test('a stored note states its conditions once', async () => {
+    const mcp = rw();
+
+    // A science note written with no conditions — the state every note in
+    // the archive was in before D-02, and the reason describe_mechanism
+    // exists at all.
+    await mcp.call('add_note', {
+      recipeSlug: FLOW_SLUG,
+      kind: 'science',
+      title: 'Fat softens below body heat',
+      body: 'Back fat is mostly oleic acid, so a thin slice melts in the mouth.',
+    });
+
+    const before = await mcp.call<FlowRecipeResult>('get_recipe', {
+      slug: FLOW_SLUG,
+    });
+    const note = before.notes.find(
+      (candidate) => candidate.title === 'Fat softens below body heat',
+    );
+    expect(note?.conditions).toEqual([]);
+
+    await mcp.call('describe_mechanism', {
+      noteId: note!.id,
+      conditions: ['33 °C', 'sliced to 1 mm'],
+    });
+
+    const after = await mcp.call<FlowRecipeResult>('get_recipe', {
+      slug: FLOW_SLUG,
+    });
+    expect(
+      after.notes.find((candidate) => candidate.id === note!.id)?.conditions,
+    ).toEqual(['33 °C', 'sliced to 1 mm']);
+
+    await expect(
+      mcp.call('describe_mechanism', {
+        noteId: note!.id,
+        conditions: ['20 °C'],
+      }),
+    ).rejects.toThrow(/already states its conditions/);
   });
 
   test('a scope denial is an error result, not an auth challenge', async () => {

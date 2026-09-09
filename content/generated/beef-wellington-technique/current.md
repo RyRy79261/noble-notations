@@ -4,7 +4,6 @@ slug: 'beef-wellington-technique'
 kind: 'research'
 revision: 1
 source: 'import'
-created: '2026-08-29T21:34:01.083Z'
 generated: 'true'
 ---
 
@@ -16,30 +15,38 @@ Research on why Wellingtons fail and what the techniques that fix them are actua
 
 Transcribed from the archive research note.
 
-## Classification
+## Categories
 
-- **cuisine**: British, French
-- **occasion**: celebration
-- **course**: main
-- **technique**: searing, baking
+- **Cuisine**: British, French
+- **Occasion**: Celebration
+- **Course**: Main
+- **Technique**: Searing, Baking
 
 ## Notes
 
-### The octagon sear _(research)_
+### The octagon sear _(science)_
 
 Treating the tenderloin as eight flat faces plus two ends gives even caramelisation while keeping the interior raw. A cylinder seared with single flips browns unevenly and drives heat further into the centre, which is then overcooked by the bake.
 
-### Duxelles as a moisture barrier, not a flavour layer _(research)_
+Conditions: 8 faces + 2 ends · raw interior
+
+### Duxelles as a moisture barrier, not a flavour layer _(science)_
 
 Mushrooms are 80–90% water. The 25–30 minute cook removes about 90% of it; dry-sauté first, add fat after. Cream added near the end sounds like it should make things wetter and does the opposite — the fat emulsifies the residual water and stops it migrating into the pastry.
 
-### Two barriers, two mechanisms _(research)_
+Conditions: 25–30 min · ~90% of the water out · dry sauté, then fat
+
+### Two barriers, two mechanisms _(science)_
 
 Prosciutto works by fat solidifying during the chill into a semi-impermeable layer. A crêpe works by its egg protein structure absorbing a little moisture without collapsing. They are not interchangeable, and using both is not redundant.
 
-### Temperature and carryover _(research)_
+Conditions: dry duxelles + sealed wrap
+
+### Temperature and carryover _(science)_
 
 Start at 220 °C so the butter layers in the pastry expand and set structure before the beef heats, then drop to 190 °C for even penetration. Pull at 52–54 °C: carryover adds about 3 °C during the rest, landing at 54–57 °C for medium-rare.
+
+Conditions: 220 °C then 190 °C · pull 52–54 °C → rests to 54–57 °C
 
 ### Vent the pastry _(warning)_
 

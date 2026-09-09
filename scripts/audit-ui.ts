@@ -43,24 +43,57 @@ const VIEWPORTS = [
   { name: 'desktop-1280', width: 1280, height: 900, touch: false },
 ];
 
+/**
+ * Every route, at its own address.
+ *
+ * The slugs are the ones `pnpm ingest` really loads from `content/` — see
+ * `scripts/seed-data.ts`. A route audited at a slug that is not seeded
+ * reports a 404 as a blocker and hides whatever the real page does.
+ *
+ * The old names (`/categories`, `/experiments`, `/shopping-list`, `/auth`)
+ * are gone from this list on purpose. Auditing a redirect measures the page
+ * it lands on, so it would report the same geometry twice under a name that
+ * no longer exists. The redirects themselves are tested in
+ * `e2e/redirects.spec.ts`, which is where a status code belongs. The one
+ * kept exception is noted where it sits.
+ *
+ * 22 routes × 4 widths × 2 states = 176 page loads. R-ACC-11 and §6 of the
+ * specification now quote that figure; they were written against 18 routes.
+ */
 const ROUTES = [
   '/',
   '/recipes',
   '/recipes/baumy-biltong',
   '/recipes/baumy-biltong/revisions/1',
+  // The runs of one recipe, and one of those runs. Both are new in M2.
+  '/recipes/baumy-biltong/batch-logs',
+  '/recipes/baumy-biltong/batch-logs/biltong-batch-3',
+  // /science and one study. The seed leaves two recipes in
+  // `listScienceIndex().studies`: beef-wellington-technique with four
+  // mechanisms and demi-glace with five — M6 seeded the four the design
+  // draws and D-02 had blocked. Demi-glace is now the longer study page,
+  // and it is also the one carrying a conditions run on every block, so it
+  // is the one that can overflow.
+  '/science',
+  '/science/demi-glace',
   '/cuisines',
   '/cuisines/south-african',
-  '/categories',
-  '/categories/technique/air-drying',
+  '/classes',
+  '/classes/technique/air-drying',
   '/ingredients',
   '/ingredients/salt',
-  '/experiments',
-  '/experiments/biltong-batch-3',
-  '/shopping-list',
+  '/batch-logs',
+  // D-01: the top level detail address answers for a run that names a
+  // recipe and then redirects to the nested one. Every seeded run names a
+  // recipe, so this always makes the hop and the audit measures the nested
+  // page. That is the point of keeping it: a broken hop shows up here as a
+  // 404 blocker at four widths rather than as a dead link nobody clicked.
+  '/batch-logs/biltong-batch-3',
+  '/list',
   '/search?q=biltong',
   '/archive',
   '/connect',
-  '/auth',
+  '/sign-in',
   '/this-page-does-not-exist',
 ];
 

@@ -29,6 +29,8 @@ history is ordered by the latter.
 ## Stack
 
 - **Next.js 16** (App Router) on **React 19**, TypeScript 5.9
+- **Tailwind CSS v4** (configured in CSS, no `tailwind.config.*`) with
+  **shadcn/ui** primitives; tokens live in `src/app/theme.css`
 - **Postgres** via **Drizzle ORM** — Neon in production, plain Postgres locally
 - **MCP** via `mcp-handler` + `@modelcontextprotocol/sdk`, OAuth 2.1 + DCR
 - **pnpm** is the package manager
@@ -62,15 +64,43 @@ drizzle/                  committed SQL migrations
 scripts/                  migrate, ingest, export, token minting
 src/
   app/                    App Router pages, metadata, OG images
+    theme.css             the only stylesheet: Tailwind, the design tokens,
+                          and the base block of seven declarations
+                          preflight has no answer for
     api/mcp/              the MCP endpoint and its OAuth 2.1 + DCR stack
   components/             shared UI
+    ui/                   vendored shadcn/ui primitives. M3 creates it.
   db/                     schema.ts (source of truth) and client.ts
   lib/
     domain/               Zod schemas, units, slugs — the submission contract
     queries/              read.ts and write.ts, the only DB access paths
     mcp/                  tools, OAuth primitives, admin session
+    utils.ts              cn(), the class merger shadcn/ui expects
+components.json           shadcn/ui configuration (css: src/app/theme.css)
+postcss.config.mjs        runs @tailwindcss/postcss
+design/BUILD-PLAN.md      the milestone plan and the design tokens
+design/TOKEN-MAP.md       what each token means and why (D-11)
 docs/mcp-connector.md     connector design reference and its gotchas
 ```
+
+`src/app/theme.css` is the only stylesheet, and `src/app/layout.tsx` is the
+only file that imports it. It is one `@import 'tailwindcss'` — theme,
+preflight and utilities, in their own cascade layers — followed by the
+design's tokens and one `@layer base` block.
+
+That base block is the whole of what `src/app/globals.css` left behind. That
+file was the pre-Tailwind design system, 1,892 lines; M1 to M6 kept it alive
+under a cascade layer called `legacy` with the preflight off, because the
+reset and its base rules fight each other, and M7 deleted the file, the layer
+and the preflight comment together (D-03). Seven declarations had no
+preflight counterpart and are restored in the base block, each with the
+measurement that says why; two more are stated there for clarity, so the
+block holds nine declarations in four rules. Read `design/TOKEN-MAP.md` §10 before you touch them: dropping
+any one of them moves the whole site.
+
+Styling rule of thumb: a component reads a token (R-BLD-02), never a raw
+value, and never a bare class name that no stylesheet defines. A hook a test
+needs is a `data-` attribute, not a class.
 
 ## The four systems
 
@@ -118,6 +148,14 @@ observations. The biltong batch logs are experiments, not recipes.
   file and will drop columns.
 - Scripts run with `NODE_OPTIONS=--conditions=react-server`, because
   `server-only` otherwise resolves to its throwing client entry outside Next.
+- **A Tailwind class string inside a comment is a class string** — and so is
+  one inside a Markdown file this repository tracks. Tailwind v4 scans raw
+  source text, not JSX attributes, so quoting a value read off the design
+  emits a real utility into the production stylesheet, raw hex included, and
+  R-BLD-02 and R-TKN-04 are then broken by a comment. Put a space inside the
+  brackets when quoting one — `bg-[ #FCFAF6 ]` scans to nothing and still
+  greps — and check with
+  `grep -oE '\\#[0-9A-Fa-f]{6}' .next/static/chunks/*.css` after a build.
 
 ## Local development
 
@@ -229,8 +267,9 @@ change, which is a bad trade. The mapping happens at the query boundary:
 `TermView.categoryType` reads from `taxonomyTerms.facet`.
 
 MCP names follow the same vocabulary: `list_categories`,
-`upsert_category`, and the fields `categoryType` and `categories`. The old
-`/taxonomy` URLs redirect permanently to `/categories`.
+`upsert_category`, and the fields `categoryType` and `categories`. The
+reader-facing route is `/classes`; the old `/taxonomy` and `/categories`
+URLs both redirect permanently to it.
 
 ## Note kinds
 

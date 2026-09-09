@@ -73,6 +73,40 @@ export function recipeToMarkdown(
     body.push('## Why this revision', '', recipe.revision.rationale, '');
   }
 
+  /**
+   * The mass flow figure, R-SCR-39. Ordered, so a numbered list: the
+   * position is half of what the figure says, and a bullet list would lose
+   * it. A stage with no value keeps its line — `RecipeView` gives `value`
+   * as null when a stage records only that it happened, and dropping the
+   * line would renumber every stage after it.
+   *
+   * The summary figures stay separate values on one line, joined by the
+   * same U+00B7 the screen draws between them. That character never appears
+   * inside a figure, so the line splits back into the values it was made
+   * from — which is the whole point of storing them separately.
+   *
+   * The emphasised stage keeps its mark. The screen gives it the accent
+   * ground and the accent border, and it is not decoration: it is which
+   * stage answers the question the figure was drawn to answer. A list that
+   * loses it reads as seven equal stages. Markdown has no accent ground, so
+   * the value is emphasised instead — `_4.5 kg_` — which is the same claim
+   * in the medium this file writes in. `massFlowNote` stays out: it is
+   * declared provenance that nothing draws, and the fact it records reaches
+   * the export already through the revision's rationale.
+   */
+  if (recipe.revision.massFlow) {
+    body.push('## Mass flow', '');
+    recipe.revision.massFlow.forEach((stage, index) => {
+      const figure = stage.emphasis ? `_${stage.value}_` : stage.value;
+      const value = stage.value ? ` — ${figure}` : '';
+      body.push(`${index + 1}. **${stage.label}**${value}`);
+    });
+    body.push('');
+    if (recipe.revision.massFlowSummary.length > 0) {
+      body.push(recipe.revision.massFlowSummary.join(' · '), '');
+    }
+  }
+
   if (recipe.terms.length > 0) {
     body.push('## Categories', '');
     const byType = new Map<string, string[]>();
@@ -140,6 +174,14 @@ export function recipeToMarkdown(
         note.body,
         '',
       );
+      // R-SCR-41 keeps a mechanism's conditions as separate values, so they
+      // are joined here with the same U+00B7 the screen draws and nothing
+      // else. A comma would be ambiguous — "4 °C → 71 °C, 4 whites" reads
+      // as one condition or as two depending on who is reading it — and
+      // this separator never occurs inside a condition.
+      if (note.conditions.length > 0) {
+        body.push(`Conditions: ${note.conditions.join(' · ')}`, '');
+      }
       for (const source of note.sources) {
         body.push(`- Source: ${source.url ?? source.title ?? source.citation}`);
       }

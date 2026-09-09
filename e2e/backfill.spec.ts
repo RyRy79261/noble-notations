@@ -147,14 +147,24 @@ test.describe('backfilling earlier revisions', () => {
   }) => {
     await page.goto(`/recipes/${SLUG}`);
 
-    const labels = await page.locator('.timeline .rev-label').allTextContents();
+    // The timeline is F/Revision now: a spelled ordinal in Newsreader over
+    // the date, with `data-revision` carrying the number the old `.rev-label`
+    // text used to.
+    await page.getByRole('tab', { name: 'Revisions' }).click();
+    const order = await page
+      .locator('[data-timeline] [data-revision]')
+      .evaluateAll((els) =>
+        els.map((el) => (el as HTMLElement).dataset.revision),
+      );
     // Newest first by when each version existed: 2 and 1 were written now,
     // 3 describes 2019, so 3 sorts to the bottom despite its number.
-    expect(labels).toEqual(['Revision 2', 'Revision 1', 'Revision 3']);
+    expect(order).toEqual(['2', '1', '3']);
 
-    // And it says why its number and its date disagree.
-    await expect(page.locator('.timeline .rev-when')).toContainText(
-      '2019-11-02',
-    );
+    const backfilled = page.locator('[data-timeline] [data-revision="3"]');
+    await expect(backfilled).toContainText('Third revision');
+    // And it says why its number and its date disagree: the date is when the
+    // version EXISTED, and the note says when it was written down.
+    await expect(backfilled).toContainText('02 NOV 2019');
+    await expect(backfilled).toContainText(/recorded later/i);
   });
 });

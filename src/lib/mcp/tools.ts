@@ -17,10 +17,14 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { z } from 'zod';
 import {
+  addMassFlowSchema,
+  addMassFlowShape,
   addNoteSchema,
   addNoteShape,
   createRecipeSchema,
   createRecipeShape,
+  describeMechanismSchema,
+  describeMechanismShape,
   logExperimentSchema,
   logExperimentShape,
   reviseRecipeSchema,
@@ -50,9 +54,11 @@ import {
   searchRecipes,
 } from '@/lib/queries/read';
 import {
+  addMassFlow,
   addNote,
   ConflictError,
   createRecipe,
+  describeMechanism,
   logExperiment,
   NotFoundError,
   reviseRecipe,
@@ -475,7 +481,12 @@ export function registerTools(server: McpServer): void {
         'in `uses`, but only ones present in `ingredients`. Set `kind` to ' +
         '"preparation" for a component another recipe pulls in (a spice ' +
         'dredge, a demi-glace), "process" for a technique with no fixed ' +
-        'yield, or "research" for a sourced write-up with no steps of its own.',
+        'yield, or "research" for a sourced write-up with no steps of its own.\n\n' +
+        'Send `massFlow` only for a dish that loses or gains weight. The ' +
+        'figure shows what the food weighs at each stage. Most dishes do ' +
+        'not need it.\n\n' +
+        'Give `conditions` to a science note in `notes`. Conditions are ' +
+        'the values the note holds under, such as a temperature and a time.',
       inputSchema: createRecipeShape,
     },
     async (args, extra) =>
@@ -502,15 +513,20 @@ export function registerTools(server: McpServer): void {
       title: 'Revise a recipe',
       description:
         'Append a revision to an existing recipe. This is the tool to reach ' +
-        'for whenever a recipe changes — nothing is ever edited in place, so ' +
-        'a revision costs nothing and preserves what came before.\n\n' +
+        'for whenever a recipe changes — ingredients and steps are never ' +
+        'edited in place, so a revision costs nothing and preserves what ' +
+        'came before.\n\n' +
         'Omitted fields carry forward from the current revision, so changing ' +
         'one spice ratio means sending `slug`, `rationale` and `ingredients` ' +
         'only. `ingredients` and `steps` each replace their whole list when ' +
         'given — send the complete list, not a diff.\n\n' +
         '`rationale` is required and should say what changed and why, in the ' +
         'terms that will matter next time: "coriander to a coarse grind, the ' +
-        'fine grind disappeared into the dredge", not "updated ingredients".',
+        'fine grind disappeared into the dredge", not "updated ingredients".\n\n' +
+        '`massFlow` does NOT carry forward. Ingredients and steps say what a ' +
+        'cook intends, so an unchanged intent stays true. A mass flow says ' +
+        'what one batch weighed. Send it again only when you weighed this ' +
+        'version. To give a stored version its figure, call add_mass_flow.',
       inputSchema: reviseRecipeShape,
     },
     async (args, extra) =>
@@ -553,7 +569,10 @@ export function registerTools(server: McpServer): void {
         'what you do not know.\n\n' +
         '`rationale` should say what this version was and how you know — ' +
         '"the batch-two dredge, from the photo of the notebook page" — since ' +
-        'a version recorded years late is only worth having with its source.',
+        'a version recorded years late is only worth having with its source.\n\n' +
+        'Send `massFlow` only if you know what that batch weighed at each ' +
+        'stage. Do not copy the figure from a later version. That would ' +
+        'record a measurement that nobody took.',
       inputSchema: backfillRevisionShape,
     },
     async (args, extra) =>
@@ -596,7 +615,12 @@ export function registerTools(server: McpServer): void {
         'for a trap worth flagging, `idea` for something untried, ' +
         '`correction` when an earlier claim was wrong.\n\n' +
         'Pass `revisionNumber` alongside `recipeSlug` to pin the note to one ' +
-        'revision instead of the recipe as a whole.',
+        'revision instead of the recipe as a whole.\n\n' +
+        'The site draws a `science` note as a mechanism. Give `conditions` ' +
+        'when the mechanism holds under set values: a temperature, a time, ' +
+        'a depth. Write each condition as a separate value. Do not write ' +
+        'them into a sentence. To add conditions to a note that is already ' +
+        'stored, call describe_mechanism.',
       inputSchema: addNoteShape,
     },
     async (args, extra) =>
@@ -613,6 +637,119 @@ export function registerTools(server: McpServer): void {
           requireWrite(principal);
           const input = addNoteSchema.parse(args);
           return addNote(input);
+        },
+      ),
+  );
+
+  /**
+   * The two tools below reach a record that is already stored. Every other
+   * write tool either makes a new record or appends one, because that is the
+   * whole shape of this repository — so these two need their reason written
+   * down beside them.
+   *
+   * Each fills a field that could not exist when the record was written.
+   * D-02 added `notes.conditions` and D-12 added the mass flow tables, and
+   * every recipe and every science note in the archive predates both. No
+   * other path reaches them: `pnpm ingest` skips a recipe that exists, and a
+   * revision whose only change is a diagram has no reason to exist and would
+   * move a number that is in URLs and in the ticked-ingredient keys.
+   *
+   * Neither is an edit. Both refuse a second write, so a value goes from
+   * absent to present exactly once and can never be quietly replaced.
+   */
+  server.registerTool(
+    'add_mass_flow',
+    {
+      title: 'Add the mass flow figure',
+      description:
+        'Add the mass flow figure to a version that is already stored. The ' +
+        'figure shows what the food weighs at each stage: 10 kg raw, ' +
+        '321.7 g of wash, 4.5 kg dried.\n\n' +
+        'Use it only for a dish that loses or gains weight, where the ' +
+        'reader must plan for the change. Most dishes do not need it.\n\n' +
+        'Give the stages in order, first to last. Give two stages at ' +
+        'least. Each stage has a label and one figure. The figure is a ' +
+        'weight, a count or a wait. Write a wait in minutes: 1440 is one ' +
+        'day. Do not give a weight and a wait in the same stage. Split ' +
+        'them into two stages.\n\n' +
+        'Write a range as a pair. Give `quantity` and `quantityMax` for a ' +
+        'weight or a count. Give `durationMinutes` and `durationMaxMinutes` ' +
+        'for a wait. Use `rawText` for a stage that neither pair can hold, ' +
+        'such as "held under 100 °C".\n\n' +
+        '`revisionNumber` says which version the figure describes. Leave it ' +
+        'out and the figure goes on the current version. Give a number when ' +
+        'the batch you weighed was an older version.\n\n' +
+        'Set `emphasis` on the stage that matters most. This is usually ' +
+        'the last one.\n\n' +
+        'Give `netChangePercent` and `ratePercentPerDay` only if you ' +
+        'measured them. The tool does not calculate them. The first stage ' +
+        'and the last stage do not have to share a unit.\n\n' +
+        'A version takes one figure. The tool refuses a second one. The ' +
+        'numbers record a batch that a person weighed. To record a ' +
+        'different batch, call revise_recipe and send `massFlow` with it.',
+      inputSchema: addMassFlowShape,
+    },
+    async (args, extra) =>
+      runTool(
+        extra as AuthCtx,
+        'add_mass_flow',
+        { slug: args.slug, revisionNumber: args.revisionNumber },
+        async (principal) => {
+          requireWrite(principal);
+          const input = addMassFlowSchema.parse(args);
+          const result = await addMassFlow(input);
+          return {
+            ...result,
+            url: `/recipes/${result.slug}`,
+            message:
+              `Added the mass flow figure to revision ${result.revisionNumber}. ` +
+              'The current revision did not move. A revision takes one ' +
+              'figure, so this one cannot be changed.',
+          };
+        },
+      ),
+  );
+
+  server.registerTool(
+    'describe_mechanism',
+    {
+      title: 'Give a mechanism its conditions',
+      description:
+        'Add the conditions to a science note that is already stored. The ' +
+        'site draws a science note as a mechanism. The conditions are the ' +
+        'values the mechanism holds under: a temperature, a time, a ' +
+        'depth.\n\n' +
+        'Give each condition as a separate value: ["232 °C", "45 min", ' +
+        '"single layer on a rack"]. Do not write them into a sentence. Do ' +
+        'not join them with a comma or a dot. The page draws the ' +
+        'separators. Keep a range in one value: "4 °C → 71 °C" is one ' +
+        'condition, not two.\n\n' +
+        'get_recipe gives the id of each note on a recipe. Use that id ' +
+        'here.\n\n' +
+        'A note states its conditions once. The tool refuses a second set. ' +
+        'If the conditions are wrong, call add_note with the kind ' +
+        '"correction" and say what is wrong.\n\n' +
+        'When you write a new note, send `conditions` to add_note instead. ' +
+        'This tool is for a note that was written before.',
+      inputSchema: describeMechanismShape,
+    },
+    async (args, extra) =>
+      runTool(
+        extra as AuthCtx,
+        'describe_mechanism',
+        { noteId: args.noteId },
+        async (principal) => {
+          requireWrite(principal);
+          const input = describeMechanismSchema.parse(args);
+          const result = await describeMechanism(input);
+          const count = result.conditions.length;
+          return {
+            ...result,
+            message:
+              `The mechanism now states ${count} ` +
+              `${count === 1 ? 'condition' : 'conditions'}. ` +
+              'They cannot be changed.',
+          };
         },
       ),
   );

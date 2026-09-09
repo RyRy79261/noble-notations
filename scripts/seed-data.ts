@@ -26,6 +26,13 @@ export interface RevisionSeed {
   summary?: string;
   yieldQuantity?: number;
   yieldUnit?: string;
+  /**
+   * R-SCR-39, D-12. On the revision and not on the recipe: the figure
+   * records what one batch weighed, and batch five was 8.2 kg where batch
+   * six is 10 kg. A recipe-level figure would draw batch six's masses on
+   * `/recipes/baumy-biltong/revisions/3`.
+   */
+  massFlow?: CreateRecipeArgs['massFlow'];
   notes?: CreateRecipeArgs['notes'];
 }
 
@@ -659,6 +666,64 @@ const BILTONG: RecipeSeed = {
         'coverage rather than by ratio alone.',
       yieldQuantity: 4.5,
       yieldUnit: 'kg dried',
+      /**
+       * FIG. 1 — MASS FLOW on the recipe screen. R-SCR-39 asks for the
+       * figure only where a dish loses weight in a way the reader must plan
+       * for, and this is the one recipe in the archive that does: 10 kg of
+       * silverside becomes 4.5 kg of biltong.
+       *
+       * Every stage is transcribed, not derived. Where it came from:
+       *
+       * - Raw 10 kg           content/biltong/batch-06-prep.md:5, and the
+       *                       revision's own rationale above.
+       * - Cut 25–30 pieces    batch-06-prep.md:135 ("Steel hooks … 25–30")
+       *                       and :159 ("Estimated pieces: 25–30"), and the
+       *                       Expected yield note below. THE DESIGN DRAWS
+       *                       "24 pieces". That number is in no archive
+       *                       file. The quantity/quantityMax pair holds the
+       *                       range the archive actually records.
+       * - Wash 321.7 g        batch-06-prep.md:59 (the wash table total)
+       *                       and the ingredient lines above, which sum to
+       *                       it exactly.
+       * - Dredge 459.8 g      the sum of the seasoning lines above, in the
+       *                       one column the revision took: 138.5 + 24.4 +
+       *                       83 + 188.4 + 8 + 17.5. batch-06-prep.md:60-77.
+       *                       THE DESIGN DRAWS "490.3 g". No column in the
+       *                       archive sums to that, and the +40% column sums
+       *                       to 515.2 g, so writing it would record a
+       *                       measurement nobody took.
+       * - Cure 24–48 h        the same 1440/2880 minutes the dry-brine step
+       *                       already carries in BILTONG_STEPS.
+       * - Hang 13–15 d        the same 18720/21600 the air-drying step
+       *                       already carries.
+       * - Dried 4.5 kg        yieldQuantity above; batch-06-prep.md:157.
+       *
+       * The two summary figures are stored rather than computed. −55% is of
+       * NET weight while stage one is gross and the dredge adds ~460 g on
+       * top, so it is not (raw − dried) / raw; and 4.21% per day is a
+       * per-piece regression over batch two, which nothing in these rows
+       * can recompute.
+       */
+      massFlow: {
+        stages: [
+          { label: 'Raw', quantity: 10, unit: 'kg' },
+          { label: 'Cut', quantity: 25, quantityMax: 30, unit: 'piece' },
+          { label: 'Wash', quantity: 321.7, unit: 'g' },
+          { label: 'Dredge', quantity: 459.8, unit: 'g' },
+          { label: 'Cure', durationMinutes: 1440, durationMaxMinutes: 2880 },
+          { label: 'Hang', durationMinutes: 18720, durationMaxMinutes: 21600 },
+          { label: 'Dried', quantity: 4.5, unit: 'kg', emphasis: true },
+        ],
+        netChangePercent: -55,
+        ratePercentPerDay: 4.21,
+        note:
+          'Planned, not weighed: batch six has not been cooked. Raw, wash and ' +
+          'dried are the specification in content/biltong/batch-06-prep.md; the ' +
+          'dredge is the sum of this revision’s own seasoning lines; the cure and ' +
+          'hang durations are the ones the steps already carry. Loss of 55% is ' +
+          'the expected yield of ~45% of net weight (batch 5 projection) and ' +
+          '4.21% per day is the batch 2 regression (content/biltong/batch-02.md).',
+      },
       ingredients: biltongLines({
         meatKg: 10,
         wash: {
@@ -1169,6 +1234,19 @@ const DEMI_GLACE: RecipeSeed = {
       {
         kind: 'science',
         title: 'Why each layer exists',
+        /**
+         * R-SCR-41, D-02. Separate values, never a sentence — the site
+         * draws the separators. Each one is transcribed from
+         * content/research/demi-glace.md: the veal knuckle's "8+ hours"
+         * at :21, the reduction held at 96/90/85 °C at :63-67, and the
+         * three clarification passes at :35-46, which the note body calls
+         * "mechanical, protein raft, adsorption".
+         */
+        conditions: [
+          '8+ hours',
+          'held under 100 °C',
+          'three clarification passes',
+        ],
         body:
           'The dual bone foundation is doing three separate jobs: marrow for fat and mouthfeel, ' +
           'veal knuckle for gelatin, oxtail for concentrated meatiness. Dropping any one of them ' +
@@ -1193,6 +1271,83 @@ const DEMI_GLACE: RecipeSeed = {
             title: 'Michelin Guide — the five mother sauces',
           },
         ],
+      },
+      /*
+       * THE FOUR MECHANISMS BELOW ARE APPENDED, AND THE ORDER MATTERS.
+       *
+       * The design draws five mechanisms on `/science/demi-glace`
+       * (`design/exports/science-1280.html:1023`) where this seed carried
+       * one, and D-02's "Still open for M6" says why they could not be
+       * written until now: every note ingested with one recipe shares a
+       * transaction timestamp, so the order — and with it the `M1…Mn` codes
+       * — fell to a random uuid. `notes.position` closed that, and the array
+       * order below is now stored verbatim.
+       *
+       * So APPENDING is safe and INSERTING renames every mechanism after the
+       * insertion point. "Why each layer exists" stays first because
+       * `e2e/science.spec.ts` asserts it is M1 on both science screens.
+       *
+       * Each body is transcribed from `content/research/demi-glace.md:21-46`
+       * and each condition is a value that file states. Where the design's
+       * own prose adds a number the archive does not carry, the archive
+       * wins — the same ruling D-12 makes about the mass flow's `24 pieces`.
+       * Two places that happens, both recorded so the next reader is not
+       * chasing a difference:
+       *
+       *   - the design's M1 explains Maillard as "above roughly 140 °C into
+       *     hundreds of new aromatic compounds". The archive says only
+       *     "to develop Maillard reactions"; 140 °C is textbook and it is
+       *     not in this repository's record of this dish.
+       *   - the design's M4 lists `NO STIRRING` as a condition of the raft.
+       *     The archive says "gradually reheat" and nothing about stirring.
+       *
+       * `describe_mechanism` is the way to add a condition to a note that is
+       * already stored. These are new notes, so they carry theirs from the
+       * start.
+       */
+      {
+        kind: 'science',
+        title: 'Maillard browning of the bone surface',
+        /** demi-glace.md:24 — 232 °C for 45 minutes, single layer on a rack. */
+        conditions: ['232 °C', '45 min', 'single layer on a rack'],
+        body:
+          'The first roast is where the colour and most of the roasted flavour of a brown stock ' +
+          'are made. The long simmer after it extracts gelatin and does not add either. The bones ' +
+          'go in one layer on a rack so that every face meets dry heat rather than steaming ' +
+          'against the pan.',
+      },
+      {
+        kind: 'science',
+        title: 'Pyrolization of tomato sugars',
+        /** demi-glace.md:25 — 204 °C for 20 minutes, after the first roast. */
+        conditions: ['204 °C', '20 min', 'after the first roast'],
+        body:
+          'Tomato paste thinned with red wine vinegar is brushed over the roasted bones and they ' +
+          'go back into a cooler oven. At 204 °C the sugars in the paste pyrolise rather than ' +
+          'burn, and leave a savoury crust that dissolves into the stock instead of a bitter one ' +
+          'that does not.',
+      },
+      {
+        kind: 'science',
+        title: 'The protein raft',
+        /** demi-glace.md:40 — 4 °C, four egg whites, back up to 71 °C. */
+        conditions: ['4 °C → 71 °C', 'four egg whites'],
+        body:
+          'The stock is cooled to 4 °C, then ice and lightly beaten egg whites are stirred in and ' +
+          'the pot is brought back up to 71 °C slowly. The coagulating albumen forms a raft that ' +
+          'traps the fine particulate and carries it to the surface, which is the second of the ' +
+          'three clarification passes and the only one that removes what a sieve cannot.',
+      },
+      {
+        kind: 'science',
+        title: 'Adsorption filtration',
+        /** demi-glace.md:46 — the third pass, gravity through a filter bed. */
+        conditions: ['gravity', 'final pass'],
+        body:
+          'The last pass is a colander lined with damp coffee filters over an inch of ' +
+          'diatomaceous earth, poured through under gravity alone. Particles far smaller than the ' +
+          'pore size are held by surface attraction rather than sieved, which is what takes a ' +
+          'clear stock to an optically clear one.',
       },
       {
         kind: 'warning',
@@ -1222,7 +1377,15 @@ const BEEF_WELLINGTON: RecipeSeed = {
     notes: [
       {
         kind: 'science',
+        /**
+         * The four science notes on this recipe are the mechanisms the
+         * design draws. Their conditions come from
+         * content/research/beef-wellington.md, not from the design's own
+         * mock numbers, wherever the two disagree — see "Temperature and
+         * carryover" below, which is the one place they do.
+         */
         title: 'The octagon sear',
+        conditions: ['8 faces + 2 ends', 'raw interior'],
         body:
           'Treating the tenderloin as eight flat faces plus two ends gives even caramelisation ' +
           'while keeping the interior raw. A cylinder seared with single flips browns unevenly ' +
@@ -1231,6 +1394,12 @@ const BEEF_WELLINGTON: RecipeSeed = {
       {
         kind: 'science',
         title: 'Duxelles as a moisture barrier, not a flavour layer',
+        /** beef-wellington.md:44 — 25–30 minutes, ~90% of the water out. */
+        conditions: [
+          '25–30 min',
+          '~90% of the water out',
+          'dry sauté, then fat',
+        ],
         body:
           'Mushrooms are 80–90% water. The 25–30 minute cook removes about 90% of it; dry-sauté ' +
           'first, add fat after. Cream added near the end sounds like it should make things ' +
@@ -1240,6 +1409,13 @@ const BEEF_WELLINGTON: RecipeSeed = {
       {
         kind: 'science',
         title: 'Two barriers, two mechanisms',
+        /**
+         * The design's own value for this mechanism, verbatim, and it is a
+         * one-element list on purpose: `Mechanism` draws no separator for a
+         * single condition, and the design draws exactly this case here.
+         * The `+` is inside the value; it is not a join of two conditions.
+         */
+        conditions: ['dry duxelles + sealed wrap'],
         body:
           'Prosciutto works by fat solidifying during the chill into a semi-impermeable layer. ' +
           'A crêpe works by its egg protein structure absorbing a little moisture without ' +
@@ -1248,6 +1424,14 @@ const BEEF_WELLINGTON: RecipeSeed = {
       {
         kind: 'science',
         title: 'Temperature and carryover',
+        /**
+         * The design draws "PULL 48 °C → RESTS TO 54 °C" for its own
+         * carryover mechanism. This note is not that one: its body and
+         * beef-wellington.md:62-64 both say 220 °C then 190 °C, pull at
+         * 52–54 °C, rest to 54–57 °C. Writing the design's numbers into
+         * these conditions would contradict the body directly below them.
+         */
+        conditions: ['220 °C then 190 °C', 'pull 52–54 °C → rests to 54–57 °C'],
         body:
           'Start at 220 °C so the butter layers in the pastry expand and set structure before the ' +
           'beef heats, then drop to 190 °C for even penetration. Pull at 52–54 °C: carryover ' +
