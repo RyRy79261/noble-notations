@@ -39,7 +39,7 @@ export async function GET() {
     '',
     'A recipe here has a stable address and a history. Its ingredients and',
     'steps belong to a numbered revision, and every revision records why it',
-    'exists. Nothing is edited in place.',
+    'exists. Ingredients and steps are never edited in place.',
     '',
     'Add `.md` to any recipe URL to get the recipe as Markdown, without the',
     `page around it. For example ${site.url}/recipes/<slug>.md`,

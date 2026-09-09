@@ -55,7 +55,7 @@ redirect in `src/app/batch-logs/[log]/page.tsx`.
 
 ## D-02 — The conditions on a mechanism block
 
-**Status:** Parked. **This one needs your decision.**
+**Status:** Decided. **Option A, approved and built in M5.5.**
 **Date:** 2026-09-09
 **Touches:** R-SCR-41, §10.9, K-04
 
@@ -107,6 +107,62 @@ design says is wrong.
 
 I did not take it without you, because the specification says in §1.2 that
 it does not cover the database schema. A schema change is your call.
+
+### What was decided, and what M5.5 built
+
+**Option A.** Approved, and built in M5.5 alongside D-12 — one migration
+carries both, which is what the recommendation asked for.
+
+- `drizzle/0005_mass_flow_and_conditions.sql` adds
+  `notes.conditions text[] DEFAULT ARRAY[]::text[] NOT NULL`. Purely
+  additive: no `DROP`, no `ALTER COLUMN`, and on PG 11+ the `NOT NULL`
+  default needs no table rewrite. A note that existed before it reads back
+  `{}`, never `NULL`.
+- `conditions` is accepted on any note in `create_recipe`, `revise_recipe`,
+  `backfill_revision` and `add_note`. Accepted on all eight kinds, not only
+  `science`: an empty list on the other seven costs nothing, and refusing
+  them there would have to be undone the first time a `warning` wants to
+  say at what temperature it applies.
+- `describe_mechanism` is the new tool for a note that is **already
+  stored** — every science note in the archive was written before the
+  column existed. It fills the field once and then refuses. It is not an
+  edit path: it can only turn absent into present, and the answer to a
+  wrong value is a note of kind `correction`, exactly as it is for a wrong
+  note body.
+- The row is drawn wherever a science note is drawn: `F/Mechanism` on the
+  recipe screen, `NoteBlock` on `/ingredients/[slug]` and
+  `/batch-logs/[log]`, and both science screens.
+
+**"Written once" is enforced with a row lock, not by a constraint.** An
+array column has no unique index to stand behind it the way
+`uq_mass_flow_revision` stands behind the mass flow, and a bare
+read-then-write is advisory only under READ COMMITTED — two connectors
+describing the same note both read `{}`, both pass the guard, and the
+second silently replaces the first. The connector is multi-client by
+design, so `describeMechanism` reads `FOR UPDATE` and repeats the emptiness
+test in the `UPDATE`'s own `WHERE` clause.
+
+### Still open for M6
+
+The two science screens carry M5.5's **data** and M2's **look**. The
+conditions draw as bordered pill badges at 11.52px where the design draws a
+9px mono run in `f-ink-3`, its values joined by a middle dot. M6 rebuilds both screens onto
+`F/Mechanism`, which already draws the run correctly on the recipe screen.
+
+`/science/demi-glace` also draws one mechanism where the design draws five,
+and `/science` lists five where the design lists seven. The four missing
+bodies are in `content/research/demi-glace.md:21-46`, so transcribing them
+is a reading of the archive rather than an invention — but it is blocked on
+an ordering key. `notes.created_at` defaults to `now()`, which Postgres
+holds fixed for a transaction, so every note ingested with one recipe
+shares a timestamp and the order falls to `asc(notes.id)`, a random uuid.
+Five demi-glace science notes would randomise the `M1…Mn` codes and
+`e2e/science.spec.ts:146` — which asserts "Why each layer exists" is M1 —
+would fail four runs in five. **M6 needs a stable ordering key on `notes`**
+(a `position` column, or `created_at` set per row) before it seeds them.
+The same fact is why `pnpm export` reorders two notes in
+`content/generated/baumy-biltong/current.md` between two ingests of the
+same seed.
 
 ---
 
@@ -512,7 +568,8 @@ data rule.
 
 ## D-12 — Three things the design draws that the data cannot fill
 
-**Status:** Decided for now. **Two of the three need your ruling.**
+**Status:** Decided. **The figure is Option A, approved and built in M5.5.
+The other two stay out.**
 **Date:** 2026-09-09
 **Touches:** R-SCR-39, §4.2, §10.2
 
@@ -525,10 +582,15 @@ data for it, not because the build skipped it.
 The design draws `FIG. 1 — MASS FLOW`: seven stages across the page.
 
 ```
-RAW 10 kg · CUT 24 pieces · WASH 321.7 g · DREDGE 498.3 g ·
+RAW 10 kg · CUT 24 pieces · WASH 321.7 g · DREDGE 490.3 g ·
 CURE 24–48 h · HANG 13–15 d · DRIED 4.5 kg
 NET WEIGHT LOSS ~55%   RATE 4.21% PER DAY
 ```
+
+(This entry first transcribed the dredge as `498.3 g`. The export draws
+`490.3 g` — `design/exports/recipe-1280.html:593`, and the string `498`
+appears nowhere in that file. Corrected here so the next reader is not
+chasing a third number.)
 
 R-SCR-39 makes it a **MAY**, so the build is correct without it. But it is
 the largest visible difference on the primary screen, and §4.2 lists it as
@@ -548,6 +610,69 @@ migration, one MCP tool change, and a backfill for Baumy Biltong.
 design draws structured data the schema does not hold. One migration can
 carry both. The figure is the clearest thing on the screen and a cook
 planning a batch reads it first.
+
+#### What was decided, and what M5.5 built
+
+**Option A**, as two tables rather than a JSON column, so a stage is
+queryable and the four rules the figure has to obey are database checks
+rather than prose.
+
+- `recipe_mass_flows` (one per revision, `uq_mass_flow_revision`) and
+  `recipe_mass_flow_stages`, both in migration `0005`. On the **revision**
+  and not on the recipe: batch five was 8.2 kg and batch six is 10 kg, so a
+  recipe-level figure would draw the current numbers on
+  `/recipes/[slug]/revisions/3`, which renders through the same component.
+- `massFlow` rides along on `create_recipe`, `revise_recipe` and
+  `backfill_revision`. It is deliberately **not** carried forward by
+  `revise_recipe`: ingredients and steps say what a cook intends, so an
+  unchanged intent stays true, but a mass flow says what one batch weighed
+  and copying it into a version nobody weighed would invent a measurement.
+- `add_mass_flow` gives a figure to a version that is already stored. One
+  per revision, refused after that, in the write path and in
+  `uq_mass_flow_revision`.
+- `F/Mass flow` draws it below the hero on the recipe screen, for the one
+  revision that has one.
+
+#### The two stage figures that do not match the design — ruled
+
+The design draws `24 pieces` and `490.3 g`. The build seeds `25–30 pieces`
+and `459.8 g`, and **that is the ruling: the archive wins.**
+
+| Stage  | Design    | Built        | Why                                                                                                                                                                      |
+| ------ | --------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Cut    | 24 pieces | 25–30 pieces | `content/biltong/batch-06-prep.md:135` and `:159` both say 25–30, and the design's own prose at `recipe-1280.html:3297` says "25–30 pieces". `24` is in no archive file. |
+| Dredge | 490.3 g   | 459.8 g      | The sum of this revision's own seasoning lines in the column it took: 138.5 + 24.4 + 83 + 188.4 + 8 + 17.5. The +40% column sums to 515.2. Nothing sums to 490.3.        |
+
+AGENTS.md says an unquantified line is flagged and never guessed at, and
+the specification says in §1.2 that the design governs how a screen **looks**.
+A number is not a look. Writing either design figure would record a
+measurement nobody took, on the one recipe in the repository whose whole
+point is that it is a measured batch. The provenance for every stage is in
+`scripts/seed-data.ts` above the `massFlow` object, and `massFlow.note`
+records that batch six is planned rather than cooked.
+
+To change it: two properties in one object in `scripts/seed-data.ts`.
+
+#### Still open for M6 — the readout at 360
+
+The design draws no mass flow strip at 360 (`grep 'MASS FLOW'
+design/exports/recipe-360.html` returns nothing). It carries the fact in
+the control bar instead, as `MAKES 4.5 KG DRIED FROM 10 KG RAW` — at 1280
+as well as at 360 (`recipe-1280.html:855`, `recipe-360.html:298`). The
+build draws a horizontally scrolling strip at 360 and a readout that says
+`Makes 4.5 kg`, so neither form matches the design at that width. Nothing
+is unreachable — R-STA-08 and R-STA-09 both hold, the scroller's first cell
+sits at offset 0 and `document.scrollWidth` equals `window.innerWidth` —
+but the emphasised DRIED cell sits off-screen behind a scroll.
+
+M5.5 did not close this, and it is **not** the one-line change it looks
+like. The readout scales: `e2e/shopping-journey.spec.ts` asserts `13.5 kg`
+at ×3. `MassFlowStageView.value` is a formatted string, `"10 kg"`, with no
+number behind it to multiply, so drawing the raw mass unscaled beside a
+scaled yield would put two batch sizes on one page — exactly what R-CMP-11
+forbids. M6 needs the first stage as a number and a unit, not as the
+figure's caption, and should then decide whether to hide the strip below
+`shell:` as the design does.
 
 ### 2. The change apparatus
 

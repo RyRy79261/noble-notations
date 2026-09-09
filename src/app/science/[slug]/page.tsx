@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { Fragment } from 'react';
 import { getScienceStudy } from '@/lib/queries/read';
 import { safeRead } from '@/lib/safe';
 import { RecipeGrid } from '@/components/recipe-card';
@@ -97,16 +98,38 @@ export default async function ScienceStudyPage({ params }: Params) {
                 <Markdown>{mechanism.body}</Markdown>
                 {/* R-SCR-41: each condition is its own value, never written
                     into a sentence, and there is no row when there are
-                    none. `notes` has nowhere to hold them today — see
-                    D-02, which is the owner's call. */}
+                    none. `notes.conditions` is the column D-02 settled and
+                    M5.5 added, so these are real now.
+
+                    Keyed by POSITION, because two conditions of one
+                    mechanism can legitimately read the same and a duplicate
+                    key drops one.
+
+                    R-CMP-14 — THREE BOUNDARIES, NOT ONE. A flex gap is
+                    invisible to `textContent`, and so is the boundary
+                    between two blocks. The row needs a real space BETWEEN
+                    its chips (`8+ HOURSHELD UNDER 100 °C`), one BEFORE it,
+                    where the body ends and the first chip starts (`…done
+                    three times.8+ hours`), and one AFTER it, where the last
+                    chip meets the next mechanism's code. `.note` is a plain
+                    block and `.row` is the flex child, so an inter-block
+                    whitespace text node is not rendered and none of the
+                    three costs a pixel.
+
+                    This is M2 markup and M6 rebuilds it onto F/Mechanism.
+                    Only the data and those faults are touched here. */}
                 {mechanism.conditions.length > 0 ? (
-                  <div className="row">
-                    {mechanism.conditions.map((condition) => (
-                      <span className="badge num" key={condition}>
-                        {condition}
-                      </span>
-                    ))}
-                  </div>
+                  <>
+                    {' '}
+                    <div className="row">
+                      {mechanism.conditions.map((condition, index) => (
+                        <Fragment key={index}>
+                          {index > 0 ? ' ' : null}
+                          <span className="badge num">{condition}</span>
+                        </Fragment>
+                      ))}
+                    </div>{' '}
+                  </>
                 ) : null}
               </article>
             ))}

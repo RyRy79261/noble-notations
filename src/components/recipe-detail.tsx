@@ -39,15 +39,12 @@
  *
  * ── WHAT THE DESIGN DRAWS THAT THIS BUILD DOES NOT ─────────────────────
  *
- * Three things, each because the repository holds no data for it, and each
- * recorded in the M5 report rather than invented:
+ * Two things, each because the repository holds no data for it, and each
+ * recorded in the M5 report rather than invented. The third — the mass-flow
+ * figure — is drawn now: M5.5 gave the schema `recipe_mass_flows` and its
+ * ordered stages (D-12), so `F/Mass flow` sits between the hero and the
+ * control bar and reads `RecipeView.revision.massFlow`.
  *
- *   The mass-flow figure (R-SCR-39, a MAY). Seven numbered stages with a
- *     mass, a count or a duration each. The schema holds one finished mass
- *     (`yield_quantity`) and no raw mass and no per-stage mass, so there is
- *     nothing to plot. Summing the ingredient lines is not the same figure
- *     and would need cross-unit conversion, which this build refuses
- *     everywhere else.
  *   The change apparatus — the `SHOWING CHANGES SINCE THE FIFTH REVISION`
  *     toggle, the `S6` markers and the 3px transparent rule that reserves
  *     their gutter on every unchanged step. It is a whole revision-diff
@@ -74,6 +71,7 @@ import {
   noteKindLabel,
   noteSeverity,
 } from '@/components/f/mark';
+import { MassFlow } from '@/components/f/mass-flow';
 import { Mechanism } from '@/components/f/mechanism';
 import { Footnote, Warning } from '@/components/f/note';
 import { Empty, Notice } from '@/components/f/notice';
@@ -654,6 +652,28 @@ export function RecipeDetail({
           />
         </header>
 
+        {/* ── FIG. 1 — MASS FLOW, §10.2 and R-SCR-39 ────────────────────
+            Band 3 at 1280, between the hero and the control bar, which is
+            the order `recipe-1280.html` draws its children of `Main` in:
+            Breadcrumb (:205), Hero (:228), Figure 1 (:393), Control bar
+            (:777). The 44px between each pair is the wrapper's own flex
+            gap, so a recipe with no figure closes it with no margin
+            arithmetic and nothing else moves.
+
+            R-SCR-39 makes the figure a MAY and scopes it to a dish that
+            loses or gains weight in a way the reader must plan for, so most
+            recipes draw nothing here. It hangs off the REVISION and not the
+            recipe: batch five was 8.2 kg and batch six is 10 kg, and this
+            same component renders `/recipes/[slug]/revisions/3`, which must
+            not show batch six's masses. */}
+        {rev.massFlow ? (
+          <MassFlow
+            data-mass-flow=""
+            stages={rev.massFlow}
+            summary={rev.massFlowSummary}
+          />
+        ) : null}
+
         {/* ── The control bar, §10.2.5 and R-SCR-03 ─────────────────────
             Band 4 at 1280 and band 2 at 360, and the one place on the page
             with the `f-desk` ground. It switches axis at `recipe:` because
@@ -992,6 +1012,12 @@ export function RecipeDetail({
                         data-kind={note.kind}
                         code={`M${index + 1}`}
                         name={note.title}
+                        /* R-SCR-41 — the conditions the mechanism holds
+                           under, as separate values. `notes.conditions` is
+                           the column D-02 added; it is empty on every kind
+                           but science and on a science note nobody has
+                           described, and F/Mechanism then draws no row. */
+                        conditions={note.conditions}
                       >
                         <Markdown tone="inherit">{note.body}</Markdown>
                       </Mechanism>

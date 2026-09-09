@@ -4,7 +4,7 @@ Machine-written from the database by `pnpm export`. Do not hand-edit —
 the next run overwrites everything here. To change a recipe, add a
 revision (through the site or the MCP connector) and re-export.
 
-Last exported: 2026-08-29T21:34:02.368Z
+Last exported: 2026-09-09T10:48:02.030Z
 
 - [Baumy Biltong](./baumy-biltong/current.md)
 - [Pickled Jalapeños](./pickled-jalapenos/current.md)

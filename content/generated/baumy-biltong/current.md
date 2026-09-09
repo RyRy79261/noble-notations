@@ -4,7 +4,7 @@ slug: 'baumy-biltong'
 kind: 'recipe'
 revision: 6
 source: 'import'
-created: '2026-08-29T21:34:00.879Z'
+created: '2026-09-09T10:43:10.345Z'
 generated: 'true'
 ---
 
@@ -18,14 +18,26 @@ The current specification: a 10 kg batch with 321.7 g of wash and a dredge sized
 
 Planned 10 kg batch, not yet cooked. Built from batch 4 per-kilogram ratios (the most complete batch without substitution problems), scaled to 10 kg, then batch 5 learnings applied: +30% on the wash and +40% on seasoning volume. Salt deliberately held flat at 13.85 g/kg rather than raised 40% — salt dissolves, so it does not need a volume bump for coverage, and over-salting is the one error here that cannot be corrected.
 
-## Classification
+## Mass flow
 
-- **cuisine**: South African
-- **texture**: chewy
-- **preservation**: curing, air-drying
-- **technique**: dry-curing, air-drying
-- **equipment**: drying box, spice grinder
-- **course**: snack
+1. **Raw** — 10 kg
+2. **Cut** — 25–30 pieces
+3. **Wash** — 321.7 g
+4. **Dredge** — 459.8 g
+5. **Cure** — 24–48 h
+6. **Hang** — 13–15 d
+7. **Dried** — _4.5 kg_
+
+Net weight loss −55% · Rate 4.21% per day
+
+## Categories
+
+- **Texture**: Chewy
+- **Preservation**: Curing, Air-drying
+- **Technique**: Dry-curing, Air-drying
+- **Equipment**: Drying box, Spice grinder
+- **Course**: Snack
+- **Cuisine**: South African
 
 ## Ingredients
 
@@ -57,21 +69,21 @@ Planned 10 kg batch, not yet cooked. Built from batch 4 per-kilogram ratios (the
 
 ### Prep
 
-1. Weigh the whole silverside, then cut it into strips along the grain. Weigh each strip and record it — this is the number every later drying calculation is measured against. _(butchery)_
-2. Grind the coriander on its own, coarsely. Grind the remaining whole spices separately and combine into the dredge. _(grinding)_
+1. Weigh the whole silverside, then cut it into strips along the grain. Weigh each strip and record it — this is the number every later drying calculation is measured against. _(Butchery)_
+2. Grind the coriander on its own, coarsely. Grind the remaining whole spices separately and combine into the dredge. _(Grinding)_
    > Coriander is the one that matters here: you want visible pieces in the finished biltong.
 
 ### Cure
 
 3. Combine the wash ingredients. Work fast and keep the meat cold — as it warms, fat and myoglobin bleed into the wash and it stops being usable.
-4. Wash each strip thoroughly, then dredge it in the spice mix until fully coated. _(dry-curing)_
+4. Wash each strip thoroughly, then dredge it in the spice mix until fully coated. _(Dry-curing)_
    > Make more dredge than you think you need. Running out part-way through leaves the last pieces bare.
-5. Rest the spiced strips in the fridge for one to two nights. This is functionally a dry brine — weigh the pieces before they go in. _(1440 min · dry-brining)_
+5. Rest the spiced strips in the fridge for one to two nights. This is functionally a dry brine — weigh the pieces before they go in. _(1440 min · Dry-brining)_
 
 ### Hang
 
 6. Hook each piece and hang it with air moving freely around it. Record the hook weight so net weights stay honest.
-7. Dry until the piece has lost roughly 55% of its net weight. Expect about 13–15 days for a medium piece; weight loss averages 4.21% of initial weight per day, and small pieces go much faster. _(18720 min · air-drying)_
+7. Dry until the piece has lost roughly 55% of its net weight. Expect about 13–15 days for a medium piece; weight loss averages 4.21% of initial weight per day, and small pieces go much faster. _(18720 min · Air-drying)_
 
 ## Notes
 
@@ -79,10 +91,10 @@ Planned 10 kg batch, not yet cooked. Built from batch 4 per-kilogram ratios (the
 
 30 × 7 cm steel hooks, 13 g each — €29.97. The 13 g is subtracted from every gross weight to get net.
 
-### Salt: conservative or full +40% _(idea)_
-
-The alternative reading of the batch 5 note gives 193.9 g of salt. Batches 4 and 5 both tasted right at ~13.5–13.85 g/kg, so this revision takes the conservative figure. If the finished batch reads under-seasoned rather than under-covered, that is the number to revisit.
-
 ### Expected yield _(observation)_
 
 About 45% of net weight, so roughly 4.5 kg finished from 10 kg raw, across an estimated 25–30 pieces.
+
+### Salt: conservative or full +40% _(idea)_
+
+The alternative reading of the batch 5 note gives 193.9 g of salt. Batches 4 and 5 both tasted right at ~13.5–13.85 g/kg, so this revision takes the conservative figure. If the finished batch reads under-seasoned rather than under-covered, that is the number to revisit.

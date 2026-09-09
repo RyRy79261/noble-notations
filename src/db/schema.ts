@@ -445,6 +445,140 @@ export const recipeSteps = pgTable(
   ],
 );
 
+/**
+ * The mass flow figure — one per revision, at most.
+ *
+ * A cured, dried or reduced dish is planned around what it weighs at each
+ * stage, and the schema held exactly one of those numbers: `yield_quantity`,
+ * the finished mass. R-SCR-39 draws the whole run — 10 kg raw through
+ * 321.7 g of wash to 4.5 kg dried — and calls it a MAY, so a recipe with no
+ * figure is a correct rendering and this is optional everywhere.
+ *
+ * It hangs off the REVISION rather than the recipe, for the reason
+ * `recipe_steps.image_url` gives just above: batch five was 8.2 kg and batch
+ * six is 10 kg, so a recipe-level figure would draw the sixth revision's
+ * masses on `/recipes/baumy-biltong/revisions/3`, which renders through the
+ * same component.
+ *
+ * `UNIQUE (revision_id)` is the append-only guarantee in the database rather
+ * than only in the write path: a revision's figure can be written once and
+ * never rewritten, so this can turn absent into present and nothing else.
+ */
+export const recipeMassFlows = pgTable(
+  'recipe_mass_flows',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    revisionId: uuid('revision_id')
+      .notNull()
+      .references(() => recipeRevisions.id, { onDelete: 'cascade' }),
+    /**
+     * The net change across the whole run, as a signed percentage: -55.00
+     * for the biltong. Signed because R-SCR-39 says "loses or gains", and
+     * dimensionless, so it carries no unit.
+     *
+     * STORED, never derived. It is not (raw - dried) / raw: the 55 % is of
+     * NET weight, while the first stage is a gross mass and the dredge adds
+     * about 460 g along the way. Computing it would also mean deciding that
+     * the first and last stages share a unit, which is the cross-unit
+     * reasoning this repository refuses everywhere else.
+     */
+    netChangePercent: numeric('net_change_percent', { precision: 6, scale: 2 }),
+    /**
+     * Percent of the starting weight lost per day. Stored for the same
+     * reason and one more: it is a per-piece regression over a run of
+     * weighings, and nothing in this table can be used to recompute it.
+     */
+    ratePercentPerDay: numeric('rate_percent_per_day', {
+      precision: 6,
+      scale: 2,
+    }),
+    /** Where the numbers came from. Provenance, not drawn on the screen. */
+    note: text('note'),
+    createdAt: now(),
+  },
+  (t) => [uniqueIndex('uq_mass_flow_revision').on(t.revisionId)],
+);
+
+/**
+ * One stage of the figure — `RAW 10 kg`, `CURE 24–48 h`, `DRIED 4.5 kg`.
+ *
+ * Rows with a `position` rather than a JSON column on the revision, because
+ * every other ordered list in this schema is rows with a position, and
+ * because the constraints below are worth having in the database rather
+ * than in whichever caller happens to write next.
+ */
+export const recipeMassFlowStages = pgTable(
+  'recipe_mass_flow_stages',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    massFlowId: uuid('mass_flow_id')
+      .notNull()
+      .references(() => recipeMassFlows.id, { onDelete: 'cascade' }),
+    position: integer('position').notNull(),
+    /** Stored as written; the drawing uppercases it. */
+    label: text('label').notNull(),
+    quantity: numeric('quantity', { precision: 12, scale: 4 }),
+    /** Upper bound for a stage written as a range — "25–30 pieces". */
+    quantityMax: numeric('quantity_max', { precision: 12, scale: 4 }),
+    unit: text('unit'),
+    /**
+     * A stage that is a wait rather than a weight, in minutes.
+     *
+     * Minutes and no unit column, exactly as `recipe_steps` does it. The
+     * unit vocabulary in src/lib/domain/units.ts defines no time unit at
+     * all, and adding `h` and `d` to it to caption a figure would make
+     * "24 h of beef" a legal ingredient line and start bucketing hours into
+     * a shopping list. Time has one base unit here.
+     */
+    durationMinutes: integer('duration_minutes'),
+    durationMaxMinutes: integer('duration_max_minutes'),
+    /**
+     * Drawn with the accent ground and border. Carried rather than inferred
+     * from "last": a recipe that GAINS weight — a brine, a soak — makes its
+     * point at a different stage.
+     */
+    emphasis: boolean('emphasis').default(false).notNull(),
+    /**
+     * What to draw when neither pair can hold the figure — "held under
+     * 100 °C". Unlike `recipe_ingredients.raw_text` this is nullable and is
+     * NOT a cache of the structured values: a stage that has them draws
+     * them, and this is only read when it has neither.
+     */
+    rawText: text('raw_text'),
+    createdAt: now(),
+  },
+  (t) => [
+    index('idx_mass_flow_stages_flow').on(t.massFlowId),
+    uniqueIndex('uq_mass_flow_stage_position').on(t.massFlowId, t.position),
+    // A stage is one figure: a weight, a count, or a wait. Both at once has
+    // no drawing — the design gives each cell a single value line.
+    check(
+      'mass_flow_stage_single_figure',
+      sql`${t.quantity} IS NULL OR ${t.durationMinutes} IS NULL`,
+    ),
+    // …and it has something to draw. A labelled empty box is a hole in the
+    // strip that says nothing.
+    check(
+      'mass_flow_stage_has_a_figure',
+      sql`COALESCE(${t.quantity}, ${t.durationMinutes}) IS NOT NULL
+          OR ${t.rawText} IS NOT NULL`,
+    ),
+    // An upper bound with no lower bound, or one below it, renders as
+    // "48–24 h". Refused here rather than tidied up at render time.
+    check(
+      'mass_flow_stage_quantity_range',
+      sql`${t.quantityMax} IS NULL
+          OR (${t.quantity} IS NOT NULL AND ${t.quantityMax} >= ${t.quantity})`,
+    ),
+    check(
+      'mass_flow_stage_duration_range',
+      sql`${t.durationMaxMinutes} IS NULL
+          OR (${t.durationMinutes} IS NOT NULL
+              AND ${t.durationMaxMinutes} >= ${t.durationMinutes})`,
+    ),
+  ],
+);
+
 /** Which ingredient lines a given step consumes. */
 export const recipeStepIngredients = pgTable(
   'recipe_step_ingredients',
@@ -474,6 +608,27 @@ export const notes = pgTable(
     title: text('title'),
     /** Markdown. */
     body: text('body').notNull(),
+    /**
+     * The conditions a mechanism holds under, as separate values: `232 °C`,
+     * `45 min`, `single layer on a rack`. R-SCR-41 requires them separate
+     * and forbids writing them into a sentence, and a note held a kind, a
+     * title and a body and nothing else — so a mechanism's temperature, its
+     * time and its layer depth had nowhere to live. This is D-02.
+     *
+     * A text array rather than a child table, following
+     * `recipe_steps.equipment` and `ingredients.aliases`: nothing joins on
+     * these, no screen filters by them, and they refuse to be parsed anyway
+     * — `4 °C → 71 °C`, `8+ hours` and `gravity` are all one value each.
+     * R-SCR-41 asks that they be separate, not that they be structured.
+     *
+     * No check tying it to `kind = 'science'`. An empty array on the other
+     * seven kinds costs nothing, and coupling the column to one enum value
+     * makes "a warning carries conditions too" a destructive migration.
+     */
+    conditions: text('conditions')
+      .array()
+      .notNull()
+      .default(sql`ARRAY[]::text[]`),
 
     // Exactly one of these is set — enforced by the check below.
     recipeId: uuid('recipe_id').references(() => recipes.id, {

@@ -99,7 +99,15 @@ export function NoteBlock({
       {...props}
     >
       {science ? (
-        <Mechanism code={marker} name={note.title}>
+        /* `conditions` is R-SCR-41 and it is not decoration. `NoteView`
+           carries it from all four note-reading queries, `add_note` accepts
+           it alongside `ingredientSlug` and `experimentSlug`, and this
+           block is the renderer for /ingredients/[slug] and
+           /batch-logs/[log] — so dropping the prop here loses a value an
+           agent was told to send and shown a success for. F/Mechanism draws
+           nothing for an empty list, which is every note on the other seven
+           kinds and every science note nobody has described yet. */
+        <Mechanism code={marker} name={note.title} conditions={note.conditions}>
           {body}
         </Mechanism>
       ) : severity === 'warning' ? (

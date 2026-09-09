@@ -88,10 +88,10 @@ string, so a `redirect_uri` still in flight survives the rename.
 
 ## Scopes
 
-| Scope                   | Grants                                                                              |
-| ----------------------- | ----------------------------------------------------------------------------------- |
-| `noble-notations:read`  | Every read tool                                                                     |
-| `noble-notations:write` | `create_recipe`, `revise_recipe`, `add_note`, `upsert_ingredient`, `log_experiment` |
+| Scope                   | Grants                                                                                                                                                             |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `noble-notations:read`  | Every read tool                                                                                                                                                    |
+| `noble-notations:write` | `create_recipe`, `revise_recipe`, `backfill_revision`, `add_note`, `add_mass_flow`, `describe_mechanism`, `upsert_ingredient`, `upsert_category`, `log_experiment` |
 
 The consent screen names which is being requested and warns explicitly when
 write is included. Scope is re-checked on every tool call, not just at
@@ -99,16 +99,57 @@ authorization.
 
 ## Tools
 
-Read: `search_recipes`, `get_recipe`, `list_taxonomy`, `list_ingredients`,
-`get_ingredient`, `list_experiments`, `get_experiment`,
-`get_repository_stats`.
+Read: `get_started`, `search_recipes`, `get_recipe`, `list_categories`,
+`list_ingredients`, `get_ingredient`, `list_experiments`, `get_experiment`,
+`build_shopping_list`, `get_repository_stats`.
 
-Write: `create_recipe`, `revise_recipe`, `add_note`, `upsert_ingredient`,
-`log_experiment`.
+Write: `create_recipe`, `revise_recipe`, `backfill_revision`, `add_note`,
+`add_mass_flow`, `describe_mechanism`, `upsert_ingredient`,
+`upsert_category`, `log_experiment`.
 
 Tool descriptions are the only instructions the model gets, and they are
 written to push toward revising rather than duplicating — `create_recipe`
 says to search first and reach for `revise_recipe` if the dish exists.
+
+### The two tools that reach a stored record
+
+`add_mass_flow` and `describe_mechanism` are the odd pair. Every other
+write tool makes a record or appends one; these two name a record that is
+already stored and fill one field on it.
+
+They exist because two fields arrived after the archive was already in the
+database. D-02 added `notes.conditions` — the values a mechanism holds
+under, which R-SCR-41 requires to stay separate — and D-12 added the mass
+flow tables behind R-SCR-39. No other path reaches a stored revision:
+`pnpm ingest` skips a recipe that exists, `--force` appends revisions
+rather than filling columns on stored ones, and a revision whose only
+change is a diagram has no rationale and would move a number that is in
+URLs and in the `nn:checked:{slug}:{revision}` keys.
+
+Neither is an update path in the sense the revision rule forbids. Each
+fills a field that has never held a value, so it can only turn absent into
+present — and R-SCR-39 makes the figure optional, so a revision without one
+is already rendered correctly. Each refuses a second write, which is what
+keeps a measurement from being quietly replaced. The answer to a wrong
+condition is a note of kind `correction`, exactly as it is for a wrong note.
+
+**The two refusals are enforced differently, and the second one had to be.**
+`add_mass_flow` reads the stored row so the caller is told what is already
+there, and `uq_mass_flow_revision` catches the case the read cannot: two
+callers at once. `describe_mechanism` has no index of that shape available
+— the field is an array column on a row that already exists — so a plain
+read-then-write would have been advisory only. Under READ COMMITTED two
+connectors describing the same note both read an empty list, both pass the
+guard, and the second overwrites the first. The connector is multi-client
+by design, so the read takes `FOR UPDATE` and the `UPDATE` repeats the
+emptiness test in its own `WHERE` clause. See `describeMechanism` in
+`src/lib/queries/write.ts`.
+
+When a new record is being written, the fields ride along instead:
+`massFlow` on `create_recipe`, `revise_recipe` and `backfill_revision`, and
+`conditions` on any note. `massFlow` is deliberately **not** carried
+forward by `revise_recipe`, because it records what one batch weighed and
+copying it into a version nobody weighed would invent a measurement.
 
 ## Hard-won details
 

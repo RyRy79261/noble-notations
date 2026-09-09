@@ -21,6 +21,8 @@ import {
   notes,
   recipeIngredients,
   recipeLinks,
+  recipeMassFlowStages,
+  recipeMassFlows,
   recipeRevisions,
   recipeStepIngredients,
   recipeSteps,
@@ -32,6 +34,8 @@ import { slugify } from '@/lib/domain/slug';
 import {
   formatAggregate,
   formatIngredientLine,
+  formatQuantity,
+  pluraliseUnit,
   quantityBucket,
   type QuantityBucket,
 } from '@/lib/domain/units';
@@ -97,6 +101,12 @@ export interface NoteView {
   kind: string;
   title: string | null;
   body: string;
+  /**
+   * The conditions a `science` note holds under, as separate values —
+   * R-SCR-41. Empty on every other kind, and on a science note that has not
+   * been given any; a caller draws no row for an empty list.
+   */
+  conditions: string[];
   createdAt: string;
   sources: {
     url: string | null;
@@ -104,6 +114,23 @@ export interface NoteView {
     citation: string | null;
     accessedAt: string | null;
   }[];
+}
+
+/**
+ * One stage of the mass flow figure — R-SCR-39, D-12.
+ *
+ * `value` is a formatted string rather than a number and a unit, because
+ * the strip holds a mass, a count and two durations side by side and no
+ * one type covers all four. The formatting happens here, once, so the
+ * figure and the control-bar readout that restates it cannot disagree.
+ */
+export interface MassFlowStageView {
+  /** Stored as written; the drawing uppercases it. */
+  label: string;
+  /** `10 kg`, `25–30 pieces`, `24–48 h`. Null when the stage has no figure. */
+  value: string | null;
+  /** Drawn as the stage that matters — the accent ground and border. */
+  emphasis: boolean;
 }
 
 export interface RecipeSummaryView {
@@ -134,6 +161,29 @@ export interface RecipeView extends RecipeSummaryView {
     servings: number | null;
     totalTimeMinutes: number | null;
     activeTimeMinutes: number | null;
+    /**
+     * The mass flow figure, in order, first stage to last. Null when this
+     * revision has none, which is the ordinary case: R-SCR-39 asks for it
+     * only where a dish loses or gains weight in a way the reader has to
+     * plan for.
+     *
+     * On the REVISION and not on the recipe. Batch five was 8.2 kg and
+     * batch six is 10 kg, so a recipe-level figure would draw the current
+     * numbers on `/recipes/[slug]/revisions/3`, which renders through the
+     * same component.
+     */
+    massFlow: MassFlowStageView[] | null;
+    /**
+     * The two summary figures beneath the strip, as separate values:
+     * "Net weight loss −55%", "Rate 4.21% per day". Separate rather than
+     * one sentence for the same reason a mechanism's conditions are — a
+     * caller draws the separator, and one figure gets no separator at all.
+     * Empty when neither was recorded, and the caller then draws no
+     * summary row.
+     */
+    massFlowSummary: string[];
+    /** Where the figure's numbers came from. Provenance; nothing draws it. */
+    massFlowNote: string | null;
     source: string;
     createdAt: string;
   };
@@ -420,6 +470,97 @@ export async function searchRecipes(
 // A single recipe
 // ─────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────
+// The mass flow figure — R-SCR-39, D-12
+// ─────────────────────────────────────────────────────────────────────────
+
+/** A number the design's way: a real minus sign, not a hyphen. */
+function figure(value: number): string {
+  return String(value).replace('-', '\u2212');
+}
+
+/**
+ * Largest first. A stage picks the largest of these that leaves every end
+ * of its range a whole number.
+ */
+const STAGE_TIME_UNITS = [
+  { minutes: 1440, label: 'd' },
+  { minutes: 60, label: 'h' },
+  { minutes: 1, label: 'min' },
+];
+
+/**
+ * A wait, as the strip draws it: `45 min`, `24–48 h`, `13–15 d`.
+ *
+ * One unit for the whole range rather than one for each end — the figure
+ * reads `24–48 h`, not `24 h–48 h` — and the unit steps down when the near
+ * end would read as `1`. A cure of 1440 to 2880 minutes is `24–48 h` and
+ * not `1–2 d`, because the reader is comparing the two ends and `1–2` hides
+ * how much longer the far one is. This is why the column is minutes with no
+ * unit beside it: the drawing decides, and the store does not have to.
+ */
+function formatStageDuration(minutes: number, max: number | null): string {
+  const ends = max == null || max === minutes ? [minutes] : [minutes, max];
+  const whole = STAGE_TIME_UNITS.filter((u) =>
+    ends.every((m) => m % u.minutes === 0),
+  );
+  // `min` divides everything, so this is never empty.
+  let unit = whole[0]!;
+  if (ends.length > 1 && minutes / unit.minutes === 1 && whole[1]) {
+    unit = whole[1];
+  }
+  return `${ends.map((m) => m / unit.minutes).join('\u2013')} ${unit.label}`;
+}
+
+/**
+ * A stage's figure. One value line per stage — a weight, a count or a wait
+ * — and `raw_text` only when the row holds neither, which is what the
+ * `mass_flow_stage_single_figure` check makes true.
+ */
+function formatStageValue(row: {
+  quantity: string | null;
+  quantityMax: string | null;
+  unit: string | null;
+  durationMinutes: number | null;
+  durationMaxMinutes: number | null;
+  rawText: string | null;
+}): string | null {
+  const quantity = n(row.quantity);
+  if (quantity != null) {
+    const amount = formatQuantity(quantity, n(row.quantityMax));
+    if (!row.unit || amount == null) return amount;
+    return `${amount} ${pluraliseUnit(row.unit, n(row.quantityMax) ?? quantity)}`;
+  }
+  if (row.durationMinutes != null) {
+    return formatStageDuration(row.durationMinutes, row.durationMaxMinutes);
+  }
+  return row.rawText;
+}
+
+/**
+ * The two summary figures, as separate values.
+ *
+ * The word follows the sign, because R-SCR-39 covers a dish that gains
+ * weight as well as one that loses it, and a brine drawn as a "loss" of
+ * -12% would be read backwards.
+ */
+function formatMassFlowSummary(
+  netChangePercent: number | null,
+  ratePercentPerDay: number | null,
+): string[] {
+  const summary: string[] = [];
+  if (netChangePercent != null) {
+    const word =
+      netChangePercent < 0 ? 'loss' : netChangePercent > 0 ? 'gain' : 'change';
+    const sign = netChangePercent > 0 ? '+' : '';
+    summary.push(`Net weight ${word} ${sign}${figure(netChangePercent)}%`);
+  }
+  if (ratePercentPerDay != null) {
+    summary.push(`Rate ${figure(ratePercentPerDay)}% per day`);
+  }
+  return summary;
+}
+
 export async function getRecipeBySlug(
   slug: string,
   revisionNumber?: number,
@@ -469,73 +610,110 @@ export async function getRecipeBySlug(
         revisionRows[0]);
   if (!revision) return null;
 
-  const [ingredientRows, stepRows, noteRows, termMap] = await Promise.all([
-    db
-      .select({
-        id: recipeIngredients.id,
-        position: recipeIngredients.position,
-        component: recipeIngredients.component,
-        quantity: recipeIngredients.quantity,
-        quantityMax: recipeIngredients.quantityMax,
-        unit: recipeIngredients.unit,
-        preparation: recipeIngredients.preparation,
-        optional: recipeIngredients.optional,
-        note: recipeIngredients.note,
-        rawText: recipeIngredients.rawText,
-        ingredientSlug: ingredients.slug,
-        ingredientName: ingredients.name,
-        ingredientCategory: ingredients.category,
-      })
-      .from(recipeIngredients)
-      .leftJoin(ingredients, eq(ingredients.id, recipeIngredients.ingredientId))
-      .where(eq(recipeIngredients.revisionId, revision.id))
-      .orderBy(asc(recipeIngredients.position)),
-    db
-      .select({
-        id: recipeSteps.id,
-        position: recipeSteps.position,
-        phase: recipeSteps.phase,
-        instruction: recipeSteps.instruction,
-        durationMinutes: recipeSteps.durationMinutes,
-        durationMaxMinutes: recipeSteps.durationMaxMinutes,
-        temperatureC: recipeSteps.temperatureC,
-        equipment: recipeSteps.equipment,
-        imageUrl: recipeSteps.imageUrl,
-        imageAlt: recipeSteps.imageAlt,
-        note: recipeSteps.note,
-        techniqueSlug: taxonomyTerms.slug,
-        techniqueLabel: taxonomyTerms.label,
-      })
-      .from(recipeSteps)
-      .leftJoin(
-        taxonomyTerms,
-        eq(taxonomyTerms.id, recipeSteps.techniqueTermId),
-      )
-      .where(eq(recipeSteps.revisionId, revision.id))
-      .orderBy(asc(recipeSteps.position)),
-    // Notes on the recipe itself and on the revision being displayed.
-    db
-      .select({
-        id: notes.id,
-        kind: notes.kind,
-        title: notes.title,
-        body: notes.body,
-        createdAt: notes.createdAt,
-      })
-      .from(notes)
-      .where(
-        sql`${notes.recipeId} = ${recipe.id} OR ${notes.revisionId} = ${revision.id}`,
-      )
-      // `asc(notes.id)` is not decoration. `notes.created_at` defaults to
-      // `now()`, which Postgres holds fixed for a transaction, so every note
-      // ingested with a recipe carries the SAME timestamp and a sort on that
-      // column alone has no defined order. `getScienceStudy` numbers the same
-      // science notes `M1…Mn` over `asc(notes.createdAt), asc(notes.id)`, and
-      // `NoteList` numbers them again on the recipe page — the tiebreak is
-      // what keeps the two codes the same word for the same note.
-      .orderBy(asc(notes.createdAt), asc(notes.id)),
-    attachTerms([{ id: recipe.id }]),
-  ]);
+  const [ingredientRows, stepRows, noteRows, massFlowRows, termMap] =
+    await Promise.all([
+      db
+        .select({
+          id: recipeIngredients.id,
+          position: recipeIngredients.position,
+          component: recipeIngredients.component,
+          quantity: recipeIngredients.quantity,
+          quantityMax: recipeIngredients.quantityMax,
+          unit: recipeIngredients.unit,
+          preparation: recipeIngredients.preparation,
+          optional: recipeIngredients.optional,
+          note: recipeIngredients.note,
+          rawText: recipeIngredients.rawText,
+          ingredientSlug: ingredients.slug,
+          ingredientName: ingredients.name,
+          ingredientCategory: ingredients.category,
+        })
+        .from(recipeIngredients)
+        .leftJoin(
+          ingredients,
+          eq(ingredients.id, recipeIngredients.ingredientId),
+        )
+        .where(eq(recipeIngredients.revisionId, revision.id))
+        .orderBy(asc(recipeIngredients.position)),
+      db
+        .select({
+          id: recipeSteps.id,
+          position: recipeSteps.position,
+          phase: recipeSteps.phase,
+          instruction: recipeSteps.instruction,
+          durationMinutes: recipeSteps.durationMinutes,
+          durationMaxMinutes: recipeSteps.durationMaxMinutes,
+          temperatureC: recipeSteps.temperatureC,
+          equipment: recipeSteps.equipment,
+          imageUrl: recipeSteps.imageUrl,
+          imageAlt: recipeSteps.imageAlt,
+          note: recipeSteps.note,
+          techniqueSlug: taxonomyTerms.slug,
+          techniqueLabel: taxonomyTerms.label,
+        })
+        .from(recipeSteps)
+        .leftJoin(
+          taxonomyTerms,
+          eq(taxonomyTerms.id, recipeSteps.techniqueTermId),
+        )
+        .where(eq(recipeSteps.revisionId, revision.id))
+        .orderBy(asc(recipeSteps.position)),
+      // Notes on the recipe itself and on the revision being displayed.
+      db
+        .select({
+          id: notes.id,
+          kind: notes.kind,
+          title: notes.title,
+          body: notes.body,
+          conditions: notes.conditions,
+          createdAt: notes.createdAt,
+        })
+        .from(notes)
+        .where(
+          sql`${notes.recipeId} = ${recipe.id} OR ${notes.revisionId} = ${revision.id}`,
+        )
+        // `asc(notes.id)` is not decoration. `notes.created_at` defaults to
+        // `now()`, which Postgres holds fixed for a transaction, so every note
+        // ingested with a recipe carries the SAME timestamp and a sort on that
+        // column alone has no defined order. `getScienceStudy` numbers the same
+        // science notes `M1…Mn` over `asc(notes.createdAt), asc(notes.id)`, and
+        // `NoteList` numbers them again on the recipe page — the tiebreak is
+        // what keeps the two codes the same word for the same note.
+        .orderBy(asc(notes.createdAt), asc(notes.id)),
+      // One flow at most — `uq_mass_flow_revision` — so the head repeats on
+      // every stage row and a left join costs one statement instead of two.
+      db
+        .select({
+          netChangePercent: recipeMassFlows.netChangePercent,
+          ratePercentPerDay: recipeMassFlows.ratePercentPerDay,
+          note: recipeMassFlows.note,
+          label: recipeMassFlowStages.label,
+          quantity: recipeMassFlowStages.quantity,
+          quantityMax: recipeMassFlowStages.quantityMax,
+          unit: recipeMassFlowStages.unit,
+          durationMinutes: recipeMassFlowStages.durationMinutes,
+          durationMaxMinutes: recipeMassFlowStages.durationMaxMinutes,
+          emphasis: recipeMassFlowStages.emphasis,
+          rawText: recipeMassFlowStages.rawText,
+        })
+        .from(recipeMassFlows)
+        .leftJoin(
+          recipeMassFlowStages,
+          eq(recipeMassFlowStages.massFlowId, recipeMassFlows.id),
+        )
+        .where(eq(recipeMassFlows.revisionId, revision.id))
+        .orderBy(asc(recipeMassFlowStages.position)),
+      attachTerms([{ id: recipe.id }]),
+    ]);
+
+  const massFlowHead = massFlowRows[0];
+  const massFlowStages: MassFlowStageView[] = massFlowRows
+    .filter((row) => row.label !== null)
+    .map((row) => ({
+      label: row.label!,
+      value: formatStageValue(row),
+      emphasis: row.emphasis!,
+    }));
 
   const stepUses = stepRows.length
     ? await db
@@ -655,6 +833,17 @@ export async function getRecipeBySlug(
       servings: revision.servings,
       totalTimeMinutes: revision.totalTimeMinutes,
       activeTimeMinutes: revision.activeTimeMinutes,
+      // Null rather than an empty array when there is no figure, so a
+      // caller reads "this revision has none" rather than "it has one with
+      // nothing in it". R-SCR-39 makes absence the ordinary case.
+      massFlow: massFlowStages.length > 0 ? massFlowStages : null,
+      massFlowSummary: massFlowHead
+        ? formatMassFlowSummary(
+            n(massFlowHead.netChangePercent),
+            n(massFlowHead.ratePercentPerDay),
+          )
+        : [],
+      massFlowNote: massFlowHead?.note ?? null,
       source: revision.source,
       createdAt: revision.createdAt.toISOString(),
     },
@@ -699,6 +888,7 @@ export async function getRecipeBySlug(
       kind: row.kind,
       title: row.title,
       body: row.body,
+      conditions: row.conditions,
       createdAt: row.createdAt.toISOString(),
       sources: sourcesByNote.get(row.id) ?? [],
     })),
@@ -994,6 +1184,7 @@ export async function getIngredient(slug: string): Promise<{
         kind: notes.kind,
         title: notes.title,
         body: notes.body,
+        conditions: notes.conditions,
         createdAt: notes.createdAt,
       })
       .from(notes)
@@ -1022,6 +1213,7 @@ export async function getIngredient(slug: string): Promise<{
       kind: x.kind,
       title: x.title,
       body: x.body,
+      conditions: x.conditions,
       createdAt: x.createdAt.toISOString(),
       sources: [],
     })),
@@ -1158,6 +1350,7 @@ export async function getExperiment(
         kind: notes.kind,
         title: notes.title,
         body: notes.body,
+        conditions: notes.conditions,
         createdAt: notes.createdAt,
       })
       .from(notes)
@@ -1185,6 +1378,7 @@ export async function getExperiment(
       kind: x.kind,
       title: x.title,
       body: x.body,
+      conditions: x.conditions,
       createdAt: x.createdAt.toISOString(),
       sources: [],
     })),
@@ -1292,16 +1486,13 @@ export interface MechanismView {
   title: string | null;
   body: string;
   /**
-   * The conditions, as separate values: 232 °C, 45 MIN, SINGLE LAYER ON A
-   * RACK. R-SCR-41 requires them separate rather than written into a
-   * sentence.
+   * The conditions, as separate values: `232 °C`, `45 min`, `single layer
+   * on a rack`. R-SCR-41 requires them separate rather than written into a
+   * sentence, and the drawing puts them in capitals rather than the store.
    *
-   * **Always empty today.** `notes` holds a kind, a title and a body and
-   * nothing else, so there is nowhere to read a temperature, a time or a
-   * depth from. D-02 in design/DECISIONS.md parks that schema change with
-   * the repository owner. The field is here so the block is built now and
-   * one additive migration fills it; a caller draws no row for an empty
-   * list.
+   * Read from `notes.conditions`, which D-02 added. Empty for a note that
+   * has not been given any, and a caller draws no row for an empty list —
+   * so a mechanism written before the column existed still renders.
    */
   conditions: string[];
   recipeSlug: string;
@@ -1387,6 +1578,7 @@ export async function listScienceIndex(): Promise<ScienceIndexView> {
         kind: notes.kind,
         title: notes.title,
         body: notes.body,
+        conditions: notes.conditions,
         recipeSlug: recipes.slug,
         recipeTitle: recipes.title,
       })
@@ -1445,7 +1637,7 @@ export async function listScienceIndex(): Promise<ScienceIndexView> {
         code: `M${position}`,
         title: row.title,
         body: row.body,
-        conditions: [],
+        conditions: row.conditions,
         recipeSlug: row.recipeSlug,
         recipeTitle: row.recipeTitle,
       });
@@ -1513,6 +1705,7 @@ export async function getScienceStudy(
       kind: notes.kind,
       title: notes.title,
       body: notes.body,
+      conditions: notes.conditions,
       experimentId: notes.experimentId,
     })
     .from(notes)
@@ -1526,7 +1719,7 @@ export async function getScienceStudy(
       code: `M${index + 1}`,
       title: row.title,
       body: row.body,
-      conditions: [],
+      conditions: row.conditions,
       recipeSlug: recipe.slug,
       recipeTitle: recipe.title,
     }));

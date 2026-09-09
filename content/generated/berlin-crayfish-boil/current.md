@@ -4,7 +4,7 @@ slug: 'berlin-crayfish-boil'
 kind: 'recipe'
 revision: 1
 source: 'import'
-created: '2026-08-29T21:34:00.983Z'
+created: '2026-09-09T10:43:10.448Z'
 generated: 'true'
 ---
 
@@ -18,14 +18,14 @@ A crayfish boil scaled for 50 people, built around the Louisiana crayfish that h
 
 Transcribed from the archive as originally written.
 
-## Classification
+## Categories
 
-- **cuisine**: Cajun, German
-- **technique**: boiling
-- **course**: main
-- **occasion**: party
-- **equipment**: propane burner, stockpot
-- **season**: summer
+- **Technique**: Boiling
+- **Cuisine**: Cajun, German
+- **Course**: Main
+- **Occasion**: Party
+- **Equipment**: Propane burner, Stockpot
+- **Season**: Summer
 
 ## Ingredients
 
@@ -48,7 +48,7 @@ Transcribed from the archive as originally written.
 
 ## Method
 
-1. Fill each pot two-thirds with water. Divide the salt, Old Bay, cayenne, bay leaves and beer proportionally between them and bring to a boil. _(boiling)_
+1. Fill each pot two-thirds with water. Divide the salt, Old Bay, cayenne, bay leaves and beer proportionally between them and bring to a boil. _(Boiling)_
 2. Add the potatoes and cook for 10 minutes. _(10 min)_
 3. Add the corn, sausage, onions, garlic and lemons. Cook 5 minutes more. _(5 min)_
 4. Add the crayfish and cook 3–5 minutes, until bright red. _(3 min)_
@@ -77,14 +77,18 @@ Transcribed from the archive as originally written.
 
 Availability is inconsistent because it depends on catching an invasive species. Call ahead.
 
-### Season _(observation)_
+- Source: Fisch Frank, Spandau — asked in person
+- Source: 25 Teiche, Markthalle IX, Kreuzberg — price quoted at the stall
+- Source: Berliner Anglerverband e.V.
 
-Crayfish are most abundant in Berlin waters from late spring through early autumn.
+### Local adjustments _(idea)_
+
+Berlin palates may want less heat than a Southern boil. Pretzels or sauerkraut alongside work better than they have any right to.
 
 ### Harvest responsibly _(warning)_
 
 Removal of the invasive population is encouraged, but buy from licensed sources or fish with a permit — the rules still apply.
 
-### Local adjustments _(idea)_
+### Season _(observation)_
 
-Berlin palates may want less heat than a Southern boil. Pretzels or sauerkraut alongside work better than they have any right to.
+Crayfish are most abundant in Berlin waters from late spring through early autumn.

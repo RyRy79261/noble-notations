@@ -654,10 +654,16 @@ export function BatchControl({
        * selector on that line moves to `[data-batch-readout]` in the same
        * commit and the assertion becomes `4.5 kg`.
        *
-       * `DRIED FROM 10 KG RAW` is not renderable. `RecipeView.revision`
-       * carries `yieldQuantity` and `yieldUnit` and nothing else; the rest
-       * comes from the mass-flow figure (R-SCR-39), which the model does
-       * not hold.
+       * `DRIED FROM 10 KG RAW` is still not drawn, and M5.5 changed why.
+       * The model DOES hold it now: `RecipeView.revision.massFlow` carries
+       * the first stage and the emphasised one. What stops it is the scale.
+       * This readout scales — `e2e/shopping-journey.spec.ts` asserts
+       * `13.5 kg` at ×3 — and `MassFlowStageView.value` is a formatted
+       * string, `"10 kg"`, with no number behind it to multiply. Drawing
+       * the raw mass unscaled beside a scaled yield would put two batch
+       * sizes on one page, which is exactly what R-CMP-11 forbids. So the
+       * readout needs the first stage as a number and a unit, not as the
+       * figure's caption. See D-12 in `design/DECISIONS.md`; M6 owns it.
        */}
       {servings == null
         ? scaledYield && (

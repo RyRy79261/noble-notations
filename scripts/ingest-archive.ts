@@ -17,9 +17,22 @@
  * deploying against.
  */
 import { readFileSync } from 'node:fs';
+import type { CreateRecipeArgs } from '@/lib/domain/schemas';
 import { loadEnv } from './env';
 
 loadEnv();
+
+/**
+ * The half of a seed record the mass-flow pass below reads.
+ *
+ * A recipe and a revision hold these two fields in the same shape — one is
+ * `CreateRecipeArgs`, the other `RevisionSeed` — so the pass walks both
+ * through this rather than through either concrete type.
+ */
+type RevisionBody = {
+  massFlow?: CreateRecipeArgs['massFlow'];
+  notes?: CreateRecipeArgs['notes'];
+};
 
 /**
  * A file on the branch is the primary way to ask for the archive.
@@ -105,17 +118,22 @@ async function main() {
   const { recipes, experiments: experimentsTable } =
     await import('@/db/schema');
   const {
+    addMassFlow,
     createRecipe,
+    describeMechanism,
     reviseRecipe,
     upsertIngredient,
     upsertCategory,
     logExperiment,
   } = await import('@/lib/queries/write');
+  const { getRecipeBySlug } = await import('@/lib/queries/read');
   const { withTransaction } = await import('@/db/client');
   const { recipeLinks } = await import('@/db/schema');
   const { eq } = await import('drizzle-orm');
   const {
+    addMassFlowSchema,
     createRecipeSchema,
+    describeMechanismSchema,
     logExperimentSchema,
     reviseRecipeSchema,
     upsertIngredientSchema,
@@ -188,6 +206,150 @@ async function main() {
         'import',
       );
       console.log(`    revision ${result.revisionNumber}`);
+    }
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // Mass flow figures and mechanism conditions — D-12 and D-02
+  // ───────────────────────────────────────────────────────────────────────
+  //
+  // On a database that has never been loaded these two fields arrive with
+  // the recipe: `createRecipe` and `reviseRecipe` write `massFlow` and a
+  // note's `conditions` straight from the seed above. This pass then finds
+  // both already present and says so.
+  //
+  // It exists for the database that HAS been loaded. Both fields were added
+  // after the archive was in Postgres, and nothing else reaches back: the
+  // loop above skips a recipe that exists, `--force` appends revisions
+  // rather than filling columns on stored ones, and a revision whose only
+  // change is a diagram breaks "every revision records why it exists" and
+  // moves a number that is in URLs and in the ticked-ingredient keys.
+  //
+  // The two writes it makes are additions and not edits. Each names a
+  // record that is already stored and fills a field that has never held a
+  // value; each refuses a second write. So this reads first, writes only
+  // into a gap, and running it twice does nothing the second time — which
+  // is what keeps `pnpm ingest` idempotent.
+  console.log('\nMass flow figures and mechanism conditions…');
+  for (const seed of RECIPES) {
+    const slug = seed.recipe.slug;
+    if (!slug) continue;
+
+    // WHICH STORED REVISION EACH SEED VERSION IS — resolved by identity,
+    // never by counting.
+    //
+    // Revision 1 is the recipe as created and the seed's revisions follow
+    // it, so on a database this seed loaded exactly once the nth entry is
+    // revision n + 2. That arithmetic is only safe if the seed ran once.
+    // `pnpm ingest --force` re-runs every seed revision through
+    // `reviseRecipe`, which always appends `MAX(revision_number) + 1` and
+    // has no no-op guard, and AGENTS.md documents --force as the supported
+    // way to add revisions from a terminal. A biltong that was force-loaded
+    // once holds revisions 1–11 with 11 current; the arithmetic would then
+    // write the figure onto revision 6, log it as a success, and leave
+    // /recipes/baumy-biltong drawing nothing — on exactly the loaded
+    // database this pass exists for. Re-running would not repair it either,
+    // because `addMassFlow` refuses the second write.
+    //
+    // `rationale` is what a revision IS — every revision records why it
+    // exists, and the seed states it verbatim — so the stored revision
+    // carrying it is the seed entry. A rationale that matches no stored
+    // revision, or more than one, is not guessed at: the pass says which,
+    // names the current revision, and moves on. A visible skip an operator
+    // can act on beats a silent write to a version nobody reads.
+    const head = await getRecipeBySlug(slug);
+    if (!head) {
+      console.log(`  skip ${slug} (not stored)`);
+      continue;
+    }
+    const currentRevision = head.revision.revisionNumber;
+
+    const versions = [
+      { rationale: seed.recipe.rationale, body: seed.recipe as RevisionBody },
+      ...(seed.revisions ?? []).map((revision) => ({
+        rationale: revision.rationale,
+        body: revision as RevisionBody,
+      })),
+    ];
+
+    for (const { rationale, body } of versions) {
+      const mechanisms = (body.notes ?? []).filter(
+        (note) => (note.conditions ?? []).length > 0,
+      );
+      if (!body.massFlow && mechanisms.length === 0) continue;
+
+      const named = rationale
+        ? `"${rationale.slice(0, 48)}${rationale.length > 48 ? '…' : ''}"`
+        : '(no rationale)';
+      const matches = rationale
+        ? head.revisions.filter((r) => r.rationale === rationale)
+        : [];
+      if (matches.length !== 1) {
+        console.log(
+          `  skip ${slug} ${named}: ${matches.length} stored revisions ` +
+            `state it, expected 1. Current revision is ${currentRevision}. ` +
+            'Call add_mass_flow or describe_mechanism naming the revision ' +
+            'you mean.',
+        );
+        continue;
+      }
+      const revisionNumber = matches[0]!.revisionNumber;
+
+      const stored = await getRecipeBySlug(slug, revisionNumber);
+      if (!stored) {
+        console.log(`  skip ${slug} revision ${revisionNumber} (not stored)`);
+        continue;
+      }
+
+      if (body.massFlow) {
+        if (stored.revision.massFlow) {
+          console.log(
+            `  skip ${slug} revision ${revisionNumber} mass flow (already recorded)`,
+          );
+        } else {
+          await addMassFlow(
+            addMassFlowSchema.parse({ slug, revisionNumber, ...body.massFlow }),
+          );
+          console.log(
+            `  ${slug} revision ${revisionNumber} of ${currentRevision}: ` +
+              `mass flow, ${body.massFlow.stages.length} stages`,
+          );
+        }
+      }
+
+      for (const note of mechanisms) {
+        // Matched on kind and title because that pair is what a person
+        // reads. A seeded note carries no stable identifier of its own —
+        // `notes.id` is a random uuid minted at insert — so there is
+        // nothing else to match on, and a title that no longer matches
+        // means the seed changed and the note should be re-read, not
+        // guessed at.
+        const match = stored.notes.find(
+          (candidate) =>
+            candidate.kind === note.kind && candidate.title === note.title,
+        );
+        if (!match) {
+          console.log(
+            `  skip "${note.title}" on ${slug} (no note with that title)`,
+          );
+          continue;
+        }
+        if (match.conditions.length > 0) {
+          console.log(`  skip "${note.title}" on ${slug} (already described)`);
+          continue;
+        }
+        await describeMechanism(
+          describeMechanismSchema.parse({
+            noteId: match.id,
+            conditions: note.conditions,
+          }),
+        );
+        console.log(
+          `  ${slug} revision ${revisionNumber}: "${note.title}" — ` +
+            `${note.conditions!.length} ` +
+            `${note.conditions!.length === 1 ? 'condition' : 'conditions'}`,
+        );
+      }
     }
   }
 

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { Fragment } from 'react';
 import { listScienceIndex } from '@/lib/queries/read';
 import { safeRead } from '@/lib/safe';
 import { Markdown } from '@/components/markdown';
@@ -110,17 +111,43 @@ export default async function SciencePage() {
                       ) : null}
                     </header>
                     <Markdown>{mechanism.body}</Markdown>
-                    {/* R-SCR-41: separate values, and no row at all when
-                        there are none. Every note is in that state today —
-                        see D-02. */}
+                    {/* R-SCR-41: separate values, never written into a
+                        sentence, and no row at all when there are none.
+                        `notes.conditions` is the column D-02 settled and
+                        M5.5 added, so these are real now.
+
+                        The key is the POSITION and not the value: two
+                        stages of one mechanism can legitimately hold the
+                        same condition, and a duplicate key drops one of
+                        them.
+
+                        R-CMP-14 — THREE BOUNDARIES, NOT ONE. A flex gap is
+                        invisible to `textContent`, and so is the boundary
+                        between two blocks. The row needs a real space
+                        BETWEEN its chips (`232 °C45 MIN`), one BEFORE it
+                        (`…is not redundant.dry duxelles + sealed wrap`) and
+                        one AFTER it (`sealed wrapFrom Beef Wellington` —
+                        the worst of the three, because it fuses two words
+                        with no punctuation at all). `.note` is a plain
+                        block and `.row` is the flex child, so an
+                        inter-block whitespace text node is not rendered and
+                        none of the three costs a pixel.
+
+                        This is M2 markup and M6 rebuilds it onto
+                        F/Mechanism. Only the data and those faults are
+                        touched here. */}
                     {mechanism.conditions.length > 0 ? (
-                      <div className="row">
-                        {mechanism.conditions.map((condition) => (
-                          <span className="badge num" key={condition}>
-                            {condition}
-                          </span>
-                        ))}
-                      </div>
+                      <>
+                        {' '}
+                        <div className="row">
+                          {mechanism.conditions.map((condition, index) => (
+                            <Fragment key={index}>
+                              {index > 0 ? ' ' : null}
+                              <span className="badge num">{condition}</span>
+                            </Fragment>
+                          ))}
+                        </div>{' '}
+                      </>
                     ) : null}
                     {/* R-SCR-40: a science note links back to its recipe. */}
                     <p className="faint">

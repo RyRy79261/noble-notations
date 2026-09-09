@@ -154,8 +154,9 @@ This keeps the site usable and the tests green at each step.
   address.
 - R-BLD-07: The dark theme comes from `prefers-color-scheme`. There is no
   theme control.
-- R-BLD-08: Do not change `content/biltong`, `content/recipes`,
-  `content/research` or `content/generated`.
+- R-BLD-08: Do not hand-edit `content/biltong`, `content/recipes` or
+  `content/research`. They are a frozen archive. `content/generated` is
+  machine-written: change it only by running `pnpm export`.
 
 ---
 
@@ -164,11 +165,14 @@ This keeps the site usable and the tests green at each step.
 A milestone can leave a named item to a later one. Each item here has an
 owner and a test.
 
-| Item                           | Owner        | Why it waits                                                                                                                                                                                                                                                                                                                                                             |
-| ------------------------------ | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| The `/classes` tag pill        | M6           | M4 rebuilt `F/Tag` with no padding, which is what the design draws almost everywhere. `/classes` is the exception: the design draws a pill there with `p-[4px_9px_4px_10px]` on `f-desk` and an 8px accent square. Without it a term on that screen is 17px tall, which `pnpm audit:ui` reports as 4 small tap targets. See `design/exports/classes-cuisines-1280.html`. |
-| The note kind wrap             | Closed in M4 | `src/components/f/note.tsx` set `w-full` on the title at every width, which squeezed `NOTE · OBSERVATION` onto two lines above the breakpoint. Now `w-full shell:w-auto`.                                                                                                                                                                                                |
-| The screen reader run-together | Closed in M4 | Four row components put two values next to each other with a flex gap and no character between them, so `textContent` read `29 NOV 2024Biltong Batch 4`. Each now holds a real space. This is the same fault R-CMP-14 records for the step chip.                                                                                                                         |
+| Item                                                          | Owner        | Why it waits                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| The `/classes` tag pill                                       | M6           | M4 rebuilt `F/Tag` with no padding, which is what the design draws almost everywhere. `/classes` is the exception: the design draws a pill there with `p-[4px_9px_4px_10px]` on `f-desk` and an 8px accent square. Without it a term on that screen is 17px tall, which `pnpm audit:ui` reports as 4 small tap targets. See `design/exports/classes-cuisines-1280.html`. |
+| The note kind wrap                                            | Closed in M4 | `src/components/f/note.tsx` set `w-full` on the title at every width, which squeezed `NOTE · OBSERVATION` onto two lines above the breakpoint. Now `w-full shell:w-auto`.                                                                                                                                                                                                |
+| A render test for the mass flow figure and the conditions row | M7           | M5.5 added 4 tests, and all of them cover the write layer and the read layer. Nothing asserts that `F/Mass flow` appears on `/recipes/baumy-biltong`, or that a conditions row appears on `/science`. Delete the block in `src/components/recipe-detail.tsx` and all 144 tests still pass.                                                                               |
+| `.badge num` names two things                                 | M6           | On the two science pages the class marks both the mechanism code and a condition chip. `e2e/science.spec.ts` reads `.first()` and passes by DOM order. M6 rebuilds both screens onto `F/Mechanism`, which removes the clash.                                                                                                                                             |
+| `pnpm export` is not reproducible                             | M6           | Two runs over one seed order the notes differently in four files, because `notes.created_at` shares one transaction timestamp and the tiebreak falls to a random uuid. Every export also rewrites eleven `created:` lines. A stable ordering key on `notes` fixes both. The fault predates M5.5.                                                                         |
+| The screen reader run-together                                | Closed in M4 | Four row components put two values next to each other with a flex gap and no character between them, so `textContent` read `29 NOV 2024Biltong Batch 4`. Each now holds a real space. This is the same fault R-CMP-14 records for the step chip.                                                                                                                         |
 
 ## 5. How to run the full tests
 
@@ -227,7 +231,6 @@ IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}
 export DATABASE_URL=postgresql://postgres:nn@$IP:5432/noble_test
 ```
 
-The baseline after M4 is 140 tests passed, and 0 blockers and 0 major faults
-across 176 page loads. The audit also reports 52 minor faults, all of them a
-small tap target. M4 removed the 16 duplicate identifiers and added 4 small
-tap targets on `/classes`; section 4.1 gives that one to M6.
+The baseline after M5.5 is 144 tests passed, and 0 blockers and 0 major
+faults across 176 page loads. The audit also reports 52 minor faults, all of
+them a small tap target. Section 4.1 gives 4 of those to M6.
