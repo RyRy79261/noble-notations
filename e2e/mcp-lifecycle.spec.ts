@@ -221,7 +221,7 @@ test.describe('the website serves what the MCP wrote', () => {
     // Located by href, not by accessible name: the name includes the facet
     // prefix ("Equipment Blender"), which is right for a screen reader and
     // brittle to assert on.
-    const tag = page.locator('a[href="/categories/equipment/blender"]');
+    const tag = page.locator('a[href="/classes/equipment/blender"]');
     await expect(tag).toBeVisible();
 
     const tooltipId = await tag.getAttribute('aria-describedby');

@@ -76,13 +76,18 @@ export const metadata: Metadata = {
 import { BasketButton } from '@/components/shopping-basket';
 import { HeaderHeight } from '@/components/header-height';
 
+// The 9 destinations of §8.2, in the order the design draws them. Science
+// is the item M2 adds; the other 8 were already here under older names.
+// The header itself is untouched: M3 rebuilds it as a drawer, which is what
+// R-NAV-01 and R-NAV-03 need at 360px. This array is the whole change.
 const NAV = [
   { href: '/recipes', label: 'Recipes' },
+  { href: '/science', label: 'Science' },
   { href: '/cuisines', label: 'Cuisines' },
-  { href: '/categories', label: 'Categories' },
+  { href: '/classes', label: 'Classes' },
   { href: '/ingredients', label: 'Ingredients' },
-  { href: '/shopping-list', label: 'Shopping' },
-  { href: '/experiments', label: 'Experiments' },
+  { href: '/list', label: 'List' },
+  { href: '/batch-logs', label: 'Batch logs' },
   { href: '/archive', label: 'Archive' },
   { href: '/search', label: 'Search' },
 ];

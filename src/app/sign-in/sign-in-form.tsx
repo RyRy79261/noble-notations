@@ -72,9 +72,10 @@ export function SignInForm() {
     setError(null);
     setBusy(true);
     try {
-      // The hosted flow returns to /oauth-return rather than here, because
+      // The hosted flow returns to /connect/done rather than here, because
       // the middleware's verifier exchange is skipped for anything at or
-      // under the configured login path. See src/lib/auth-routes.ts.
+      // under the configured login path, and this page is that path. See
+      // src/lib/auth-routes.ts.
       await signIn.social({
         provider: 'google',
         callbackURL: oauthReturnUrl(callbackURL),

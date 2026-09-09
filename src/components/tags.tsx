@@ -26,7 +26,7 @@ export function TermTag({
   const href =
     term.categoryType === 'cuisine'
       ? `/cuisines/${term.slug}`
-      : `/categories/${term.categoryType}/${term.slug}`;
+      : `/classes/${term.categoryType}/${term.slug}`;
   const facetLabel =
     CATEGORY_TYPE_LABELS[term.categoryType] ?? term.categoryType;
   const tooltipId = `term-blurb-${term.categoryType}-${term.slug}`;

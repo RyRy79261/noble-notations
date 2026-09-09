@@ -8,7 +8,8 @@ import 'server-only';
  * Results are plain serialisable objects — numerics are converted out of
  * Postgres' string representation here rather than in twelve call sites.
  */
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, or, sql } from 'drizzle-orm';
+import type { SQLWrapper } from 'drizzle-orm';
 import { db } from '@/db/client';
 import {
   experimentItems,
@@ -715,6 +716,30 @@ export async function getRecipeBySlug(
   };
 }
 
+/**
+ * Does this recipe exist, and what is it called.
+ *
+ * One statement, two columns. `getRecipeBySlug` answers the same question
+ * but issues about twelve — the revisions, the ingredients, the steps, the
+ * notes, their sources, the step uses, the links, the backlinks, the runs
+ * and the terms twice — and a page that draws a heading and a grid of runs
+ * should not pay for all of it, least of all on a `force-dynamic` route
+ * that reads once in `generateMetadata` and again in the page.
+ *
+ * There is no status filter, matching `getRecipeBySlug`: an archived recipe
+ * still answers at its own address.
+ */
+export async function getRecipeIdentity(
+  slug: string,
+): Promise<{ slug: string; title: string } | null> {
+  const rows = await db
+    .select({ slug: recipes.slug, title: recipes.title })
+    .from(recipes)
+    .where(eq(recipes.slug, slug))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
 export async function listRecipeSlugs(): Promise<string[]> {
   const rows = await db
     .select({ slug: recipes.slug })
@@ -1023,7 +1048,22 @@ export interface ExperimentView {
   notes: NoteView[];
 }
 
-export async function listExperiments(): Promise<
+/**
+ * Every recorded run, or one recipe's.
+ *
+ * `/batch-logs` lists them all and calls this with nothing;
+ * `/recipes/[slug]/batch-logs` is the same grid filtered to one recipe. The
+ * filter is optional so the existing no-argument call sites keep working
+ * unchanged, including `safeRead(listExperiments, [])`.
+ *
+ * The join stays a left join and the filter is a `WHERE` on the joined
+ * recipe, so an unfiltered call still lists a run that names no recipe with
+ * a null `recipe` (K-01, R-SCR-44) while a filtered call sees only the runs
+ * of the recipe asked for.
+ */
+export async function listExperiments(options?: {
+  recipeSlug?: string;
+}): Promise<
   Pick<ExperimentView, 'slug' | 'title' | 'summary' | 'startedAt' | 'recipe'>[]
 > {
   const rows = await db
@@ -1037,7 +1077,13 @@ export async function listExperiments(): Promise<
     })
     .from(experiments)
     .leftJoin(recipes, eq(recipes.id, experiments.recipeId))
-    .orderBy(desc(experiments.startedAt));
+    .where(
+      options?.recipeSlug ? eq(recipes.slug, options.recipeSlug) : undefined,
+    )
+    // Newest first. The slug breaks the tie, because two runs started on
+    // the same day are otherwise ordered by whatever the planner returns
+    // and the grid reshuffles between renders.
+    .orderBy(desc(experiments.startedAt), asc(experiments.slug));
 
   return rows.map((r) => ({
     slug: r.slug,
@@ -1135,6 +1181,469 @@ export async function getExperiment(
       createdAt: x.createdAt.toISOString(),
       sources: [],
     })),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Science
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * The recipe a note belongs to.
+ *
+ * A note hangs off exactly one subject — the `note_has_exactly_one_subject`
+ * check in src/db/schema.ts enforces it — and four of the five subjects lead
+ * back to a recipe:
+ *
+ * - `recipe_id`, written by `createRecipe` and by `addNote` with a recipe
+ *   slug. This is where nearly every science note lives.
+ * - `revision_id`, written by `reviseRecipe`, by `backfillRevision` and by
+ *   `addNote` with a `revisionNumber`. A note pinned to one version of a
+ *   method is still that recipe's science.
+ * - `step_id`. Nothing sets it today — `writeNotes` takes the column but no
+ *   caller passes it — so it is covered here rather than discovered later.
+ * - `experiment_id`, written by `logExperiment` and by `addNote` with an
+ *   experiment slug. A run names a recipe only optionally (K-01), so this
+ *   path can end nowhere.
+ *
+ * The fifth, `ingredient_id`, never leads to a recipe. A note on veal
+ * knuckle belongs to the ingredient, and `getIngredient` already shows it.
+ * It cannot satisfy R-SCR-40 — a science note must link back to its recipe —
+ * so /science does not carry it, and neither does a note on a run that names
+ * no recipe. The inner join in `listScienceIndex` is what drops both.
+ *
+ * **Only the current revision counts.** `getRecipeBySlug` reads a recipe's
+ * notes as `recipe_id` OR the *current* `revision_id`, so a note on a
+ * superseded revision — everything `backfillRevision` writes, by design, as
+ * it never moves `current_revision_id` — is not on the recipe page. Were
+ * this expression to reach every revision, /science would show a mechanism
+ * under "From <recipe>" and send the reader to a page that does not hold
+ * it, which is R-SCR-40 answered with a broken promise. The two reads agree
+ * instead.
+ */
+const noteRecipeId = sql<string | null>`COALESCE(
+  ${notes.recipeId},
+  (SELECT r.id FROM recipes r
+     JOIN recipe_revisions rev ON rev.id = r.current_revision_id
+    WHERE rev.id = ${notes.revisionId}),
+  (SELECT r.id FROM recipes r
+     JOIN recipe_steps st ON st.revision_id = r.current_revision_id
+    WHERE st.id = ${notes.stepId}),
+  (SELECT ex.recipe_id FROM experiments ex
+    WHERE ex.id = ${notes.experimentId})
+)`;
+
+/**
+ * The same rule as `noteRecipeId`, turned round so an index can be used.
+ *
+ * `noteRecipeId` maps a note to its recipe, which is what a join needs.
+ * Asking the reverse question of it — `WHERE <that COALESCE> = $1` — makes
+ * every disjunct a correlated subquery evaluated per row, so Postgres reads
+ * all of `notes` and neither `idx_notes_recipe` nor `idx_notes_revision` can
+ * help. This states the same four paths as comparisons on the indexed
+ * columns themselves, which is what `getScienceStudy` wants: it runs on a
+ * `force-dynamic` page, twice per render.
+ *
+ * Change one of these and change the other. They encode one rule.
+ */
+function noteBelongsToRecipe(recipeId: SQLWrapper | string) {
+  return sql`(
+    ${notes.recipeId} = ${recipeId}
+    OR ${notes.revisionId} = (
+      SELECT r.current_revision_id FROM recipes r WHERE r.id = ${recipeId})
+    OR ${notes.stepId} IN (
+      SELECT st.id FROM recipe_steps st
+        JOIN recipes r ON r.current_revision_id = st.revision_id
+       WHERE r.id = ${recipeId})
+    OR ${notes.experimentId} IN (
+      SELECT ex.id FROM experiments ex WHERE ex.recipe_id = ${recipeId})
+  )`;
+}
+
+/**
+ * A study: a recipe the science pages answer for. That is a recipe of the
+ * `research` kind — which holds notes rather than steps — or any recipe that
+ * carries at least one science note, because a mechanism has to be readable
+ * somewhere and `/science/[slug]` is where it is read. The two halves are
+ * the same rule `getScienceStudy` applies before it returns a study, so the
+ * index lists exactly the addresses that answer.
+ */
+export interface ScienceStudyCard {
+  slug: string;
+  title: string;
+  summary: string | null;
+  kind: string;
+  /** Its science notes. Drawn as "FOUR MECHANISMS" on the card. */
+  mechanismCount: number;
+}
+
+/** One science note — what happens in the food, and why. */
+export interface MechanismView {
+  id: string;
+  /** The label as drawn: `M1`, `M2`… See `listScienceIndex` on ordering. */
+  code: string;
+  title: string | null;
+  body: string;
+  /**
+   * The conditions, as separate values: 232 °C, 45 MIN, SINGLE LAYER ON A
+   * RACK. R-SCR-41 requires them separate rather than written into a
+   * sentence.
+   *
+   * **Always empty today.** `notes` holds a kind, a title and a body and
+   * nothing else, so there is nowhere to read a temperature, a time or a
+   * depth from. D-02 in design/DECISIONS.md parks that schema change with
+   * the repository owner. The field is here so the block is built now and
+   * one additive migration fills it; a caller draws no row for an empty
+   * list.
+   */
+  conditions: string[];
+  recipeSlug: string;
+  recipeTitle: string;
+}
+
+/** One research note, in the index's "FROM THE RECIPES" list. */
+export interface ResearchNoteCard {
+  id: string;
+  /** The label as drawn: `R1`, `R2`… */
+  code: string;
+  title: string | null;
+  recipeSlug: string;
+  recipeTitle: string;
+}
+
+/**
+ * One citation, from `note_sources`. R-SCR-42 asks for the work, the part
+ * of it, and the date a person read it.
+ */
+export interface CitationView {
+  /** The label as drawn: `[1]`, `[2]`… Positional within the study. */
+  code: string;
+  /** The work — `note_sources.title`. */
+  work: string | null;
+  /** Which part of it — `note_sources.citation`. */
+  part: string | null;
+  url: string | null;
+  /** The date a person read it, `YYYY-MM-DD`. */
+  accessedAt: string | null;
+  /** The note that cites it, so a page can tie `[1]` to a mechanism. */
+  noteId: string;
+}
+
+export interface ScienceIndexView {
+  studies: ScienceStudyCard[];
+  mechanisms: MechanismView[];
+  research: ResearchNoteCard[];
+}
+
+export interface ScienceStudyView {
+  slug: string;
+  title: string;
+  subtitle: string | null;
+  summary: string | null;
+  kind: string;
+  mechanisms: MechanismView[];
+  citations: CitationView[];
+  /**
+   * The recipes that lean on this study — the design's "APPLIED IN". See
+   * `getScienceStudy` on which direction of a `recipe_links` edge means
+   * that, which is not the same for every kind.
+   */
+  appliedIn: RecipeSummaryView[];
+}
+
+/**
+ * Everything on /science in one read: the studies, every mechanism across
+ * every recipe, and every research note. This closes K-04.
+ *
+ * **The order, and why.** Notes are ordered by recipe title, then by when
+ * the note was written, then by its id. Title first because the reader
+ * meets one recipe's mechanisms together and a title never changes, so the
+ * grouping is stable; `updated_at DESC`, which the other indexes use, would
+ * renumber every code whenever any recipe was touched. The id breaks the
+ * tie because `created_at` defaults to `now()`, which in Postgres is
+ * transaction time — every note written by one `createRecipe` call shares a
+ * timestamp to the microsecond, so creation time alone would leave the
+ * order, and with it the codes, to the planner.
+ *
+ * **The codes.** `M1…` is a position **within its recipe**, so a mechanism
+ * carries the same code here and on `/science/[slug]`, which numbers a
+ * study's own mechanisms from M1 over the same rows in the same order. `R1…`
+ * is a position in the flat research list, which no other screen draws. A
+ * code that means one thing everywhere is a column on `notes` rather than a
+ * position at all — the same conversation as D-02.
+ */
+export async function listScienceIndex(): Promise<ScienceIndexView> {
+  const [noteRows, studyRows] = await Promise.all([
+    db
+      .select({
+        id: notes.id,
+        kind: notes.kind,
+        title: notes.title,
+        body: notes.body,
+        recipeSlug: recipes.slug,
+        recipeTitle: recipes.title,
+      })
+      .from(notes)
+      .innerJoin(recipes, eq(recipes.id, noteRecipeId))
+      .where(
+        and(
+          inArray(notes.kind, ['science', 'research']),
+          eq(recipes.status, 'active'),
+        ),
+      )
+      .orderBy(asc(recipes.title), asc(notes.createdAt), asc(notes.id)),
+    db
+      .select({
+        slug: recipes.slug,
+        title: recipes.title,
+        summary: recipes.summary,
+        kind: recipes.kind,
+      })
+      .from(recipes)
+      .where(
+        and(
+          eq(recipes.status, 'active'),
+          or(
+            eq(recipes.kind, 'research'),
+            // A preparation with a mechanism on it is a study too — the
+            // demi-glace case the design draws. Listing only the research
+            // recipes left `/science/demi-glace` answering with no card
+            // anywhere that reaches it.
+            sql`EXISTS (SELECT 1 FROM ${notes}
+                  WHERE ${notes.kind} = 'science'
+                    AND ${noteBelongsToRecipe(recipes.id)})`,
+          ),
+        ),
+      )
+      .orderBy(asc(recipes.title)),
+  ]);
+
+  const mechanisms: MechanismView[] = [];
+  const research: ResearchNoteCard[] = [];
+  // Counted from the same rows the page renders, so a study card can never
+  // promise a mechanism that the list below it does not show.
+  const mechanismCounts = new Map<string, number>();
+
+  for (const row of noteRows) {
+    if (row.kind === 'science') {
+      // Numbered within the recipe, not across the list. `getScienceStudy`
+      // numbers a study's mechanisms from M1 over the same rows in the same
+      // order, so the code a reader sees here is the code they see when
+      // they follow the link — a badge that reads M5 on one screen and M1
+      // on the next names two different things to them.
+      const position = (mechanismCounts.get(row.recipeSlug) ?? 0) + 1;
+      mechanismCounts.set(row.recipeSlug, position);
+      mechanisms.push({
+        id: row.id,
+        code: `M${position}`,
+        title: row.title,
+        body: row.body,
+        conditions: [],
+        recipeSlug: row.recipeSlug,
+        recipeTitle: row.recipeTitle,
+      });
+    } else {
+      research.push({
+        id: row.id,
+        code: `R${research.length + 1}`,
+        title: row.title,
+        recipeSlug: row.recipeSlug,
+        recipeTitle: row.recipeTitle,
+      });
+    }
+  }
+
+  return {
+    studies: studyRows.map((row) => ({
+      ...row,
+      mechanismCount: mechanismCounts.get(row.slug) ?? 0,
+    })),
+    mechanisms,
+    research,
+  };
+}
+
+/**
+ * One study — `/science/[slug]`.
+ *
+ * Null when nothing answers to that slug, and null for a recipe that is
+ * neither a study nor carries a mechanism, so `/science/tomato-soup` is a
+ * 404 rather than an empty page at a second address for the same dish.
+ *
+ * Notes are ordered as they are on the index (creation, then id) and the
+ * mechanisms are numbered from M1 within this study. Citations follow the
+ * order of the notes that carry them and are deduplicated: one work cited
+ * by two mechanisms is one entry in the reference list, not two.
+ *
+ * There is deliberately no status filter, matching `getRecipeBySlug`: a
+ * study that has been archived still answers at its own address.
+ */
+export async function getScienceStudy(
+  recipeSlug: string,
+): Promise<ScienceStudyView | null> {
+  const found = await db
+    .select({
+      id: recipes.id,
+      slug: recipes.slug,
+      title: recipes.title,
+      subtitle: recipes.subtitle,
+      summary: recipes.summary,
+      kind: recipes.kind,
+    })
+    .from(recipes)
+    .where(eq(recipes.slug, recipeSlug))
+    .limit(1);
+
+  const recipe = found[0];
+  if (!recipe) return null;
+
+  // Every note of the recipe, not only its science: the reference list at
+  // the foot of a study is the study's citations, and a research note is
+  // required to carry sources where a science note is not.
+  const noteRows = await db
+    .select({
+      id: notes.id,
+      kind: notes.kind,
+      title: notes.title,
+      body: notes.body,
+      experimentId: notes.experimentId,
+    })
+    .from(notes)
+    .where(noteBelongsToRecipe(recipe.id))
+    .orderBy(asc(notes.createdAt), asc(notes.id));
+
+  const mechanisms: MechanismView[] = noteRows
+    .filter((row) => row.kind === 'science')
+    .map((row, index) => ({
+      id: row.id,
+      code: `M${index + 1}`,
+      title: row.title,
+      body: row.body,
+      conditions: [],
+      recipeSlug: recipe.slug,
+      recipeTitle: recipe.title,
+    }));
+
+  if (recipe.kind !== 'research' && mechanisms.length === 0) return null;
+
+  // The notes the study itself is made of: the ones on the recipe, its
+  // current revision or a step of it. A note on a *run* reaches this recipe
+  // too — `logExperiment` writes notes against an experiment and a
+  // `NoteInput` carries sources — but a source cited while weighing a batch
+  // is a record of that batch, and printing it under "References"
+  // attributes it to the study. Filtered by subject rather than by kind,
+  // because a citation is not the preserve of a science note: the
+  // Wellington's one source hangs off a `warning`.
+  const citedNotes = noteRows.filter((row) => row.experimentId === null);
+
+  const [sourceRows, appliedInRows] = await Promise.all([
+    citedNotes.length
+      ? db
+          .select({
+            noteId: noteSources.noteId,
+            url: noteSources.url,
+            title: noteSources.title,
+            citation: noteSources.citation,
+            accessedAt: noteSources.accessedAt,
+          })
+          .from(noteSources)
+          .where(
+            inArray(
+              noteSources.noteId,
+              citedNotes.map((row) => row.id),
+            ),
+          )
+          .orderBy(asc(noteSources.createdAt), asc(noteSources.id))
+      : [],
+    // "Applied in" is the recipes that lean on this study, and which edge
+    // says so depends on the kind. An *incoming* `references`,
+    // `derived_from` or `variant_of` means the other recipe was built on
+    // this one. An *outgoing* `component_of` means the same thing the other
+    // way round — "demi-glace is a component of the Wellington" is written
+    // from demi-glace, and it is the Wellington that applies demi-glace.
+    // Reading every incoming edge, as the first draft did, printed that one
+    // backwards. `pairs_with` is an association in neither direction and is
+    // not an application, so it is left out.
+    db
+      .select(recipeSummaryColumns)
+      .from(recipeLinks)
+      .innerJoin(
+        recipes,
+        or(
+          and(
+            eq(recipes.id, recipeLinks.fromRecipeId),
+            eq(recipeLinks.toRecipeId, recipe.id),
+            inArray(recipeLinks.kind, [
+              'references',
+              'derived_from',
+              'variant_of',
+            ]),
+          ),
+          and(
+            eq(recipes.id, recipeLinks.toRecipeId),
+            eq(recipeLinks.fromRecipeId, recipe.id),
+            eq(recipeLinks.kind, 'component_of'),
+          ),
+        ),
+      )
+      .leftJoin(
+        recipeRevisions,
+        eq(recipeRevisions.id, recipes.currentRevisionId),
+      )
+      .where(
+        or(
+          eq(recipeLinks.toRecipeId, recipe.id),
+          eq(recipeLinks.fromRecipeId, recipe.id),
+        ),
+      )
+      .orderBy(asc(recipes.title)),
+  ]);
+
+  // Note order first, then the order the sources were written in. Sort is
+  // stable, so the second survives inside the first.
+  const noteOrder = new Map(citedNotes.map((row, index) => [row.id, index]));
+  const ordered = [...sourceRows].sort(
+    (a, b) => (noteOrder.get(a.noteId) ?? 0) - (noteOrder.get(b.noteId) ?? 0),
+  );
+
+  const citations: CitationView[] = [];
+  const seen = new Set<string>();
+  for (const source of ordered) {
+    const key = [source.url, source.title, source.citation, source.accessedAt]
+      .map((value) => value ?? '')
+      .join(' | ');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    citations.push({
+      code: `[${citations.length + 1}]`,
+      work: source.title,
+      part: source.citation,
+      url: source.url,
+      accessedAt: source.accessedAt,
+      noteId: source.noteId,
+    });
+  }
+
+  // `uq_recipe_link` is unique on (from, to, kind), so two recipes can be
+  // joined by more than one edge and the same recipe arrive twice. It would
+  // read as a duplicate card, a duplicate React key and an inflated count.
+  const appliedIn = [
+    ...new Map(appliedInRows.map((row) => [row.id, row])).values(),
+  ];
+
+  const appliedTerms = await attachTerms(appliedIn);
+
+  return {
+    slug: recipe.slug,
+    title: recipe.title,
+    subtitle: recipe.subtitle,
+    summary: recipe.summary,
+    kind: recipe.kind,
+    mechanisms,
+    citations,
+    appliedIn: appliedIn.map((row) =>
+      toSummary(row, appliedTerms.get(row.id) ?? []),
+    ),
   };
 }
 

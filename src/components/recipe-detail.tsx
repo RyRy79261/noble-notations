@@ -277,7 +277,7 @@ export function RecipeDetail({
                                   {step.technique ? (
                                     <Link
                                       className="tag"
-                                      href={`/categories/technique/${step.technique.slug}`}
+                                      href={`/classes/technique/${step.technique.slug}`}
                                     >
                                       {step.technique.label}
                                     </Link>
@@ -371,7 +371,15 @@ export function RecipeDetail({
                     <ul>
                       {recipe.experiments.map((experiment) => (
                         <li key={experiment.slug}>
-                          <Link href={`/experiments/${experiment.slug}`}>
+                          {/* The nested address, not the top level one. We
+                            are inside the recipe, so the recipe slug is in
+                            hand and this is the run's own canonical address.
+                            /batch-logs/<log> would answer too, but only by
+                            reading the database and redirecting here. See
+                            D-01. */}
+                          <Link
+                            href={`/recipes/${recipe.slug}/batch-logs/${experiment.slug}`}
+                          >
                             {experiment.title}
                           </Link>
                           {experiment.startedAt ? (

@@ -12,7 +12,7 @@ export const metadata: Metadata = {
   title: 'Shopping list',
   description:
     'The ingredients of the recipes you are cooking, in one list, grouped by where they sit in a shop.',
-  alternates: { canonical: '/shopping-list' },
+  alternates: { canonical: '/list' },
 };
 
 function asArray(value: string | string[] | undefined): string[] {

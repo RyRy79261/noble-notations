@@ -5,12 +5,17 @@ import { test, expect } from '@playwright/test';
  * interpret is dead weight. These cover the blurb reaching the reader, the
  * facet separation holding, and equipment being a first-class facet rather
  * than an afterthought.
+ *
+ * The route is `/classes`; `/categories` is its old address and still
+ * answers with a 308 — `redirects.spec.ts` covers that. "Category" is the
+ * database's word and still reaches the reader in headings and in the
+ * `categoryType` of a term URL, so the assertions below keep it.
  */
 
-test('the categories index lists every category type, equipment included', async ({
+test('the classes index lists every category type, equipment included', async ({
   page,
 }) => {
-  await page.goto('/categories');
+  await page.goto('/classes');
 
   for (const facet of ['Cuisine', 'Technique', 'Equipment', 'Preservation']) {
     await expect(page.getByRole('heading', { name: facet })).toBeVisible();
@@ -82,10 +87,10 @@ test('the same word in two facets carries two different blurbs', async ({
 }) => {
   // air-drying is both a technique (what you do) and a preservation method
   // (what it achieves). Terms never cross facets, so these are two rows.
-  await page.goto('/categories/technique/air-drying');
+  await page.goto('/classes/technique/air-drying');
   await expect(page.getByText(/moving unheated air/i).first()).toBeVisible();
 
-  await page.goto('/categories/preservation/air-drying');
+  await page.goto('/classes/preservation/air-drying');
   await expect(page.getByText(/water activity/i).first()).toBeVisible();
 });
 
@@ -110,7 +115,7 @@ test('a parent cuisine lists its narrower regions', async ({ page }) => {
 });
 
 test('an equipment term lists the recipes that need it', async ({ page }) => {
-  await page.goto('/categories/equipment/drying-box');
+  await page.goto('/classes/equipment/drying-box');
 
   await expect(page.getByText(/steady airflow/i).first()).toBeVisible();
   await expect(

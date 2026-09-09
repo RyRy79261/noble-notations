@@ -28,10 +28,8 @@ async function openList(page: import('@playwright/test').Page) {
 async function collect(page: import('@playwright/test').Page, slugs: string[]) {
   for (const slug of slugs) {
     await page.goto(`/recipes/${slug}`);
-    await page.getByRole('button', { name: /add to shopping list/i }).click();
-    await expect(
-      page.getByRole('button', { name: /in shopping list/i }),
-    ).toBeVisible();
+    await page.getByRole('button', { name: /add to list/i }).click();
+    await expect(page.getByRole('button', { name: /in list/i })).toBeVisible();
   }
 }
 
@@ -58,7 +56,7 @@ test.describe('shopping on a phone', () => {
     await collect(page, ['baumy-biltong', 'berlin-crayfish-boil']);
     await openList(page);
 
-    await expect(page).toHaveURL(/\/shopping-list\?.*r=baumy-biltong/);
+    await expect(page).toHaveURL(/\/list\?.*r=baumy-biltong/);
 
     // Ingredients, with a tickable box each — not recipe titles with a ×.
     const rows = page.locator('.shopping-item');

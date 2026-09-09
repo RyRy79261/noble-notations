@@ -1,17 +1,22 @@
 /**
  * Auth paths shared by client and server code.
  *
- * `OAUTH_RETURN_PATH` deliberately lives *outside* `/auth`. Neon Auth's
- * middleware returns `allow` for any path at or under `loginUrl` **before**
- * it reaches the verifier exchange (`processAuthMiddleware` in
+ * `OAUTH_RETURN_PATH` deliberately lives *outside* `SIGN_IN_PATH`. Neon
+ * Auth's middleware returns `allow` for any path at or under `loginUrl`
+ * **before** it reaches the verifier exchange (`processAuthMiddleware` in
  * @neondatabase/auth checks `isSamePathOrSubpath` first), so a hosted
  * sign-in that returned the browser to
- * `/auth?neon_auth_session_verifier=…` would be served as an ordinary page
- * and no session cookie would ever be minted. Sending the return trip to a
- * sibling path keeps the exchange reachable.
+ * `/sign-in?neon_auth_session_verifier=…` would be served as an ordinary
+ * page and no session cookie would ever be minted. Sending the return trip
+ * to an unrelated path keeps the exchange reachable.
+ *
+ * `/connect/done` satisfies that. It is not `/sign-in` and it is not under
+ * it, so the early return does not apply. It is also where the reader
+ * belongs at the end of the trip: the only reason to sign in here is to
+ * approve an MCP connector, and `/connect` is the page that explains one.
  */
-export const SIGN_IN_PATH = '/auth';
-export const OAUTH_RETURN_PATH = '/oauth-return';
+export const SIGN_IN_PATH = '/sign-in';
+export const OAUTH_RETURN_PATH = '/connect/done';
 
 /**
  * Only same-origin relative paths are accepted as a post-sign-in

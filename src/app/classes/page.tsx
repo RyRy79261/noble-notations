@@ -9,10 +9,10 @@ import { CATEGORY_TYPE_LABELS } from '@/lib/site';
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
-  title: 'Categories',
+  title: 'Classification',
   description:
     'The full classification scheme: cuisine, course, technique, diet, season, equipment, occasion, preservation, texture and ingredient class.',
-  alternates: { canonical: '/categories' },
+  alternates: { canonical: '/classes' },
 };
 
 /**
@@ -35,7 +35,7 @@ const CATEGORY_TYPE_BLURBS: Record<string, string> = {
   ingredient_class: 'The group that the ingredient is in.',
 };
 
-export default async function CategoriesPage() {
+export default async function ClassesPage() {
   const { data, configured, failed } = await safeRead(
     () => listCategories(),
     [],
@@ -71,7 +71,7 @@ export default async function CategoriesPage() {
   return (
     <div className="page">
       <header className="hero">
-        <h1>Categories</h1>
+        <h1>Classification</h1>
         <p>
           A recipe has many tags at the same time. A dish can be Sichuan, and a
           main, and braised. You do not put it in only one group.

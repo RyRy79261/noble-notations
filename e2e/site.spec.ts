@@ -5,16 +5,22 @@ import { test, expect } from '@playwright/test';
  * this is the net that catches a page 500-ing after a query change.
  */
 
+// In the order §8.2 draws the navigation, so a route added to one and not
+// the other is visible here.
 const ROUTES = [
   '/',
   '/recipes',
+  '/science',
   '/cuisines',
-  '/categories',
+  '/classes',
   '/ingredients',
-  '/experiments',
+  '/list',
+  '/batch-logs',
   '/archive',
-  '/connect',
   '/search?q=biltong',
+  // Not in the navigation: reached from the footer, and from a recipe.
+  '/connect',
+  '/recipes/baumy-biltong/batch-logs',
 ];
 
 for (const route of ROUTES) {
@@ -24,6 +30,35 @@ for (const route of ROUTES) {
     await expect(page.locator('h1').first()).toBeVisible();
   });
 }
+
+test('the primary navigation holds the 9 destinations, in order', async ({
+  page,
+}) => {
+  // §8.2. Asserted as an ordered list of addresses rather than as nine
+  // separate "is it visible" checks, because the two ways this breaks are
+  // an item silently pointing at its old address — every rename still
+  // answers through a 308, so nothing looks wrong — and an item landing in
+  // the wrong place when the drawer is built in M3.
+  await page.goto('/');
+
+  const hrefs = await page
+    .locator('nav[aria-label="Primary"] a')
+    .evaluateAll((links) =>
+      links.map((link) => link.getAttribute('href') ?? ''),
+    );
+
+  expect(hrefs).toEqual([
+    '/recipes',
+    '/science',
+    '/cuisines',
+    '/classes',
+    '/ingredients',
+    '/list',
+    '/batch-logs',
+    '/archive',
+    '/search',
+  ]);
+});
 
 test('the connector is in the footer and nowhere louder', async ({ page }) => {
   // One person can approve a connector, so the home page should not sell it
@@ -62,13 +97,26 @@ test('search narrows by ingredient with no free text', async ({ page }) => {
 });
 
 test('an experiment shows its recorded observations', async ({ page }) => {
-  await page.goto('/experiments');
-  await page.getByRole('link', { name: /batch/i }).first().click();
+  await page.goto('/batch-logs');
+  // Scoped to `main`. The primary nav is emitted before it and now holds a
+  // "Batch logs" link of its own, so an unscoped /batch/i match resolves to
+  // the header and the click lands straight back on the index.
+  await page
+    .locator('main')
+    .getByRole('link', { name: /batch/i })
+    .first()
+    .click();
   await expect(page.locator('table').first()).toBeVisible();
+
+  // Every seeded run names baumy-biltong, so the index links straight at
+  // the nested address rather than through the redirect in
+  // /batch-logs/[log]. A run that named no recipe would stay at the top
+  // level — see D-01 and R-NAV-08 — but the archive holds none.
+  await expect(page).toHaveURL(/\/recipes\/[^/]+\/batch-logs\/[^/]+$/);
 });
 
 test('the sign-in page is reachable and not indexed', async ({ page }) => {
-  await page.goto('/auth');
+  await page.goto('/sign-in');
   await expect(
     page.getByRole('heading', { name: /administrator sign-in/i }),
   ).toBeVisible();

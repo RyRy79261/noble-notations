@@ -18,8 +18,8 @@ export const dynamic = 'force-dynamic';
  * renders: by then the cookie exists, and all this page has to do is
  * forward to wherever sign-in was headed.
  *
- * It lives outside `/auth` on purpose — the middleware skips its exchange
- * for any path at or under the configured login path. See
+ * It lives outside `/sign-in` on purpose — the middleware skips its
+ * exchange for any path at or under the configured login path. See
  * src/lib/auth-routes.ts.
  */
 export default function OAuthReturnPage() {

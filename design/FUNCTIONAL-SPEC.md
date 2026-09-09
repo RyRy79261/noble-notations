@@ -216,7 +216,7 @@ To make a dish better, you add a revision. You do not edit the old one.
 | Styles now | One stylesheet, `src/app/globals.css`. About 1,900 lines. CSS custom properties. **Tailwind and shadcn/ui replace this.** |
 | Data       | Postgres through Drizzle. All reads go through `src/lib/queries/read.ts`.                                                 |
 | Rendering  | Server Components by default. There are 8 shared client components. See §9.3.                                             |
-| Tests      | 108 end-to-end tests. `pnpm audit:ui` reports 0 blockers across 144 page loads.                                           |
+| Tests      | 138 end-to-end tests. `pnpm audit:ui` reports 0 blockers across 176 page loads.                                           |
 | Deployment | Vercel. CI runs format, lint, typecheck, build and end-to-end tests.                                                      |
 
 ---
@@ -299,34 +299,34 @@ Each route is one file under `src/app/`. The shell for all of them is
 `src/app/layout.tsx`.
 
 The **Route** column is the design's name. The **File** column is the file
-today. Where the two differ, the file must move. See R-NAV-07.
+that serves it. M2 moved every file that had to move. See R-NAV-07.
 
-| Route                               | Screen                                                    | File today                                                                                          |
-| ----------------------------------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `/`                                 | Home                                                      | `src/app/page.tsx`                                                                                  |
-| `/recipes`                          | All entries in groups by kind                             | `src/app/recipes/page.tsx`                                                                          |
-| `/recipes/[slug]`                   | Recipe, current revision. **This is the primary screen.** | `src/app/recipes/[slug]/page.tsx`, body in `src/components/recipe-detail.tsx`                       |
-| `/recipes/[slug]/revisions/[n]`     | An old revision                                           | `src/app/recipes/[slug]/revisions/[number]/page.tsx`                                                |
-| `/batch-logs`                       | Every run, including a run with no recipe                 | **Rename.** Now `src/app/experiments/page.tsx`                                                      |
-| `/recipes/[slug]/batch-logs`        | The runs of one recipe                                    | **New.** No file yet.                                                                               |
-| `/recipes/[slug]/batch-logs/[slug]` | One run with its measurements                             | **Move.** Now `src/app/experiments/[slug]/page.tsx`                                                 |
-| `/recipes/[slug].md`                | Markdown copy for agents. There is no user interface.     | `src/app/recipes/[slug]/md/route.ts`                                                                |
-| `/science`                          | Every science note in one place                           | **New.** No file yet.                                                                               |
-| `/science/[slug]`                   | One science note                                          | **New.** No file yet.                                                                               |
-| `/cuisines`                         | Cuisine cards                                             | `src/app/cuisines/page.tsx`                                                                         |
-| `/cuisines/[slug]`                  | One cuisine                                               | `src/app/cuisines/[slug]/page.tsx`                                                                  |
-| `/classes`                          | All classification in groups by category type             | **Rename.** Now `src/app/categories/page.tsx`                                                       |
-| `/classes/[type]/[slug]`            | One term                                                  | **Rename.** Now `src/app/categories/[type]/[slug]/page.tsx`                                         |
-| `/ingredients`                      | The ingredient table                                      | `src/app/ingredients/page.tsx`                                                                      |
-| `/ingredients/[slug]`               | One ingredient                                            | `src/app/ingredients/[slug]/page.tsx`                                                               |
-| `/list`                             | The combined shopping list. The URL gives the selection.  | **Rename.** Now `src/app/shopping-list/page.tsx`, plus `list-recipes.tsx` and `basket-redirect.tsx` |
-| `/archive`                          | The frozen Markdown archive                               | `src/app/archive/page.tsx`                                                                          |
-| `/archive/[...slug]`                | One archived note                                         | `src/app/archive/[...slug]/page.tsx`                                                                |
-| `/search`                           | Search with filters                                       | `src/app/search/page.tsx`                                                                           |
-| `/connect`                          | MCP connector help. Not indexed. Linked from the footer.  | `src/app/connect/page.tsx`                                                                          |
-| `/connect/done`                     | The agent is connected                                    | **Rename.** Now `src/app/oauth-return/page.tsx`                                                     |
-| `/sign-in`                          | Administrator sign-in                                     | **Rename.** Now `src/app/auth/page.tsx`, form in `sign-in-form.tsx`                                 |
-| `404`                               | Not found                                                 | `src/app/not-found.tsx`                                                                             |
+| Route                              | Screen                                                    | File today                                                                    |
+| ---------------------------------- | --------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `/`                                | Home                                                      | `src/app/page.tsx`                                                            |
+| `/recipes`                         | All entries in groups by kind                             | `src/app/recipes/page.tsx`                                                    |
+| `/recipes/[slug]`                  | Recipe, current revision. **This is the primary screen.** | `src/app/recipes/[slug]/page.tsx`, body in `src/components/recipe-detail.tsx` |
+| `/recipes/[slug]/revisions/[n]`    | An old revision                                           | `src/app/recipes/[slug]/revisions/[number]/page.tsx`                          |
+| `/batch-logs`                      | Every run, including a run with no recipe                 | `src/app/batch-logs/page.tsx`                                                 |
+| `/recipes/[slug]/batch-logs`       | The runs of one recipe                                    | `src/app/recipes/[slug]/batch-logs/page.tsx`                                  |
+| `/recipes/[slug]/batch-logs/[log]` | One run with its measurements                             | `src/app/recipes/[slug]/batch-logs/[log]/page.tsx`. See D-01.                 |
+| `/recipes/[slug].md`               | Markdown copy for agents. There is no user interface.     | `src/app/recipes/[slug]/md/route.ts`                                          |
+| `/science`                         | Every science note in one place                           | `src/app/science/page.tsx`                                                    |
+| `/science/[slug]`                  | One study, keyed by recipe slug                           | `src/app/science/[slug]/page.tsx`. See D-05.                                  |
+| `/cuisines`                        | Cuisine cards                                             | `src/app/cuisines/page.tsx`                                                   |
+| `/cuisines/[slug]`                 | One cuisine                                               | `src/app/cuisines/[slug]/page.tsx`                                            |
+| `/classes`                         | All classification in groups by category type             | `src/app/classes/page.tsx`                                                    |
+| `/classes/[type]/[slug]`           | One term                                                  | `src/app/classes/[type]/[slug]/page.tsx`                                      |
+| `/ingredients`                     | The ingredient table                                      | `src/app/ingredients/page.tsx`                                                |
+| `/ingredients/[slug]`              | One ingredient                                            | `src/app/ingredients/[slug]/page.tsx`                                         |
+| `/list`                            | The combined shopping list. The URL gives the selection.  | `src/app/list/page.tsx`, plus `list-recipes.tsx` and `basket-redirect.tsx`    |
+| `/archive`                         | The frozen Markdown archive                               | `src/app/archive/page.tsx`                                                    |
+| `/archive/[...slug]`               | One archived note                                         | `src/app/archive/[...slug]/page.tsx`                                          |
+| `/search`                          | Search with filters                                       | `src/app/search/page.tsx`                                                     |
+| `/connect`                         | MCP connector help. Not indexed. Linked from the footer.  | `src/app/connect/page.tsx`                                                    |
+| `/connect/done`                    | The agent is connected                                    | `src/app/connect/done/page.tsx`                                               |
+| `/sign-in`                         | Administrator sign-in                                     | `src/app/sign-in/page.tsx`, form in `sign-in-form.tsx`                        |
+| `404`                              | Not found                                                 | `src/app/not-found.tsx`                                                       |
 
 ### 8.2 Primary navigation
 
@@ -348,8 +348,11 @@ The list control sits beside the navigation. It shows a count.
 - R-NAV-06: The list control **MUST** stay outside the drawer. It is visible
   at each width.
 - R-NAV-07: A renamed route **MUST** redirect from its old address. The site
-  is public and indexed. `/shopping-list`, `/categories`, `/experiments`,
-  `/auth` and `/oauth-return` each need a permanent redirect.
+  is public and indexed. `/shopping-list`, `/categories`,
+  `/categories/[type]/[slug]`, `/experiments`, `/experiments/[slug]`,
+  `/auth` and `/oauth-return` each need a permanent redirect. M2 shipped all
+  seven, and repointed the two older `/taxonomy` rules so no request takes
+  two hops.
 - R-NAV-08: Every run **MUST** be reachable from `/batch-logs`. A run with
   no recipe has no nested address, so the top level index is its only
   address. See K-01.
@@ -918,7 +921,8 @@ each empty state. It is not decorative text.
 
 - R-ACC-11: The design **MUST** pass `pnpm audit:ui`. The tool drives each
   route at 360, 390, 768 and 1280 pixels. It reports geometric faults. The
-  baseline is 0 blockers and 0 major faults across 144 page loads.
+  baseline is 0 blockers and 0 major faults across 176 page loads — 22
+  routes, after M2 renamed five and added four.
 - R-ACC-13: A panel **MUST** start where its tab strip ends. Measure the box
   of each panel against the strip that opened it. "It is visible" is not the
   test.
@@ -1056,7 +1060,7 @@ No gap is open.
 | ID       | Risk                                                                                                                                                          | What to decide                                                                                                                                                                                                                                                                                                  |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ~~K-01~~ | ~~**A batch log can have no recipe.**~~ `ExperimentView.recipe` is `null` when a run names no recipe, and the query is a left join.                           | **Decided 2026-09-08.** Keep a top level `/batch-logs` index. It lists every run, with or without a recipe. The nested `/recipes/[slug]/batch-logs` is the same grid filtered to one recipe. The recipe link stays optional, because a run is often logged before its recipe exists. See R-NAV-08 and R-SCR-44. |
-| K-02     | **A rename breaks a public address.** The site is indexed. 5 routes change.                                                                                   | R-NAV-07 requires a permanent redirect for each one.                                                                                                                                                                                                                                                            |
+| K-02     | **A rename breaks a public address.** The site is indexed. 7 routes change.                                                                                   | R-NAV-07 requires a permanent redirect for each one.                                                                                                                                                                                                                                                            |
 | K-03     | **The navigation grew from 8 items to 9.** Science was added. R-NAV-01 still applies at 360px.                                                                | The drawer answers it. Check it at 360 with `pnpm audit:ui`.                                                                                                                                                                                                                                                    |
 | K-04     | **`/science` needs a query that does not exist.** `src/lib/queries/read.ts` reads notes for one recipe. It has no read for every science note across recipes. | Add the query, or build the index from the recipe list.                                                                                                                                                                                                                                                         |
 
@@ -1124,14 +1128,14 @@ it to see which block goes in which panel.
 
 ### B.6 The tests
 
-| Thing                                | Where                                                          |
-| ------------------------------------ | -------------------------------------------------------------- |
-| The geometric audit in R-ACC-11      | `scripts/audit-ui.ts`. Run `pnpm audit:ui`.                    |
-| The panel geometry tests for §10.2.2 | `e2e/recipe-layout.spec.ts`                                    |
-| The checklist tests                  | `e2e/recipe-checklist.spec.ts`                                 |
-| The shopping tests                   | `e2e/shopping-list.spec.ts` and `e2e/shopping-journey.spec.ts` |
-| The filter tests                     | `e2e/filtering.spec.ts`                                        |
-| All tests                            | `e2e/`. Run `pnpm test:e2e`.                                   |
+| Thing                                | Where                                                 |
+| ------------------------------------ | ----------------------------------------------------- |
+| The geometric audit in R-ACC-11      | `scripts/audit-ui.ts`. Run `pnpm audit:ui`.           |
+| The panel geometry tests for §10.2.2 | `e2e/recipe-layout.spec.ts`                           |
+| The checklist tests                  | `e2e/recipe-checklist.spec.ts`                        |
+| The shopping tests                   | `e2e/list.spec.ts` and `e2e/shopping-journey.spec.ts` |
+| The filter tests                     | `e2e/filtering.spec.ts`                               |
+| All tests                            | `e2e/`. Run `pnpm test:e2e`.                          |
 
 ### B.7 The commands
 
@@ -1143,7 +1147,7 @@ pnpm format             # Prettier
 pnpm lint               # ESLint
 pnpm typecheck          # tsc --noEmit
 pnpm build              # production build
-pnpm test:e2e           # the 108 end-to-end tests
+pnpm test:e2e           # the 138 end-to-end tests
 pnpm audit:ui           # the geometric audit
 ```
 

@@ -33,7 +33,7 @@ claude.ai                         noble-notations
     ├─ POST /api/mcp/oauth/register ──────────────────►  client_id (DCR)
     │
     ├─ browser: GET /api/mcp/oauth/authorize?… ───────►  no admin session?
-    │                                                     302 → /auth?callbackURL=…
+    │                                                     302 → /sign-in?callbackURL=…
     │                                                     sign in, bounce back
     │                                                     render consent screen
     ├─ browser: POST (Approve) ───────────────────────►  mint auth code
@@ -78,11 +78,13 @@ and is scoped to two paths; nothing else on this site is behind a login.
 **`loginUrl` is skipped before the exchange runs.**
 `processAuthMiddleware` early-returns `allow` for any path at or under the
 configured `loginUrl` _before_ it reaches the verifier step. With
-`loginUrl: '/auth'`, a return trip landing on `/auth?…verifier=…` would be
-served as an ordinary page and no cookie would ever be minted. The hosted
-flow is therefore pointed at `/oauth-return`, a sibling path, which
-forwards to the real destination once the cookie exists. See
-`src/lib/auth-routes.ts`.
+`loginUrl: '/sign-in'`, a return trip landing on `/sign-in?…verifier=…`
+would be served as an ordinary page and no cookie would ever be minted. The
+hosted flow is therefore pointed at `/connect/done`, a path outside the
+sign-in subtree, which forwards to the real destination once the cookie
+exists. See `src/lib/auth-routes.ts`. The former names, `/auth` and
+`/oauth-return`, both redirect permanently to these and keep their query
+string, so a `redirect_uri` still in flight survives the rename.
 
 ## Scopes
 

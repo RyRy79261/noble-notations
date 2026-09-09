@@ -26,10 +26,12 @@
  * already owns, so the suffix is rewritten here to the handler's own path.
  * Every other recipe URL passes straight through.
  *
- * `loginUrl` stays pointed at the sign-in page, which makes
+ * `loginUrl` stays pointed at the sign-in page, now `/sign-in`, which makes
  * `processAuthMiddleware` early-return `allow` for anything at or under
- * `/auth` — before its verifier-exchange step. That is precisely why the
- * return trip lands on `/oauth-return` instead; see src/lib/auth-routes.ts.
+ * `/sign-in` — before its verifier-exchange step. That is precisely why the
+ * return trip lands on `/connect/done` instead: it is neither `/sign-in`
+ * nor under it, so the exchange is still reached. See
+ * src/lib/auth-routes.ts.
  *
  * The matcher below must repeat those paths as string literals: Next.js
  * statically analyses `config.matcher` at build time and silently ignores
@@ -59,5 +61,8 @@ export default function proxy(request: NextRequest) {
 export const config = {
   // Keep in sync with SIGN_IN_PATH and OAUTH_RETURN_PATH. Written out as
   // string literals: Next.js statically analyses this array at build time.
-  matcher: ['/auth', '/oauth-return', '/recipes/:slug'],
+  // The old addresses, /auth and /oauth-return, are not listed. A permanent
+  // redirect in next.config.ts runs before this file and rewrites them to
+  // the two below, query string and all.
+  matcher: ['/sign-in', '/connect/done', '/recipes/:slug'],
 };

@@ -156,3 +156,30 @@ This keeps the site usable and the tests green at each step.
   theme control.
 - R-BLD-08: Do not change `content/biltong`, `content/recipes`,
   `content/research` or `content/generated`.
+
+---
+
+## 5. How to run the full tests
+
+This machine has no Postgres, but it has Docker. M2 proved that a scratch
+database works. Use it. A milestone that changes a screen **MUST** run the
+end-to-end tests and the geometric audit before it reports done.
+
+```bash
+docker run -d --rm --name nn-test \
+  -e POSTGRES_PASSWORD=nn -e POSTGRES_DB=noble_test \
+  -p 55432:5432 postgres:16
+
+export DATABASE_URL=postgresql://postgres:nn@localhost:55432/noble_test
+pnpm db:migrate && pnpm ingest
+pnpm test:e2e     # 138 tests
+pnpm audit:ui     # 22 routes × 4 widths × 2 states = 176 page loads
+
+docker rm -f nn-test
+```
+
+`e2e/global-setup.ts` drops the `public` and `drizzle` schemas on every run.
+Point it at a scratch database only.
+
+The baseline after M2 is 138 tests passed, and 0 blockers and 0 major faults
+across 176 page loads.

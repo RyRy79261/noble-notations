@@ -57,7 +57,7 @@ export default async function HomePage() {
               ['ingredients', 'Ingredients'],
               ['terms', 'Tags'],
               ['notes', 'Notes'],
-              ['experiments', 'Experiments'],
+              ['experiments', 'Batch logs'],
             ] as const
           ).map(([key, label]) => (
             <div className="stat" key={key}>
@@ -82,7 +82,7 @@ export default async function HomePage() {
         <section className="section">
           <div className="section-head">
             <h2>Browse by classification</h2>
-            <Link href="/categories">All categories →</Link>
+            <Link href="/classes">All classes →</Link>
           </div>
           {[...byFacet.entries()].map(([facet, terms]) => (
             <div className="facet-block" key={facet}>

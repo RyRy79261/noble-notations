@@ -35,12 +35,12 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   return {
     title: `${data.term.label} — ${typeLabel}`,
     description,
-    alternates: { canonical: `/categories/${type}/${slug}` },
+    alternates: { canonical: `/classes/${type}/${slug}` },
     openGraph: {
       type: 'website',
       title: `${data.term.label} — ${typeLabel}`,
       description,
-      url: `/categories/${type}/${slug}`,
+      url: `/classes/${type}/${slug}`,
     },
   };
 }
@@ -71,7 +71,7 @@ export default async function TermPage({ params }: Params) {
   return (
     <div className="page">
       <div className="breadcrumb">
-        <Link href="/categories">Categories</Link> /{' '}
+        <Link href="/classes">Classification</Link> /{' '}
         {CATEGORY_TYPE_LABELS[type] ?? type} / {data.term.label}
       </div>
       <header className="hero">

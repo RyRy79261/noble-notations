@@ -7,23 +7,23 @@ import { DatabaseNotice } from '@/components/database-notice';
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
-  title: 'Experiments',
+  title: 'Batch logs',
   description:
     'Recorded runs — actual batches that were cooked, with their measurements and outcomes.',
-  alternates: { canonical: '/experiments' },
+  alternates: { canonical: '/batch-logs' },
 };
 
-export default async function ExperimentsPage() {
+export default async function BatchLogsPage() {
   const { data, configured, failed } = await safeRead(listExperiments, []);
 
   return (
     <div className="page">
       <header className="hero">
-        <h1>Experiments</h1>
+        <h1>Batch logs</h1>
         <p>
-          A recipe is the plan. An experiment is the result. It records the
-          weight of each piece, the drying times and the costs. It also records
-          what to do differently in the next batch.
+          A recipe is the plan. A batch log is the result. It records the weight
+          of each piece, the drying times and the costs. It also records what to
+          do differently in the next batch.
         </p>
       </header>
 
@@ -36,7 +36,16 @@ export default async function ExperimentsPage() {
           {data.map((experiment) => (
             <Link
               className="card"
-              href={`/experiments/${experiment.slug}`}
+              // A run that names a recipe lives under that recipe. A run
+              // that names none lives here. This index links straight at
+              // whichever of the two is the run's own address, so the
+              // reader never pays for the redirect in /batch-logs/[log].
+              // See D-01.
+              href={
+                experiment.recipe
+                  ? `/recipes/${experiment.recipe.slug}/batch-logs/${experiment.slug}`
+                  : `/batch-logs/${experiment.slug}`
+              }
               key={experiment.slug}
             >
               <h3>{experiment.title}</h3>
@@ -45,9 +54,15 @@ export default async function ExperimentsPage() {
                 {experiment.startedAt ? (
                   <span className="num">{experiment.startedAt}</span>
                 ) : null}
+                {/* R-SCR-44: a run names a recipe only optionally (K-01),
+                    and the design draws the empty case as "SOURCE / Not yet
+                    linked" rather than as nothing. An absent element reads
+                    as a short meta row, not as a run with no source. */}
                 {experiment.recipe ? (
                   <span>{experiment.recipe.title}</span>
-                ) : null}
+                ) : (
+                  <span className="faint">Not yet linked</span>
+                )}
               </div>
             </Link>
           ))}

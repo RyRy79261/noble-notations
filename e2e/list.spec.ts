@@ -2,9 +2,15 @@ import { test, expect } from '@playwright/test';
 import { mcpClient, tokens } from './helpers';
 
 /**
- * The shopping list is the one view that combines recipes rather than
- * showing one, so the risk is arithmetic: a wrong total sends you home
- * without enough salt.
+ * The list is the one view that combines recipes rather than showing one,
+ * so the risk is arithmetic: a wrong total sends you home without enough
+ * salt.
+ *
+ * The route is `/list`; `/shopping-list` is its old address and still
+ * answers with a 308 — `redirects.spec.ts` covers that. The heading reads
+ * "Shopping list" and is meant to: the nav item and the button are named
+ * "List" after the design, and the design's own hero on this screen is
+ * headed "Shopping list" under the kicker "SECTION VI · LIST".
  */
 
 interface ShoppingList {
@@ -31,7 +37,7 @@ function findEntry(list: ShoppingList, name: RegExp) {
   return null;
 }
 
-test.describe('shopping list', () => {
+test.describe('the list', () => {
   test('combines several recipes and groups by aisle', async () => {
     const mcp = mcpClient(test.info().project.use.baseURL!, tokens().readOnly);
 
@@ -76,7 +82,7 @@ test.describe('shopping list', () => {
   });
 
   test('is a link: the selection lives in the URL', async ({ page }) => {
-    await page.goto('/shopping-list?r=baumy-biltong&r=pickled-jalapenos');
+    await page.goto('/list?r=baumy-biltong&r=pickled-jalapenos');
 
     await expect(
       page.getByRole('heading', { name: 'Shopping list', level: 1 }),
@@ -88,7 +94,7 @@ test.describe('shopping list', () => {
   test('an empty list sends you to a recipe, not to a picker', async ({
     page,
   }) => {
-    await page.goto('/shopping-list');
+    await page.goto('/list');
 
     await expect(page.getByText(/nothing on the list yet/i)).toBeVisible();
     await expect(page.locator('.shopping-item')).toHaveCount(0);
@@ -101,7 +107,7 @@ test.describe('shopping list', () => {
     // The page used to open with a checkbox per recipe in the repository.
     // At eight hundred recipes that is eight hundred checkboxes above the
     // thing you came to read, and it is the recipe page's job anyway.
-    await page.goto('/shopping-list?r=baumy-biltong');
+    await page.goto('/list?r=baumy-biltong');
 
     const named = await page.locator('.list-recipes a').allTextContents();
     expect(named).toEqual(['Baumy Biltong']);
@@ -112,7 +118,7 @@ test.describe('shopping list', () => {
   });
 
   test('a recipe can be dropped from the list', async ({ page }) => {
-    await page.goto('/shopping-list?r=baumy-biltong&r=pickled-jalapenos');
+    await page.goto('/list?r=baumy-biltong&r=pickled-jalapenos');
     await expect(page.locator('.list-recipes li')).toHaveCount(2);
 
     await page.getByRole('button', { name: /remove baumy biltong/i }).click();

@@ -15,7 +15,7 @@ const VIEWS = [
     itemSelector: 'tbody tr',
   },
   {
-    path: '/categories',
+    path: '/classes',
     query: 'curing',
     absent: 'Sichuan',
     itemSelector: '.tag-wrap',
@@ -68,7 +68,7 @@ for (const view of VIEWS) {
 }
 
 test('the shopping list is filterable too', async ({ page }) => {
-  await page.goto('/shopping-list?r=baumy-biltong&r=pickled-jalapenos');
+  await page.goto('/list?r=baumy-biltong&r=pickled-jalapenos');
 
   const before = await page.locator('.shopping-item').count();
   expect(before).toBeGreaterThan(1);

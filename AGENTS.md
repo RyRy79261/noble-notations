@@ -244,8 +244,9 @@ change, which is a bad trade. The mapping happens at the query boundary:
 `TermView.categoryType` reads from `taxonomyTerms.facet`.
 
 MCP names follow the same vocabulary: `list_categories`,
-`upsert_category`, and the fields `categoryType` and `categories`. The old
-`/taxonomy` URLs redirect permanently to `/categories`.
+`upsert_category`, and the fields `categoryType` and `categories`. The
+reader-facing route is `/classes`; the old `/taxonomy` and `/categories`
+URLs both redirect permanently to it.
 
 ## Note kinds
 

@@ -44,7 +44,7 @@ export function ListRecipes({
 
     startTransition(() => {
       setShown(next);
-      router.push(url.size > 0 ? `/shopping-list?${url}` : '/shopping-list');
+      router.push(url.size > 0 ? `/list?${url}` : '/list');
     });
   }
 
@@ -60,7 +60,7 @@ export function ListRecipes({
             <button
               type="button"
               onClick={() => remove(recipe.slug)}
-              aria-label={`Remove ${recipe.title} from the shopping list`}
+              aria-label={`Remove ${recipe.title} from the list`}
             >
               <span aria-hidden>×</span>
             </button>

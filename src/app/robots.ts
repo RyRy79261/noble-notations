@@ -42,7 +42,18 @@ const AGENT_CRAWLERS = [
  * the response already solves: it carries a canonical link back to the
  * page it mirrors.
  */
-const DISALLOW = ['/api/', '/auth', '/oauth-return', '/recipes/*/revisions/'];
+const DISALLOW = [
+  '/api/',
+  '/sign-in',
+  '/connect/done',
+  // The addresses those two were renamed from. Both still answer with a
+  // 308 — R-NAV-07 keeps them alive — so a crawler that already knows them
+  // would otherwise spend a request on every pass to be sent somewhere it
+  // is not allowed to go. They come out when the redirects do.
+  '/auth',
+  '/oauth-return',
+  '/recipes/*/revisions/',
+];
 
 export default function robots(): MetadataRoute.Robots {
   return {

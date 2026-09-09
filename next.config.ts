@@ -41,13 +41,58 @@ const nextConfig: NextConfig = {
   },
 
   async redirects() {
-    // /taxonomy became /categories. The word was jargon; the links that
-    // already exist are not, so they keep working.
+    // The design renamed seven public addresses. This site is indexed and
+    // its URLs are pasted into agent transcripts, so none of them may
+    // simply stop answering — R-NAV-07 and K-02. Each rule is permanent
+    // (308) so a crawler moves the ranking across instead of keeping two
+    // addresses alive, and Next.js carries the query string over, which is
+    // what lets the auth return trip below keep its verifier.
     return [
-      { source: '/taxonomy', destination: '/categories', permanent: true },
+      // /taxonomy became /categories, and /categories has now become
+      // /classes. The old rule is repointed at the final address rather
+      // than left to chain: a link written two names ago should still
+      // cost one hop, not two.
+      { source: '/taxonomy', destination: '/classes', permanent: true },
       {
         source: '/taxonomy/:type/:slug',
-        destination: '/categories/:type/:slug',
+        destination: '/classes/:type/:slug',
+        permanent: true,
+      },
+
+      // "Category" is the database's word. A reader is shown a class, and
+      // the design names the route after what the reader sees.
+      { source: '/categories', destination: '/classes', permanent: true },
+      {
+        source: '/categories/:type/:slug',
+        destination: '/classes/:type/:slug',
+        permanent: true,
+      },
+
+      // The interface has always called this the list; only the URL still
+      // said "shopping list".
+      { source: '/shopping-list', destination: '/list', permanent: true },
+
+      // A recorded run is a batch log to a reader and an experiment to the
+      // database. The URL now follows the reader.
+      { source: '/experiments', destination: '/batch-logs', permanent: true },
+      // This one lands on the top level detail page even when the run has
+      // a recipe, because only a database read can tell. That page makes
+      // the second hop to the nested address itself — see D-01.
+      {
+        source: '/experiments/:slug',
+        destination: '/batch-logs/:slug',
+        permanent: true,
+      },
+
+      // /auth said what the code does. /sign-in says what the visitor does.
+      { source: '/auth', destination: '/sign-in', permanent: true },
+      // The hosted sign-in return trip. An old redirect_uri still in
+      // flight arrives here with ?neon_auth_session_verifier= attached,
+      // and the query string survives the redirect, so the exchange in
+      // src/proxy.ts still runs on the new path.
+      {
+        source: '/oauth-return',
+        destination: '/connect/done',
         permanent: true,
       },
     ];

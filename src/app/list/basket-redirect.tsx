@@ -9,7 +9,7 @@ import {
 } from '@/components/shopping-basket';
 
 /**
- * What `/shopping-list` shows when the URL is bare but the basket is not.
+ * What `/list` shows when the URL is bare but the basket is not.
  *
  * The selection lives in the URL and the basket lives in localStorage, and
  * the server can only see the first. So the permanent "Shopping" nav link,
@@ -37,7 +37,7 @@ export function BasketBridge() {
       <>
         <p className="empty">
           Nothing on the list yet. Open a recipe and press{' '}
-          <strong>Add to shopping list</strong>, then come back here.
+          <strong>Add to list</strong>, then come back here.
         </p>
         <p>
           <Link href="/recipes" className="button-primary">

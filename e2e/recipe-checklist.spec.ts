@@ -111,39 +111,35 @@ test('a recipe can be added to the basket and built into a list', async ({
 }) => {
   await page.goto(RECIPE);
 
-  await page.getByRole('button', { name: /add to shopping list/i }).click();
-  await expect(
-    page.getByRole('button', { name: /in shopping list/i }),
-  ).toBeVisible();
+  await page.getByRole('button', { name: /add to list/i }).click();
+  await expect(page.getByRole('button', { name: /in list/i })).toBeVisible();
 
   // The basket persists across navigation, which is the whole point.
   await page.goto('/recipes/baumy-biltong');
-  await page.getByRole('button', { name: /add to shopping list/i }).click();
+  await page.getByRole('button', { name: /add to list/i }).click();
 
   // The control is a link straight to the list now. It used to open a
   // dialog listing the collected recipes under the heading "Shopping
   // list", with the ingredients another click behind "Build the list" —
   // which is not a shopping list, and is what this test used to assert.
-  const basket = page.getByRole('link', { name: /shopping list 2/i });
+  const basket = page.getByRole('link', { name: /list 2/i });
   await expect(basket).toBeVisible();
   await basket.click();
 
   // Both recipes end up in the URL, so the result is still shareable.
-  await page.waitForURL(/shopping-list\?r=.*&r=/);
+  await page.waitForURL(/list\?r=.*&r=/);
   await expect(page.getByText(/2 recipes/i)).toBeVisible();
   await expect(page.locator('.shopping-item').first()).toBeVisible();
 });
 
 test('the shopping list stays in step with the basket', async ({ page }) => {
   await page.goto(RECIPE);
-  await page.getByRole('button', { name: /add to shopping list/i }).click();
-  await page.getByRole('link', { name: /shopping list 1/i }).click();
+  await page.getByRole('button', { name: /add to list/i }).click();
+  await page.getByRole('link', { name: /list 1/i }).click();
   await expect(page.locator('.shopping-item').first()).toBeVisible();
 
   // Emptying the list has to empty the basket too. When it did not, the
   // header kept counting a recipe the list no longer held.
-  await page
-    .getByRole('button', { name: /remove .* from the shopping list/i })
-    .click();
+  await page.getByRole('button', { name: /remove .* from the list/i }).click();
   await expect(page.locator('.basket-button')).toHaveCount(0);
 });
