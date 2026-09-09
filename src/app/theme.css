@@ -9,20 +9,23 @@
  *
  * Five things here are not obvious. Read them before you change the file.
  *
- * 1. Tailwind's preflight is OFF. The reset and the old stylesheet's base
- *    rules fight each other. M7 deletes the old stylesheet and turns the
- *    preflight import on.
+ * 1. Tailwind's preflight is ON, and the whole of Tailwind arrives through
+ *    one `@import 'tailwindcss'`. It was three imports until M7 — theme and
+ *    utilities, with preflight commented out — because preflight's reset and
+ *    the old stylesheet's base rules fought each other. M7 deleted
+ *    `globals.css` (D-03), so the split has nothing left to buy and the
+ *    single import is correct again. It is also safer: `tailwindcss/index.css`
+ *    declares `@layer theme, base, components, utilities` itself, so the
+ *    layer order and the parts can never drift out of step.
  *
- * 2. `globals.css` is pulled in under a cascade layer, and this file is the
- *    only place that imports it. Unlayered CSS beats every layer whatever
- *    the order, so an old `h1` rule would beat a Tailwind utility if
- *    globals.css stayed unlayered. The `legacy` layer sits below
- *    `components` and `utilities`, so a Tailwind class wins. It sits above
- *    `theme` and `base`, so globals.css keeps its own values for the two
- *    custom properties it shares with Tailwind's default theme —
- *    `--font-sans` and `--font-mono`. Both halves matter: the first makes
- *    Tailwind usable, the second keeps every screen that is not rebuilt yet
- *    looking exactly as it did.
+ * 2. Preflight is not a complete replacement for what `globals.css` did.
+ *    Seven declarations had no preflight counterpart and are restored in the
+ *    `@layer base` block below, each with the reason it survives, and two
+ *    more — `font-family` and `font-size` on `body` — are stated there for
+ *    clarity rather than out of need. Nine declarations in four rules in
+ *    all. Nothing else from that file is here: everything else preflight
+ *    either replaces, contradicts on purpose, or was only ever read by a
+ *    class rule that went with the file.
  *
  * 3. The colour tokens are declared twice on purpose. The raw values are
  *    plain custom properties under the design's `f-` prefix. `@theme inline`
@@ -35,7 +38,7 @@
  *    resolves to nothing. Read the raw name, `var(--f-hair)`, or use the
  *    utility.
  *
- * 4. Six of Tailwind's default namespaces are cleared: colour, radius,
+ * 4. Seven of Tailwind's default namespaces are cleared: colour, radius,
  *    shadow, blur, type size, line height and letter spacing. R-BLD-02 and
  *    R-TKN-04 say a component must read a token and must not hold a raw
  *    value. Leaving `bg-slate-500`, `text-sm`, `shadow-sm` or
@@ -53,21 +56,14 @@
  *    `src/lib/utils.ts` repeats these lists to teach it. Add or rename a
  *    token here and change that file in the same commit.
  *
- * 5. The design is dark first (R-CON-07), and so is `globals.css`. The dark
- *    palette is on plain `:root` and the light palette comes from
- *    `prefers-color-scheme: light`. Media Queries Level 5 makes that query
- *    match when the reader has expressed no preference, so a reader with no
- *    preference still gets the light theme.
+ * 5. The design is dark first (R-CON-07). The dark palette is on plain
+ *    `:root` and the light palette comes from `prefers-color-scheme: light`.
+ *    Media Queries Level 5 makes that query match when the reader has
+ *    expressed no preference, so a reader with no preference still gets the
+ *    light theme.
  */
 
-@layer theme, base, legacy, components, utilities;
-
-@import './globals.css' layer(legacy);
-
-@import 'tailwindcss/theme.css' layer(theme);
-/* M7 removes the line above and turns this one on:
-@import 'tailwindcss/preflight.css' layer(base); */
-@import 'tailwindcss/utilities.css' layer(utilities);
+@import 'tailwindcss';
 
 /* `animate-in`, `fade-in-0` and `slide-in-from-*` left Tailwind in v4. Every
    shadcn/ui overlay still asks for them. */
@@ -80,6 +76,166 @@
    of `design/` is not. */
 @source not '../../content';
 @source not '../../design';
+
+/* ── Base ────────────────────────────────────────────────────────────────
+ *
+ * THE SEVEN DECLARATIONS THAT SURVIVED `globals.css`, PLUS TWO STATED FOR
+ * CLARITY. Nine declarations in four rules.
+ *
+ * D-03 deleted that file whole at M7 and turned the preflight on in its
+ * place. Preflight is a near-complete replacement — it owns the box sizing,
+ * the margin and padding reset, `-webkit-text-size-adjust`, the heading
+ * size and weight reset, the list reset, the form-control font, the
+ * `border-collapse` and the placeholder colour — but it is not a total one.
+ * Seven of the declarations below are ones `globals.css` made that
+ * preflight does NOT make and that something on the page still needs:
+ * `scroll-padding-top`, `background`, `color`, `line-height`,
+ * `-webkit-font-smoothing`, `text-wrap` and the `#main` `outline`.
+ *
+ * The two that are stated rather than needed are `font-family` and
+ * `font-size` on `body`. `font-size: 16px` is the user agent's own default
+ * and changes nothing. `font-family` restates what preflight's
+ * `--default-font-family` already resolves to through `@theme inline`,
+ * which is `--font-sans-ui`. Both are written so the body's two most basic
+ * values are readable in one place instead of through a Tailwind internal.
+ * Nothing else from that file is restored.
+ *
+ * The block is deliberately in `@layer base`, after the preflight arrives
+ * in the same layer, so it wins on source order without needing a
+ * specificity trick or an `!important`. It is NOT in `@theme` — these are
+ * rules, not tokens.
+ *
+ * Everything left out was left out on measurement, not on faith. The four
+ * that preflight contradicts on purpose:
+ *
+ *   `a { color: var(--accent) }`     preflight sets `color: inherit`. Every
+ *                                    rebuilt anchor writes its own colour;
+ *                                    `PROSE_LINK` in `f/button.tsx` is the
+ *                                    one that draws an underline and it
+ *                                    writes `underline-offset-2` too. The
+ *                                    only measured change is that its rule
+ *                                    goes from a 35 %-alpha accent to the
+ *                                    full accent, which is what D-10 asks
+ *                                    for.
+ *   `h1 { clamp(…) } h2 { … } h3`    preflight resets heading size and
+ *                                    weight to `inherit`. Zero headings
+ *                                    changed size or weight: every rebuilt
+ *                                    heading writes both.
+ *   `:focus-visible { outline: 2px    THE RULE HAD THREE DECLARATIONS AND
+ *    solid accent; outline-offset:    THE THIRD IS THE ONE TO READ. Every
+ *    2px; border-radius: 4px }`       rebuilt control writes its own ring,
+ *                                     or carries `outline-none` with
+ *                                     `FOCUS_RING_WITHIN` on the box around
+ *                                     it, so the outline itself is
+ *                                     unchanged on all but two elements.
+ *                                     Three changes were measured, not one:
+ *
+ *                                     1. `border-radius: 4px` applied to
+ *                                        EVERY focused element and nothing
+ *                                        replaces it, so every focus ring
+ *                                        in the app is now square. That is
+ *                                        the design — TOKEN-MAP §4.5 counts
+ *                                        one radius in the whole system,
+ *                                        the 2px chip corner — but it is a
+ *                                        change on every screen and the
+ *                                        first draft of this note denied
+ *                                        it.
+ *                                     2. `F/Skip link`, whose 2px offset
+ *                                        fell through to Chromium's own
+ *                                        1px default. `f/skip-link.tsx`
+ *                                        now writes `outline-offset-0`,
+ *                                        which is the flush ring
+ *                                        `foundations.html:1750` draws.
+ *                                     3. THE SCROLL BOX, which is a third
+ *                                        case and not a control at all.
+ *                                        Chromium makes an overflowing
+ *                                        scroll container keyboard-
+ *                                        focusable with no `tabindex`, and
+ *                                        the mass flow strip overflows at
+ *                                        360. It drew Chromium's own
+ *                                        black-and-white `outline-style:
+ *                                        auto` until `f/mass-flow.tsx` was
+ *                                        given `FOCUS_RING`. The four other
+ *                                        scroll boxes in `src/` carry it
+ *                                        too — `markdown.tsx`'s table and
+ *                                        its `pre`, the measurement table
+ *                                        in `batch-log-detail.tsx` and the
+ *                                        callerless table branch of
+ *                                        `filterable-groups.tsx` — so a
+ *                                        wider row cannot acquire the fault
+ *                                        later. None of the four overflows
+ *                                        on the seeded site, measured.
+ *   `input, select { padding }`      preflight's `* { padding: 0 }` takes
+ *                                    the user agent's own control padding
+ *                                    with it. `f/field.tsx` and `scale.tsx`
+ *                                    write theirs. The four scale presets
+ *                                    lose 6px of UA padding each and
+ *                                    equalise, which is the design.
+ */
+@layer base {
+  /* Every in-page jump — the skip link, an anchor, focus scrolling — has to
+     clear the sticky header or it lands underneath it. Preflight has no
+     scroll rule at all, so without this line `scroll-padding-top` is `auto`
+     on all 88 measured page loads and every jump lands under the header.
+     `--header-h` is published by C-20. */
+  html {
+    scroll-padding-top: calc(var(--header-h, 10rem) + 0.5rem);
+  }
+
+  /*
+   * The page's ground, its ink and its leading.
+   *
+   * Preflight paints nothing: it leaves the body transparent, so the
+   * browser's own canvas shows through, and it sets `line-height: 1.5` on
+   * `html`. 1.5 is not this design's body leading and it is not what any
+   * screen was built against — 1.6 is. Measured, the difference is 1.6px on
+   * 144 elements and it cascades into 532 vertical shifts of up to 29px, so
+   * the line is load-bearing, not cosmetic.
+   *
+   * `font-size: 16px` is the value `globals.css` set and every screen was
+   * measured at. `-webkit-font-smoothing` has no preflight counterpart and
+   * no effect on Linux, which is why it cannot be caught by a headless
+   * measurement: dropping it thickens every glyph on macOS and Safari.
+   *
+   * The face is stated rather than left to preflight's
+   * `--default-font-family`, so the body's font does not depend on a
+   * Tailwind internal resolving through `@theme inline`.
+   */
+  body {
+    background: var(--f-paper);
+    color: var(--f-ink);
+    font-family: var(--font-sans-ui), ui-sans-serif, system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* `text-wrap: balance` is the one declaration of the old heading rule
+     that is load-bearing. Its three neighbours — line height, letter
+     spacing and margin — are written by every rebuilt heading and by
+     preflight's own reset; this one is written by nothing. Without it 14 of
+     88 measured page loads re-wrap a title: `/sign-in` and the 404 at 360,
+     the four HOW THIS WORKS titles on `/` and the study card on `/science`
+     at 1280. `globals.css` stopped at `h4`; `markdown.tsx` draws an `h5` and
+     an `h6` as well, and they want the same treatment. */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    text-wrap: balance;
+  }
+
+  /* The skip link moves focus to `#main`, which is a `tabindex="-1"`
+     landmark and not a control. Chromium matches it against
+     `:focus-visible` all the same, so without this rule taking the skip
+     link draws a 1px ring around the entire main column of every screen.
+     Preflight has no answer to it. */
+  #main:focus {
+    outline: none;
+  }
+}
 
 /* ── Scales ──────────────────────────────────────────────────────────────
  *
@@ -108,10 +264,7 @@
      `rounded-4xl`, `shadow-2xs` through `shadow-2xl`, and every `blur-*`
      and `backdrop-blur-*`, so none of the three can arrive by accident.
      `rounded-none` and `rounded-full` are built-in utilities and still
-     work.
-     This does not touch globals.css's own `--radius` and `--radius-sm`,
-     which are read by the old stylesheet's own rules and keep their
-     values. */
+     work. */
   --radius-*: initial;
   --radius-chip: 2px;
   --shadow-*: initial;
@@ -172,8 +325,7 @@
    * the tab strip switches only the main column. The shell's drawer swaps
    * at 1080. Both are correct and they are different numbers — at 768 the
    * header is a drawer AND the recipe is tabs; at 1024 the header is a
-   * drawer AND the recipe is an aside. `globals.css` writes the literal at
-   * lines 901, 950 and 1073 today, and it goes at M7.
+   * drawer AND the recipe is an aside.
    *
    * Mirrored in `src/lib/utils.ts`, or `cn()` will not treat `text-11` and
    * `recipe:text-12` as separate groups.
@@ -298,23 +450,22 @@
  * BUILD-PLAN §2.1. TOKEN-MAP.md §5 records the two corrections this file
  * makes to it (items 1 and 5).
  *
- * The `f-` prefix is the design's own. It also keeps every name clear of
- * globals.css, which declares `--accent`, `--warn`, `--border` and `--text`
- * for the old purple palette and must keep them until M7.
+ * The `f-` prefix is the design's own. It kept every name clear of
+ * `globals.css`, which declared `--accent`, `--warn`, `--border` and
+ * `--text` for the old purple palette until M7 deleted it.
  *
  * These are plain custom properties, not `@theme` values, because `@theme`
  * cannot be nested in a media query and one of the two themes has to be.
  *
  * R-CON-07: the design is dark first. The dark values are on plain `:root`
- * and the light values come from `prefers-color-scheme: light`, which is
- * how `globals.css` does it too. R-BLD-07 and R-CON-08: there is no theme
- * control, so shadcn/ui's `@custom-variant dark (&:is(.dark *))` is
- * deliberately absent — nothing ever adds that class.
+ * and the light values come from `prefers-color-scheme: light`. R-BLD-07
+ * and R-CON-08: there is no theme control, so shadcn/ui's
+ * `@custom-variant dark (&:is(.dark *))` is deliberately absent — nothing
+ * ever adds that class.
  */
 :root {
   /* `color-scheme` makes the native controls, the scrollbar and the form
-     widgets follow the theme. globals.css sets it too; this file states it
-     so it is still set after M7 deletes that file. */
+     widgets follow the theme. */
   color-scheme: dark;
 
   --f-paper: #17191b; /* the page ground */
@@ -356,98 +507,6 @@
   }
 }
 
-/* ── The palette bridge (M3) ──────────────────────────────────────────────
- *
- * `globals.css` still styles the twenty screens that M4 to M6 have not
- * rebuilt. It reads its own `--bg`, `--surface`, `--text`, `--accent` and
- * twelve more, and those still hold the old purple palette. A header
- * rebuilt in DOSSIER sitting on a page still painted in purple looks wrong,
- * and the pairing is not guaranteed to pass R-ACC-01.
- *
- * The sixteen lines below redefine every colour property `globals.css`
- * declares in terms of the DOSSIER tokens. Every old screen adopts the new
- * colour at once; its layout, its spacing and its shape stay old until its
- * own milestone rebuilds it. `globals.css` is NOT edited — D-03 deletes it
- * whole at M7, and this block goes with it.
- *
- * THIS BLOCK IS UNLAYERED, AND THAT IS THE WHOLE MECHANISM. `globals.css`
- * is imported at the top of this file into `layer(legacy)`. Unlayered CSS
- * beats every layer whatever the order, so these declarations win over both
- * of globals.css's `:root` blocks — the dark one AND the one inside its
- * light media query. A media query adds no specificity and changes no
- * layer, so ONE block is enough for BOTH themes.
- *
- * THERE IS NO SECOND BLOCK, AND THERE MUST NOT BE ONE. Both files are dark
- * first: `globals.css` puts `--bg: #131211` on plain `:root` and `#fbfaff`
- * in `@media (prefers-color-scheme: light)`, and this file does the same
- * with `--f-paper` thirty lines above. Every value below is a `var(--f-*)`,
- * so the bridge inherits that flip instead of repeating it. A bridge
- * written as two blocks of hex could be written the wrong way round and
- * invert the whole site. This one cannot be.
- *
- * COLOUR ONLY. The six non-colour properties `globals.css` declares —
- * `--radius`, `--radius-sm`, `--font-sans`, `--font-mono`, `--measure` and
- * `--page` — are deliberately NOT bridged. See TOKEN-MAP.md §10.4. Colour
- * is self-completing: it repaints all twenty old screens with no geometric
- * change at all, so the end-to-end tests and the `pnpm audit:ui` baseline
- * are untouched. Radius and type are half-jobs that cost real risk.
- * Flipping `--radius` to 2px squares fifteen corners and leaves eighteen
- * hard-coded ones rounded, including every pill and the focus ring, so the
- * page ends up less coherent than before. Flipping the faces reflows every
- * line on every old screen and silently rescales `--measure: 68ch` by about
- * 8%, because Geist's `0` is wider than the system stack's. Both are shape,
- * not colour, and both belong to the milestone that rebuilds each screen.
- */
-:root {
-  /* Grounds. TOKEN-MAP.md §3.1. `--surface` takes the page ground on
-     purpose: §5 item 2 says a card in this design is a rule, not a fill, so
-     `.card`, `.panel`, `.stat` and `.notice` become fill-less ruled blocks.
-     `--bg-elevated` is dropped outright by §3.2 — the design has no raised
-     ground — and it must stay fully opaque, because globals.css says so at
-     its own `.tag-tooltip` rule and `e2e/classes.spec.ts` asserts it. What
-     used to be its separation is now `--border-strong`, below. */
-  --bg: var(--f-paper);
-  --bg-elevated: var(--f-paper);
-  --surface: var(--f-paper);
-  --surface-2: var(--f-desk);
-
-  /* Rules. `--border-strong` takes `f-ink-3`, as TOKEN-MAP.md §3.2 directs.
-     It is load-bearing here, not cosmetic: with `--bg-elevated` collapsed
-     onto the page ground, this 1px rule is the only thing separating the
-     tag tooltip and the modal from the page behind them, and it is also the
-     timeline's current-revision dot and the border of the 44px scale
-     stepper. `f-hair` would erase all four. `f-ink-3` measures 5.25:1 light
-     and 5.60:1 dark, against 1.61:1 and 1.88:1 today, which clears WCAG
-     1.4.11 for the stepper and the dot as a side effect. */
-  --border: var(--f-hair);
-  --border-strong: var(--f-ink-3);
-
-  /* Text. Three levels, and they stay three levels: TOKEN-MAP.md §5 item 6
-     keeps `f-ink-2` and `f-ink-3` apart on purpose, because `--text-muted`
-     carries the 14px body and collapsing it onto `f-ink-3` would darken a
-     lot of copy for no reason. */
-  --text: var(--f-ink);
-  --text-muted: var(--f-ink-2);
-  --text-faint: var(--f-ink-3);
-
-  /* The accent. `--accent-strong` has no `var()` use left in globals.css
-     and no value in the design (§3.2: the design draws no hover colour). It
-     is bridged anyway, one line, so that no later edit to globals.css can
-     bring the purple back. */
-  --accent: var(--f-accent);
-  --accent-strong: var(--f-accent);
-  --accent-dim: var(--f-accent-wash);
-  --accent-contrast: var(--f-on-accent);
-
-  /* The warning tier. `--warn-border` was a 22%-alpha wash; §3.2 says the
-     design draws a solid rule, so it takes the full `f-warn`. Its one use
-     is `.form-error`, where a solid 1px red rule is strictly better for
-     WCAG 1.4.11 than the ghost it replaces. */
-  --warn: var(--f-warn);
-  --warn-bg: var(--f-warn-wash);
-  --warn-border: var(--f-warn);
-}
-
 /* R-ACC-09: the design MUST obey `prefers-reduced-motion: reduce`.
  *
  * `tw-animate-css` ships `animate-in`, `fade-in-*`, `zoom-in-*` and
@@ -456,11 +515,9 @@
  * `motion-safe:` prefix on fourteen primitives, each of which can be
  * forgotten.
  *
- * The rule is unlayered on purpose, so it beats both the `legacy` layer and
- * the `utilities` layer. globals.css holds no `!important` and no
- * `@keyframes`, so nothing here can reverse a precedence it relies on.
- * `.01ms` rather than `0s` so a `transitionend` or `animationend` listener
- * still fires. */
+ * The rule is unlayered on purpose, so it beats the `utilities` layer and
+ * anything `tw-animate-css` writes. `.01ms` rather than `0s` so a
+ * `transitionend` or `animationend` listener still fires. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -480,8 +537,16 @@
    * `font-src 'self' data:`.
    *
    * `--font-sans-ui` and `--font-mono-ui` carry the suffix because
-   * globals.css still declares `--font-sans` and `--font-mono` for its own
-   * rules and must keep them until M7.
+   * `globals.css` declared its own `--font-sans` and `--font-mono` for the
+   * system stacks. That file is gone, but the names stay: they are set by
+   * `next/font` in `layout.tsx` and read by `src/lib/utils.ts` and by the
+   * `body` rule above, and renaming them buys nothing.
+   *
+   * These two are what Tailwind's `--default-font-family` and
+   * `--default-mono-font-family` resolve to, through the `--theme()` call in
+   * `tailwindcss/theme.css`. That is how the preflight's `html` and
+   * `code, kbd, samp, pre` rules end up in Geist and Geist Mono rather than
+   * in the system stacks.
    *
    * `--font-serif` has no entry here on purpose. It needs none: next/font
    * sets `--font-serif` on the `<html>` element itself, and that beats the

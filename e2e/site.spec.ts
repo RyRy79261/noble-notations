@@ -65,7 +65,9 @@ test('the connector is in the footer and nowhere louder', async ({ page }) => {
   // to readers. It stays reachable from the footer for that person.
   await page.goto('/');
 
-  await expect(page.locator('.site-footer a[href="/connect"]')).toBeVisible();
+  await expect(
+    page.locator('[data-page-foot] a[href="/connect"]'),
+  ).toBeVisible();
   await expect(page.locator('main a[href="/connect"]')).toHaveCount(0);
 });
 
@@ -145,10 +147,12 @@ test('the connector is reachable on a phone, not only at 1280', async ({
   await page.goto('/');
 
   for (const href of ['/connect', '/llms.txt']) {
-    await expect(page.locator(`.site-footer a[href="${href}"]`)).toBeVisible();
+    await expect(
+      page.locator(`[data-page-foot] a[href="${href}"]`),
+    ).toBeVisible();
   }
   await expect(
-    page.locator('.site-footer a[href*="github.com"]'),
+    page.locator('[data-page-foot] a[href*="github.com"]'),
   ).toBeVisible();
 });
 
@@ -172,7 +176,7 @@ test('the 360 drawer hides the rest of the page from a screen reader', async ({
     ),
   );
   await page.reload();
-  await expect(page.locator('.basket-button')).toBeVisible();
+  await expect(page.locator('[data-basket-control]')).toBeVisible();
 
   await page.getByRole('button', { name: /open the contents/i }).click();
   await expect(page.locator('[role=dialog]')).toBeVisible();

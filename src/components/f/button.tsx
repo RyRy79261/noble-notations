@@ -92,10 +92,15 @@ export const FOCUS_RING_WITHIN = cn(
 );
 
 /*
- * `appearance-none`, `border-0` and `rounded-none` are not decoration. The
- * Tailwind preflight is OFF until M7 (BUILD-PLAN §3.1), so a bare <button>
- * still carries the user agent's own border, ground, radius and font. Each
- * one has to be turned off by hand.
+ * `appearance-none`, `border-0` and `rounded-none` are not decoration. A
+ * bare `<button>` carries the user agent's own border, ground, radius and
+ * font, and all three had to be turned off by hand while the Tailwind
+ * preflight was OFF, up to M7 (BUILD-PLAN §3.1). Since M7 the preflight
+ * answers the border, the ground, the radius and the font itself, and
+ * `appearance-none` is the only one still doing work — the preflight writes
+ * `appearance: button` on a `<button>` rather than clearing it. `border-0`
+ * and `rounded-none` stay as the stated values: they are what the design
+ * draws, and a reader should not have to know which reset supplies them.
  *
  * 18px and 11px are both off BUILD-PLAN §2.3's gap scale. See the note
  * in `mark.tsx` on why every off-scale padding in M3 is an arbitrary value.

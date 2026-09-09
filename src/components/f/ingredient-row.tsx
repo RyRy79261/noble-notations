@@ -66,10 +66,14 @@ import { FOCUS_RING } from './button';
  * disagree inside the design file; that is the disagreement being resolved.
  *
  * `appearance-none`, `rounded-none`, `box-border` and `m-0` are not
- * decoration. Tailwind's preflight is OFF until M7 (BUILD-PLAN §3.1), so a
- * bare `<input type="checkbox">` still draws the user agent's own control,
- * and a border that is not inside the box would make the 15px square 17px.
- * `m-0` is the one that is easy to miss: the user agent gives a checkbox
+ * decoration. A bare `<input type="checkbox">` draws the user agent's own
+ * control, and a border that is not inside the box would make the 15px
+ * square 17px. All four were load-bearing while Tailwind's preflight was
+ * OFF, up to M7 (BUILD-PLAN §3.1). Since M7 the preflight answers the
+ * radius and the margin on its own — `* { margin: 0 }`, and `border-radius:
+ * 0` on every form control — but `appearance-none` is still the only
+ * writer, because the preflight leaves a checkbox its native appearance.
+ * `m-0` is the one that was easy to miss: the user agent gives a checkbox
  * `margin: 3px 3px 3px 4px`, and measured in Chromium it pushed the box four
  * pixels right and three down — off the column every other row aligns to.
  *
@@ -289,8 +293,10 @@ export function IngredientRow({
  * `border border-solid border-hair` and not the four-value form M3 uses in
  * `notice.tsx`: all four sides are 1px here, so `border` sets every width
  * and `border-solid` every style, and there is no side left holding the CSS
- * initial `medium`. The preflight is still off, so the style has to be
- * written; a lone `border` would draw nothing.
+ * initial `medium`. `border-solid` was forced while the preflight was off,
+ * up to M7, when a lone `border` drew nothing; the preflight's
+ * `* { border: 0 solid }` supplies the style now and the class stays,
+ * because it is what the export writes.
  *
  * `overflow-hidden` is load-bearing. It clips the wash on the amount cell to
  * the border box, which is what makes the seam between the two cells the

@@ -109,7 +109,14 @@ export function Stat({
           a label that cannot wrap pushes the page sideways (R-STA-09). */}
       <span className="text-09 font-mono tracking-spine uppercase text-accent">
         {label}
-      </span>
+      </span>{' '}
+      {/* R-CMP-14's real space. The two runs are stacked flex items with a
+          `gap-1` between them, and a gap is invisible to `textContent`:
+          without this the ledger on `/` read `Recipes5Revisions11` to a
+          screen reader and to a copy-paste, and a batch log read `Raw6.28
+          kg`. A whitespace-only text run is not rendered as a flex item
+          (CSS Flexbox §4), so nothing drawn moves — the same construct
+          `f/band.tsx` and `f/section-label.tsx` use. */}
       {/* Both steps go in ONE cn() argument. tailwind-merge groups a size
           with its leading, and a later argument holding a bare size would
           drop a leading a caller had set — TOKEN-MAP.md §4.3. Neither of
@@ -174,7 +181,12 @@ export function Measure({
         )}
       >
         {label}
-      </span>
+      </span>{' '}
+      {/* R-CMP-14's real space again, and for the same reason as `Stat`'s:
+          the gap between the label and the value is a flex gap, which
+          `textContent` cannot see, so without it the step meta on a recipe
+          read `WorkButchery` and `Time1 d–2 d`. A whitespace-only text run
+          is not rendered as a flex item (CSS Flexbox §4). */}
       {/* The wrapping form is the second and last place in M3 where the
           leading is not `normal`. Size and leading in ONE argument, or
           tailwind-merge drops the leading — TOKEN-MAP.md §4.3. */}

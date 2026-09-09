@@ -99,8 +99,11 @@ export function BatchLine({
         {href ? (
           <p className={TITLE}>
             {/* The colour goes on the anchor, not only on the paragraph:
-                `globals.css` still carries `a { color: var(--accent) }`
-                until M7, and a specified colour beats an inherited one. */}
+                `globals.css` carried `a { color: var(--accent) }` up to M7,
+                and a specified colour beats an inherited one. That file is
+                gone and the preflight sets `a { color: inherit }` in its
+                place, so the class is now the anchor's only colour — which
+                is the reason it must stay where it is. */}
             <Link
               href={href}
               className={cn('text-ink no-underline', FOCUS_RING)}
@@ -166,7 +169,12 @@ export function BatchSource({
       )}
       {...props}
     >
-      <span className={SOURCE_LABEL}>{label}</span>
+      <span className={SOURCE_LABEL}>{label}</span>{' '}
+      {/* R-CMP-14's real space, the same one `F/Stat` carries. The label and
+          the value are stacked flex items with a `gap-1` between them, and a
+          gap is invisible to `textContent`: without this the row read
+          `SourceBaumy Biltong`. A whitespace-only text run is not rendered
+          as a flex item (CSS Flexbox §4), so nothing drawn moves. */}
       {linked && href ? (
         <p className={cn(SOURCE_VALUE, 'm-0 text-ink')}>
           <Link href={href} className={cn('text-ink no-underline', FOCUS_RING)}>

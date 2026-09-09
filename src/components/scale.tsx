@@ -296,12 +296,14 @@ const SCALE_PRESETS = [0.5, 1, 2, 3];
  * — 5.25:1 light, 5.60:1 dark, and no new colour (TOKEN-MAP.md §5 item 5).
  *
  * `appearance-none`, `rounded-none` and the explicit ground, colour and
- * padding are not decoration either. Tailwind's preflight is OFF until M7
- * (BUILD-PLAN §3.1), and `globals.css:1327` still styles every
- * `input[type='text']` with a ground, a border, a radius, a padding and
- * `width: 100%`. It is in the `legacy` cascade layer so a utility wins on
- * layer order rather than on specificity, but only for the properties a
- * utility actually sets. Each one has to be answered.
+ * padding are not decoration either. They were written against
+ * `globals.css:1327`, which styled every `input[type='text']` with a
+ * ground, a border, a radius, a padding and `width: 100%` from inside the
+ * `legacy` cascade layer, while the preflight was off (BUILD-PLAN §3.1).
+ * M7 deleted that file, that layer and the bridge, and turned the preflight
+ * on. The preflight now answers the radius, the padding and the font;
+ * `appearance-none` and the ground are still written here, and every one of
+ * them is a value the design draws.
  */
 const CELL = cn(
   'appearance-none rounded-none bg-paper',

@@ -67,10 +67,13 @@ export function DatabaseNotice({ failed }: { failed?: boolean }) {
 
   return (
     <Notice tone="neutral" title="The repository is not available">
-      {/* `[font-size:inherit]` undoes `globals.css`'s `code { font-size:
-          .9em }` without inventing a size. The design sets this name in the
-          running Geist with no treatment at all; the mono face is the least
-          that still says it is a variable and not a word. */}
+      {/* `[font-size:inherit]` was written to undo `globals.css`'s
+          `code { font-size: .9em }` without inventing a size. That file
+          went at M7 and the preflight writes `code { font-size: 1em }` in
+          its place, so the class now restates the reset. It stays for the
+          same reason: the design sets this name in the running Geist with
+          no treatment at all, and the mono face is the least that still
+          says it is a variable and not a word. */}
       <code className="[font-size:inherit] font-mono text-ink">
         DATABASE_URL
       </code>{' '}

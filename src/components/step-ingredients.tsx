@@ -28,8 +28,11 @@ import { scaleAmount, useScale } from './scale';
  * replaced also cost a layer: an `<li>` between the wrapping row and a
  * `w-fit shrink-0` chip gives the chip a second shrink boundary to squeeze
  * through at 360. `data-step-uses` is the hook in its place, and it carries
- * no stylesheet — `.step-uses` in `globals.css` still draws a 999px pill on
- * `--surface-2`, which is the shape the design replaced (R-CMP-16).
+ * no stylesheet. `.step-uses` in `globals.css` drew a 999px pill on
+ * `--surface-2` — the shape the design replaced (R-CMP-16) — and the
+ * attribute was chosen so this row could not pick it up. M7 deleted that
+ * file; the attribute stays, because AGENTS.md's rule is that a hook a test
+ * needs is a `data-` attribute and never a class name.
  *
  * R-SCR-33 — the chips and the meta row are told apart by the design and
  * not by anything added here. The chip is the only fully bordered thing in
@@ -44,7 +47,7 @@ import { scaleAmount, useScale } from './scale';
  * `recipe-detail.tsx` rebuilt in this same milestone as a `gap-3` flex column
  * — the design's own `flex flex-col gap-[ 12px ]` at `recipe-1280.html:2008`,
  * where `Uses` at `:2020` carries no margin of its own. An earlier draft
- * added `mt-2` because the body was still `.step-body` from `globals.css`
+ * added `mt-2` because the body was then `.step-body` from `globals.css`
  * with no gap to inherit; margins do not collapse in a flex container, so
  * once the column was rebuilt that put the chips 20px under the instruction
  * where the design draws 12.

@@ -64,9 +64,9 @@ drizzle/                  committed SQL migrations
 scripts/                  migrate, ingest, export, token minting
 src/
   app/                    App Router pages, metadata, OG images
-    theme.css             the stylesheet entry point: Tailwind + the design
-                          tokens; imports globals.css into a `legacy` layer
-    globals.css           the pre-Tailwind stylesheet; frozen, removed at M7
+    theme.css             the only stylesheet: Tailwind, the design tokens,
+                          and the base block of seven declarations
+                          preflight has no answer for
     api/mcp/              the MCP endpoint and its OAuth 2.1 + DCR stack
   components/             shared UI
     ui/                   vendored shadcn/ui primitives. M3 creates it.
@@ -83,9 +83,24 @@ design/TOKEN-MAP.md       what each token means and why (D-11)
 docs/mcp-connector.md     connector design reference and its gotchas
 ```
 
-`src/app/theme.css` is the only stylesheet the layout imports. It pulls
-`globals.css` in under a cascade layer, which is what lets a Tailwind utility
-beat an old element rule. Do not import `globals.css` anywhere else.
+`src/app/theme.css` is the only stylesheet, and `src/app/layout.tsx` is the
+only file that imports it. It is one `@import 'tailwindcss'` — theme,
+preflight and utilities, in their own cascade layers — followed by the
+design's tokens and one `@layer base` block.
+
+That base block is the whole of what `src/app/globals.css` left behind. That
+file was the pre-Tailwind design system, 1,892 lines; M1 to M6 kept it alive
+under a cascade layer called `legacy` with the preflight off, because the
+reset and its base rules fight each other, and M7 deleted the file, the layer
+and the preflight comment together (D-03). Seven declarations had no
+preflight counterpart and are restored in the base block, each with the
+measurement that says why; two more are stated there for clarity, so the
+block holds nine declarations in four rules. Read `design/TOKEN-MAP.md` §10 before you touch them: dropping
+any one of them moves the whole site.
+
+Styling rule of thumb: a component reads a token (R-BLD-02), never a raw
+value, and never a bare class name that no stylesheet defines. A hook a test
+needs is a `data-` attribute, not a class.
 
 ## The four systems
 

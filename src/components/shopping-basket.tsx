@@ -110,9 +110,18 @@ export function AddToBasket({ slug, title }: BasketRecipe) {
   // was never a constraint this codebase accepted. The label corrects
   // itself the moment the effect runs.
   return (
+    /*
+     * `data-in-basket` is a STATE MARKER, not a style. The recipe screen
+     * draws this control entirely from its wrapper — see the `[&>button]:…`
+     * block in `recipe-detail.tsx` — and needs to know which of the two
+     * states it is in so the "In list ✓" form can take F/Button's `quiet`
+     * variant. Until M7 the marker was `globals.css`'s own
+     * `button-primary` / `button-secondary` pair, which was doing both jobs
+     * at once; the classes went with that file and the state stayed.
+     */
     <button
       type="button"
-      className={inBasket ? 'button-secondary' : 'button-primary'}
+      data-in-basket={inBasket ? '' : undefined}
       onClick={() => (inBasket ? remove(slug) : add({ slug, title }))}
     >
       {inBasket ? 'In list ✓' : 'Add to list'}
@@ -190,12 +199,15 @@ export function BasketButton() {
   return (
     <Link
       href={basketHref(items)}
+      data-basket-control=""
       className={cn(
-        /* `basket-button` is a test hook, not a style: `e2e/shopping-journey`
-           measures this box by that class. `globals.css` still styles it as
-           a bordered accent pill pushed right by `margin-left: auto`, so the
-           four resets below undo it. Both go at M7 with that file. */
-        'basket-button ml-0 rounded-none border-0 bg-transparent p-0',
+        /* `data-basket-control` on the element above is a test hook, not a
+           style: `e2e/shopping-journey.spec.ts`, `e2e/site.spec.ts` and
+           `e2e/recipe-checklist.spec.ts` measure this box by it. It replaced
+           the `basket-button` class at M7, and the four resets that stood
+           beside that class — cancelling the bordered accent pill
+           `globals.css` drew, and the `margin-left: auto` that pushed it
+           right — went with the rule they cancelled. */
         '-my-1 flex min-h-6 w-fit shrink-0 flex-row items-center gap-list-360 no-underline',
         'shell:gap-2',
         'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',

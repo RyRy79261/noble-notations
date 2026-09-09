@@ -29,13 +29,17 @@ import { cn } from '@/lib/utils';
 
 /*
  * The left rule is written as an arbitrary `border-style` and a single
- * four-value `border-width`, rather than as a per-side width utility. Two
- * reasons. The design writes exactly those two declarations, so this reads
- * back against the export. And Tailwind's preflight is OFF until M7, so
- * nothing sets a global border style: a lone three-pixel left width would
- * draw nothing at all, and adding `border-solid` to fix that would instead
- * give the other three sides the CSS initial `medium` width. One declaration
- * for all four widths is the only form with no trap in it.
+ * four-value `border-width`, rather than as a per-side width utility. The
+ * design writes exactly those two declarations, so this reads back against
+ * the export.
+ *
+ * It was also forced while Tailwind's preflight was OFF, up to M7: nothing
+ * then set a global border style, so a lone three-pixel left width drew
+ * nothing at all, and adding `border-solid` to fix that gave the other
+ * three sides the CSS initial `medium` width. The preflight's
+ * `* { border: 0 solid }` closes that trap since M7, and the form stays
+ * because it is the one the export draws. Same note as `table-row.tsx` and
+ * `recipe-tabs.tsx`.
  */
 const NOTICE_RULE = '[border-style:solid] [border-width:0px_0px_0px_3px]';
 

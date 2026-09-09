@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { ExperimentView } from '@/lib/queries/read';
 import { NoteList } from '@/components/notes';
 import { Markdown } from '@/components/markdown';
+import { FOCUS_RING } from '@/components/f/button';
 import { citationDate } from '@/components/f/citation';
 import { PageHead, PageHero } from '@/components/f/page-head';
 import { SectionHead } from '@/components/f/section-label';
@@ -206,10 +207,11 @@ function pivot(log: ExperimentView): Table | null {
   };
 }
 
-/* The two rules. One four-value declaration and an explicit style each: the
-   preflight is off until M7, so a lone `border-b` draws nothing at all.
-   `f-hair` under the head, `f-hair-2` under a body row — the whole hierarchy
-   of this table is those two colours, exactly as `F/Table row` builds it. */
+/* The two rules. One four-value declaration and an explicit style each,
+   which is the form the export draws; it was forced while the preflight was
+   off, up to M7, when a lone `border-b` drew nothing at all. `f-hair` under
+   the head, `f-hair-2` under a body row — the whole hierarchy of this table
+   is those two colours, exactly as `F/Table row` builds it. */
 const HEAD_RULE =
   '[border-style:solid] [border-width:0px_0px_1px_0px] border-b-hair';
 const ROW_RULE =
@@ -269,8 +271,16 @@ const VALUE_COL = 'shell:w-23 shell:shrink-0 shell:text-right';
 function MeasurementTable({ label, table }: { label: string; table: Table }) {
   return (
     /* The design's `Table viewport`. R-STA-08 lives on this one declaration:
-       the scroller is the box around the table and never the page. */
-    <div className="w-full overflow-x-auto">
+       the scroller is the box around the table and never the page.
+
+       `FOCUS_RING` for the reason the note on `f/mass-flow.tsx`'s scroll box
+       gives: Chromium makes an overflowing scroll container keyboard-
+       focusable with no `tabindex`, and until M7 the ring came from the
+       global `:focus-visible` rule in `globals.css`. No seeded run has
+       enough columns to overflow at any audited width, so nothing here was
+       measured losing a ring; the class stops a wider run acquiring the
+       fault. */
+    <div className={cn('w-full overflow-x-auto', FOCUS_RING)}>
       <div
         role="table"
         aria-label={`Measurements for ${label}`}

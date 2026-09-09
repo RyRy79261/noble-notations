@@ -244,19 +244,19 @@ test.describe('the website serves what the MCP wrote', () => {
   test('renders the optional hero and step images', async ({ page }) => {
     await page.goto(`/recipes/${SLUG}`);
 
-    const hero = page.locator('.recipe-hero-image img');
+    const hero = page.locator('[data-hero-image] img');
     await expect(hero).toBeVisible();
     await expect(hero).toHaveAttribute('alt', /finished bowl/i);
 
-    const stepImage = page.locator('.step-image img');
+    const stepImage = page.locator('[data-step-image] img');
     await expect(stepImage).toBeVisible();
     await expect(stepImage).toHaveAttribute('alt', /mid-blend/i);
 
     // Both are optional: a recipe without them renders no figure at all
     // rather than an empty frame or a broken-image icon.
     await page.goto('/recipes/pickled-jalapenos');
-    await expect(page.locator('.recipe-hero-image')).toHaveCount(0);
-    await expect(page.locator('.step-image')).toHaveCount(0);
+    await expect(page.locator('[data-hero-image]')).toHaveCount(0);
+    await expect(page.locator('[data-step-image]')).toHaveCount(0);
   });
 
   test('the revision history lists why each revision exists', async ({

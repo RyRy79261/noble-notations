@@ -1,10 +1,11 @@
 import type { Metadata } from 'next';
 import { Geist, Geist_Mono, Newsreader } from 'next/font/google';
 import { site } from '@/lib/site';
-// theme.css is the only stylesheet the layout imports. It pulls globals.css
-// in under a cascade layer of its own, which is what lets a Tailwind utility
-// beat an old element rule. Importing globals.css here as well would add it
-// back unlayered and undo that. See the note at the top of theme.css.
+// theme.css is the only stylesheet, and this is the only file that imports
+// it. It is one `@import 'tailwindcss'` — theme, preflight and utilities —
+// plus the design's tokens and one `@layer base` block. Until M7 it also
+// pulled `globals.css` in under a cascade layer of its own; that file is
+// deleted (D-03). See the note at the top of theme.css.
 import './theme.css';
 
 /*
@@ -15,8 +16,11 @@ import './theme.css';
  * `style-src 'self' 'unsafe-inline'`. A <link> to fonts.googleapis.com is a
  * stylesheet from a host that is not in style-src and would be blocked.
  *
- * The variable names avoid --font-sans and --font-mono. globals.css still
- * declares those two for its own rules and keeps them until M7.
+ * The variable names avoid --font-sans and --font-mono. `globals.css`
+ * declared those two for the system stacks and the suffix kept them apart;
+ * that file went at M7 and the names stayed, because they are now what
+ * Tailwind's --default-font-family and --default-mono-font-family resolve
+ * to. See the note in theme.css.
  */
 const newsreader = Newsreader({
   subsets: ['latin'],
@@ -111,7 +115,7 @@ import { HeaderHeight } from '@/components/header-height';
  *
  * THE 404 IS THE ONE ROUTE THE SLOT DOES NOT REACH, and the sentence that
  * stood here — "it is also what the 404 renders" — was measured wrong. On a
- * production build `/nope` came back with no `.site-footer` in it at all:
+ * production build `/nope` came back with no page foot in it at all:
  * a root `not-found.tsx` is rendered through the `children` outlet's
  * `notFound` boundary and the `foot` outlet resolves to nothing beside it,
  * so `default.tsx` is never consulted. `foot` is still an outlet ELEMENT at

@@ -16,15 +16,16 @@ const VIEWS = [
     // flex construction and not a `<table>`: the design's row is a flex
     // layout at 1280 and a two-line block at 360, and `display: flex` on a
     // `<tr>` is the change that strips a real table of its semantics. The
-    // selector is scoped to the aisle sections so the one column head —
-    // also a `role="row"` — is not counted as an ingredient.
-    itemSelector: 'section.section [role="row"]',
+    // selector is scoped to the aisle groups — `[data-group]` is the hook
+    // `filterable-groups.tsx` writes on each one — so the one column head,
+    // also a `role="row"`, is not counted as an ingredient.
+    itemSelector: '[data-group] [role="row"]',
   },
   {
     path: '/classes',
     query: 'curing',
     absent: 'Sichuan',
-    itemSelector: '.tag-wrap',
+    itemSelector: '[data-tag]',
   },
 ];
 
@@ -48,7 +49,7 @@ for (const view of VIEWS) {
     // sections: the page's own intro prose mentions example terms, and
     // matching against the whole document would find those instead.
     await expect(
-      page.locator('section.section').getByText(new RegExp(view.absent, 'i')),
+      page.locator('[data-group]').getByText(new RegExp(view.absent, 'i')),
     ).toHaveCount(0);
   });
 
@@ -76,11 +77,11 @@ for (const view of VIEWS) {
 test('the shopping list is filterable too', async ({ page }) => {
   await page.goto('/list?r=baumy-biltong&r=pickled-jalapenos');
 
-  const before = await page.locator('.shopping-item').count();
+  const before = await page.locator('[data-shopping-item]').count();
   expect(before).toBeGreaterThan(1);
 
   await page.getByRole('searchbox').fill('salt');
-  const after = await page.locator('.shopping-item').count();
+  const after = await page.locator('[data-shopping-item]').count();
   expect(after).toBeGreaterThan(0);
   expect(after).toBeLessThan(before);
 });

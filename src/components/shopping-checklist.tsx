@@ -168,18 +168,12 @@ export function ShoppingChecklist({
     key: group.category,
     heading: (
       <SectionHead
-        /* `shopping-group-heading` is a test hook and a `globals.css`
-           selector, not a style: `e2e/shopping-journey.spec.ts` reads these
-           to check the shop order and measures one against the row above it.
-           The old rule sets a size, a colour, a tracking, a case, a padding
-           and a rule of its own. The margin, the padding and the rule are
-           answered here and inside `SectionHead`. The size, the colour, the
-           tracking and the case are NOT: they land on this root, which holds
-           no text of its own, and every child sets its own four in absolute
-           units. So the four are inherited by nothing and deleting the old
-           rule moves no pixel — measured at M6 across all 21 routes. The
-           class goes with `globals.css` at M7. */
-        className="shopping-group-heading m-0"
+        /* `data-shopping-group` is a test hook, not a style:
+           `e2e/shopping-journey.spec.ts` reads these to check the shop order
+           and measures one against the row above it. It replaced the
+           `shopping-group-heading` class at M7, when `globals.css` went and
+           the class stopped meaning anything. */
+        data-shopping-group=""
         ordinal={roman(index + 1)}
         title={CATEGORY_LABELS[group.category] ?? group.category}
         meta={`${cardinal(group.entries.length)} ingredient${
@@ -212,16 +206,20 @@ export function ShoppingChecklist({
         node:
           (
             /*
-             * `shopping-item` is a test hook and a `globals.css` selector, not
-             * a style: `e2e/list.spec.ts` and `e2e/filtering.spec.ts` both
-             * count these. The old rule draws a three-column grid with its own
-             * padding and rule, so the four utilities beside it turn that off
-             * on the element itself — F/List row draws the row inside. The
-             * class goes with `globals.css` at M7.
+             * `data-shopping-item` is a test hook, not a style:
+             * `e2e/list.spec.ts`, `e2e/filtering.spec.ts`,
+             * `e2e/recipe-checklist.spec.ts` and
+             * `e2e/shopping-journey.spec.ts` all count these. It replaced the
+             * `shopping-item` class at M7. The four resets that stood beside
+             * that class — a margin, a gap, a padding and a zeroed border —
+             * existed only to cancel the three-column grid `globals.css` drew
+             * on it, and went with the rule they cancelled. F/List row draws
+             * the row inside.
              */
             <li
               key={entry.key}
-              className="shopping-item m-0 flex w-full flex-col gap-0 p-0 [border-style:solid] [border-width:0px]"
+              data-shopping-item=""
+              className="flex w-full flex-col"
             >
               <ListRow
                 amount={main?.value}
@@ -253,18 +251,17 @@ export function ShoppingChecklist({
       };
     }),
     layout: 'list' as const,
-    listClassName: 'shopping-list',
   }));
 
   return (
     <>
       <TickAll
-        /* `checklist-head` is a test hook and a `globals.css` selector, not
-           a style: `e2e/shopping-journey.spec.ts` reads the readout through
-           it. The old rule is the same flex row `TickAll` already draws, so
-           only its bottom margin has to be answered. It goes with
-           `globals.css` at M7. */
-        className="checklist-head mb-0"
+        /* `data-checklist-head` is a test hook, not a style:
+           `e2e/shopping-journey.spec.ts` reads the readout through it. It
+           replaced the `checklist-head` class at M7, and the `mb-0` beside
+           that class — which cancelled the old rule's bottom margin — went
+           with it. */
+        data-checklist-head=""
         state={state}
         label={state === 'all' ? 'Untick everything' : 'Tick everything'}
         // Announced through the document's one live region as well — see

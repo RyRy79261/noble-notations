@@ -41,18 +41,22 @@ import {
 import { cn } from '@/lib/utils';
 
 /**
- * R-ACC-05. `globals.css` still carries a global `:focus-visible` rule and
- * M3's palette bridge now points it at `f-accent`, but that file is deleted
- * at M7 and the shell must not lose its focus ring with it. `--color-ring`
+ * R-ACC-05. `globals.css` carried a global `:focus-visible` rule that M3's
+ * palette bridge pointed at `f-accent`. M7 deleted that file, and this
+ * class is why the shell did not lose its focus ring with it. `--color-ring`
  * is `f-accent`: 8.06:1 on the light page, 6.92:1 on the dark one.
  */
 const FOCUS =
   'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent';
 
 /**
- * Tailwind's preflight is off until M7, so a `<button>` still arrives with
- * the platform's own fill, border, padding and font. Four utilities take it
- * back to a bare text run, which is what the design draws.
+ * A `<button>` arrives with the platform's own fill, border, padding and
+ * font, and these four utilities take it back to the bare text run the
+ * design draws. Tailwind's preflight was off until M7 and every one of them
+ * was load-bearing then. Since M7 the preflight answers the fill, the
+ * border and the padding on its own; `appearance-none` is still the only
+ * writer, because the preflight sets `appearance: button` on a `<button>`
+ * rather than clearing it.
  */
 const BARE_BUTTON =
   'cursor-pointer appearance-none border-0 bg-transparent p-0';

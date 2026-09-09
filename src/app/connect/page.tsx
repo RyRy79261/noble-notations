@@ -308,7 +308,8 @@ function ToolList({
             'shell:items-center shell:gap-5 shell:py-2.75',
             /* The quiet row rule, `f-hair-2`, and only at 1280: at 360 the
                design separates the rows with 16px of air and no rule. One
-               four-value declaration, because the preflight is off until M7. */
+               four-value declaration and an explicit style, the form the
+               export draws — see the long note in `f/table-row.tsx`. */
             'shell:[border-style:solid] shell:[border-width:0px_0px_1px_0px] shell:border-b-hair-2',
           )}
         >

@@ -15,7 +15,8 @@
  * "Cards without borders — a change of type and a band of air does the
  * separating." A twelve-pixel column and a change of face is the whole
  * component. The old `.card` in `globals.css` — a filled, ruled, rounded,
- * padded box — is the thing this replaces.
+ * padded box — was the thing this replaced, and M7 deleted it with the
+ * file.
  *
  * The two are not variants of one another. Five things differ, and the
  * table is worth keeping because a reviewer will check it:
@@ -85,11 +86,15 @@ const CARD_LINK = cn('text-ink no-underline', FOCUS_RING);
 
 /*
  * `m-0`, an explicit leading and an explicit tracking on every heading and
- * every paragraph are not decoration. Tailwind's preflight is OFF until M7
- * and `globals.css` still carries `h1, h2, h3, h4 { line-height: 1.25;
+ * every paragraph are not decoration. They were written against
+ * `globals.css`, which carried `h1, h2, h3, h4 { line-height: 1.25;
  * letter-spacing: -0.015em; margin: 0 0 0.5rem }` and `p { margin: 0 0 1rem
- * }`. Each of those has to be answered or the old rule draws it. Same trap
- * `section-label.tsx` records.
+ * }` while the preflight was off, up to M7. That file is gone and the
+ * preflight now answers the margins with `* { margin: 0 }`; the leading is
+ * answered here and nowhere else, since the preflight resets a heading's
+ * size and weight and leaves it inheriting `1.6` from `theme.css`. All of
+ * them stay, because each is a value the export draws. Same note as
+ * `section-label.tsx`.
  *
  * Every size travels with its leading in ONE `cn()` argument. tailwind-merge
  * groups a leading with the font size, so a later size deletes an earlier
@@ -328,9 +333,10 @@ export function IndexCard({
  */
 
 /** The `/cuisines` cell: a 1px `f-hair` top rule over 18px of air. One
- *  declaration for all four widths and an explicit style, because with the
- *  preflight off a lone `border-t` draws nothing — the same note is in
- *  `notice.tsx` and `section-label.tsx`. */
+ *  declaration for all four widths and an explicit style, which is the form
+ *  the export draws; it was forced while the preflight was off, up to M7,
+ *  when a lone `border-t` drew nothing — the same note is in `notice.tsx`
+ *  and `section-label.tsx`. */
 const CELL_RULE = cn(
   '[border-style:solid] [border-width:1px_0px_0px_0px] border-t-hair',
   'pt-4.5',

@@ -34,11 +34,13 @@
  *    long note on `FOCUS_RING` in `button.tsx`.
  *
  * `appearance-none`, `rounded-none`, `border-0` and the explicit ground,
- * colour and padding are not decoration either. Tailwind's preflight is OFF
- * until M7, and `globals.css` still carries a rule for
+ * colour and padding are not decoration either. Tailwind's preflight was OFF
+ * until M7, and `globals.css` carried a rule for
  * `input[type='text'], input[type='search'], input[type='password'], select`
- * that sets a ground, a border, a radius, a padding and a width. Every one
- * of those has to be answered by a utility, or the old rule draws it.
+ * that set a ground, a border, a radius, a padding and a width. Every one of
+ * those had to be answered by a utility, or the old rule drew it. The rule is
+ * gone; the utilities stay, because they are what the design draws and
+ * `appearance-none` is not something the preflight does for a text field.
  *
  * Server components. A field that has to react to what a reader types is
  * C-17 `FilterableGroups`, which is one of the eight in §9.3 and is not this

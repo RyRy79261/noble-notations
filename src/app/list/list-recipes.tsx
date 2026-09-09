@@ -32,20 +32,17 @@ import { cn } from '@/lib/utils';
  * well as on the recipe: making someone navigate back into a recipe to take
  * it off the list is the same mistake as making them come here to put it on.
  *
- * ─── WHAT `globals.css` STILL DRAWS ON THESE ELEMENTS ────────────────────
+ * ─── THE TEST HOOK ON THE LIST ───────────────────────────────────────────
  *
- * `.list-recipes` is a TEST HOOK, not a style: `e2e/list.spec.ts` counts
- * `.list-recipes li` and reads `.list-recipes a`. The old stylesheet hangs a
- * rounded, bordered, filled pill on that same selector — `li`, `a` and
- * `button` each get a rule — so every one of them has to be answered.
+ * `data-list-recipes` is a TEST HOOK, not a style: `e2e/list.spec.ts` counts
+ * `[data-list-recipes] li` and reads `[data-list-recipes] a`. It sits on the
+ * `<ul>` and not on the bar around it, so the count is the chips and not
+ * `PRINT THE LIST` beside them.
  *
- * It sits on the `<ul>` rather than on the bar, which keeps
- * `.list-recipes button` — a 44px round icon button — off `PRINT THE LIST`
- * and on the chip's × where the tests need the list. The `<li>` answers its
- * rule with utilities of its own; the `<a>` and the `<button>` are elements
- * F/List mark renders and this file cannot reach, so they are answered with
- * descendant variants. `@layer utilities` sits above `@layer legacy`, so a
- * utility wins at equal specificity. All of it goes with `globals.css` at M7.
+ * It replaced the `list-recipes` class at M7. `globals.css` hung a rounded,
+ * bordered, filled pill on that same name — `li`, `a` and `button` each got
+ * a rule — and every reset that answered one of the three went with the file
+ * that drew them.
  */
 export function ListRecipes({
   recipes,
@@ -81,13 +78,15 @@ export function ListRecipes({
 
   /*
    * WCAG 1.4.3, and the one contrast fault M3's palette bridge introduced.
-   * `globals.css` draws the pending state as `opacity: 0.6` on the whole
-   * section, which composites live text against the page at 4.23:1 on links
+   * `globals.css` drew the pending state as `opacity: 0.6` on the whole
+   * section, which composited live text against the page at 4.23:1 on links
    * that stay focusable and clickable throughout, so WCAG's relief for an
-   * inactive control does not apply. `opacity-100` is a utility and wins
-   * over the old rule without editing the file (D-03); the pending state is
-   * drawn with a colour instead, the way the old stylesheet draws its other
-   * two. `aria-busy` says the same thing to a screen reader.
+   * inactive control did not apply. M3 answered it with an `opacity-100`
+   * utility, which won on layer order without editing the file (D-03); M7
+   * deleted the file and the utility went with it. The pending state is
+   * drawn with colour alone now, and `aria-busy` says the same thing to a
+   * screen reader. The note at the `<ul>` below records the two other
+   * cancellations that went in the same pass.
    */
   const quiet = 'text-09 font-mono tracking-label uppercase text-ink-3';
 
@@ -107,28 +106,24 @@ export function ListRecipes({
         <h2 className={cn('m-0 shrink-0 font-normal', quiet)}>Drawn from</h2>
         {shown.length > 0 ? (
           <ul
-            /* `list-recipes` sits on the LIST and not on the bar around it,
-               so the old `.list-recipes button` rule — a 44px round icon
-               button — reaches the chip's × and not F/Button beside it. The
-               two `[&_…]` variants answer what is left of it: `@layer
-               utilities` sits above `@layer legacy`, so a utility wins at
-               equal specificity, and a descendant variant is the only way to
-               reach an element F/List mark renders. All of it goes with
-               `globals.css` at M7. */
+            /* `[&_a]:text-13` is the only `[&_…]` variant left here, and it
+               is a real style: F/List mark renders the anchor and this file
+               cannot reach it any other way. Its three neighbours were
+               cancellations of `globals.css` — a 44px round icon button, the
+               marker and indent of a bare `<ul>`, and the `opacity: 0.6` the
+               old rule put on `[data-pending]` — and all three went with the
+               file that drew them. `data-pending` is still written: it is
+               read by `aria-busy` beside it. */
             className={cn(
-              'list-recipes opacity-100',
-              'm-0 flex list-none flex-row flex-wrap items-center gap-2 p-0',
+              'flex flex-row flex-wrap items-center gap-2',
               '[&_a]:text-13',
-              '[&_button]:h-auto [&_button]:w-auto',
             )}
+            data-list-recipes=""
             data-pending={pending || undefined}
             aria-busy={pending || undefined}
           >
             {shown.map((recipe) => (
-              <li
-                key={recipe.slug}
-                className="m-0 flex min-h-0 rounded-none border-0 bg-transparent p-0"
-              >
+              <li key={recipe.slug} className="flex">
                 <ListMark
                   form="control"
                   name={recipe.title}

@@ -36,7 +36,7 @@ import { SectionHead } from '@/components/f/section-label';
  * THE PAGE FOOT IS RENDERED HERE, WHICH IT IS ON NO OTHER SCREEN. M6 moved
  * C-04 into the `@foot` parallel slot (see `src/app/layout.tsx`), and the
  * slot does not reach a root `not-found.tsx`: measured on a production
- * build, `/nope` came back with no `.site-footer` in the document at all,
+ * build, `/nope` came back with no page foot in the document at all,
  * where before M6 the layout drew one on every page. `foot ?? <PageFoot />`
  * in the layout does not help — `foot` is an outlet element that renders
  * nothing rather than `undefined`.

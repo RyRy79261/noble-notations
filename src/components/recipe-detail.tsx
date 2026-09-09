@@ -203,8 +203,9 @@ function Band({
       <div
         className={cn(
           'flex w-full shrink-0 flex-row items-center gap-3 pb-1.75 recipe:gap-4 recipe:pt-2 recipe:pb-2',
-          /* One four-value declaration, because the preflight is off until
-             M7: `border-b` beside a bare `border-solid` would give the other
+          /* One four-value declaration and an explicit style, the form the
+             export draws. It was forced while the preflight was off, up to
+             M7, when `border-b` beside a bare `border-solid` gave the other
              three sides the CSS initial `medium`. Same note as in
              `notice.tsx`, `note.tsx` and `section-label.tsx`. */
           '[border-style:solid] [border-width:0px_0px_1px_0px] border-b-hair',
@@ -306,15 +307,17 @@ function Step({
         ) : null}
 
         {step.imageUrl ? (
-          /* `.step-image` is kept as a SELECTOR — `e2e/mcp-lifecycle.spec.ts`
-             needs it and `globals.css` lives until M7 — and every property
-             the legacy rule sets is answered by a utility beside it, the
-             same way `recipe-tabs.tsx` keeps `.recipe-tabs`. The legacy rule
-             draws a 12px radius, a 1px border, an `f-desk` fill, a 4/3 crop
-             and a 26rem cap; the design is square, unfilled and unbordered
-             (TOKEN-MAP §4.5 counts one radius in the whole system, and it is
-             a 2px chip corner). */
-          <figure className="step-image m-0 flex w-full max-w-full flex-col items-start gap-2">
+          /* `data-step-image` is a SELECTOR, not a style:
+             `e2e/mcp-lifecycle.spec.ts` needs it. It replaced the
+             `step-image` class at M7, and the `m-0` beside that class went
+             with the rule it cancelled. The old rule drew a 12px radius, a
+             1px border, an `f-desk` fill, a 4/3 crop and a 26rem cap; the
+             design is square, unfilled and unbordered (TOKEN-MAP §4.5 counts
+             one radius in the whole system, and it is a 2px chip corner). */
+          <figure
+            data-step-image=""
+            className="flex w-full flex-col items-start gap-2"
+          >
             {/* Plain <img>, not next/image: these URLs come from arbitrary
                 hosts via the MCP, and pointing the image optimiser at
                 attacker-supplied origins is a request-forgery surface that
@@ -325,7 +328,11 @@ function Step({
               alt={step.imageAlt ?? ''}
               loading="lazy"
               decoding="async"
-              className="aspect-auto h-auto max-h-none w-full rounded-none border-0 bg-transparent object-fill"
+              /* `aspect-auto`, `max-h-none`, `rounded-none`, `border-0`,
+                 `bg-transparent` and `object-fill` all went at M7: each was
+                 the CSS initial written out to beat a `.step-image img`
+                 declaration, and that rule went with `globals.css`. */
+              className="h-auto w-full"
             />
             {step.imageAlt ? (
               <figcaption className="m-0 text-13 leading-150 font-serif italic text-ink-3">
@@ -620,14 +627,22 @@ export function RecipeDetail({
               takes the nearest drawn annotation, the ingredient row's serif
               italic `Prep`. */}
           {recipe.heroImageUrl ? (
-            <figure className="recipe-hero-image m-0 flex w-full max-w-full flex-col items-start gap-2">
+            /* `data-hero-image` is a SELECTOR, not a style:
+               `e2e/mcp-lifecycle.spec.ts` needs it. It replaced the
+               `recipe-hero-image` class at M7, and every reset that stood
+               beside that class — here and on the `<img>` — went with the
+               `globals.css` rules they cancelled. */
+            <figure
+              data-hero-image=""
+              className="flex w-full flex-col items-start gap-2"
+            >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={recipe.heroImageUrl}
                 alt={recipe.heroImageAlt ?? ''}
                 loading="lazy"
                 decoding="async"
-                className="aspect-auto h-auto max-h-none w-full rounded-none border-0 bg-transparent object-fill"
+                className="h-auto w-full"
               />
               {recipe.heroImageAlt ? (
                 <figcaption className="m-0 text-13 leading-150 font-serif italic text-ink-3">
@@ -688,31 +703,35 @@ export function RecipeDetail({
 
             {/*
              * C-18 is `src/components/shopping-basket.tsx`, which is not in
-             * M5's scope, and it draws itself with the two `globals.css`
-             * button classes. The design's ADD TO LIST is F/Button primary —
-             * square, 11/18, a 10px mono label at 1.5px tracking — so the
-             * treatment is applied from the wrapper. `@layer utilities` sits
-             * above `@layer legacy`, so a utility here beats `.button-primary`
-             * whatever the specificity, and the component itself is untouched
+             * M5's scope, and it draws no treatment of its own at all. The
+             * design's ADD TO LIST is F/Button primary — square, 11/18, a
+             * 10px mono label at 1.5px tracking — so the treatment is applied
+             * from the wrapper, and the component itself is untouched
              * (R-CMP-13 and R-CON-04 still hold: it is in the served HTML and
              * corrects its own label after the page loads).
              *
              * The "in list" state takes F/Button's `quiet` variant, which is
-             * the only second button shape the design draws.
+             * the only second button shape the design draws. Until M7 that
+             * state was read off `globals.css`'s `.button-secondary`, which
+             * was a style and a state marker at once. The class went with
+             * that file; `data-in-basket` carries the state and nothing else.
+             *
+             * `m-0`, `rounded-none` and `border-0` also went: the preflight
+             * zeroes a `<button>`'s margin, radius and border since M7.
              */}
             {recipe.ingredients.length > 0 ? (
               <div
                 className={cn(
-                  'basket-cta mt-0 w-full recipe:w-fit recipe:shrink-0',
-                  '[&>button]:m-0 [&>button]:inline-flex [&>button]:w-full [&>button]:items-center [&>button]:justify-center',
-                  '[&>button]:cursor-pointer [&>button]:appearance-none [&>button]:rounded-none [&>button]:border-0',
+                  'w-full recipe:w-fit recipe:shrink-0',
+                  '[&>button]:inline-flex [&>button]:w-full [&>button]:items-center [&>button]:justify-center',
+                  '[&>button]:cursor-pointer [&>button]:appearance-none',
                   '[&>button]:px-4.5 [&>button]:py-2.75',
                   '[&>button]:text-10 [&>button]:leading-normal [&>button]:font-mono [&>button]:font-normal',
                   '[&>button]:tracking-spine [&>button]:uppercase [&>button]:whitespace-nowrap',
                   '[&>button]:bg-accent [&>button]:text-on-accent',
                   'recipe:[&>button]:w-fit',
-                  '[&>.button-secondary]:bg-transparent [&>.button-secondary]:text-ink',
-                  '[&>.button-secondary]:outline-1 [&>.button-secondary]:-outline-offset-1 [&>.button-secondary]:outline-hair',
+                  '[&>[data-in-basket]]:bg-transparent [&>[data-in-basket]]:text-ink',
+                  '[&>[data-in-basket]]:outline-1 [&>[data-in-basket]]:-outline-offset-1 [&>[data-in-basket]]:outline-hair',
                   '[&>button:focus-visible]:outline-2 [&>button:focus-visible]:outline-offset-2 [&>button:focus-visible]:outline-ring',
                 )}
               >

@@ -200,10 +200,13 @@ const CONTROL_EDGE_ON = 'border border-solid border-accent';
 
 /*
  * `appearance-none`, `rounded-none`, `border-0` and `m-0` are not
- * decoration. Tailwind's preflight is OFF until M7 (BUILD-PLAN §3.1), so a
- * bare `<button>` still carries the user agent's own border, ground, radius
- * and font. Each one has to be answered by a utility or the old rule draws
- * it.
+ * decoration. A bare `<button>` carries the user agent's own border,
+ * ground, radius, margin and font, and every one of these answered it by
+ * hand while Tailwind's preflight was OFF, up to M7 (BUILD-PLAN §3.1).
+ * Since M7 the preflight answers all of it except `appearance-none`, which
+ * is still the only writer — the preflight sets `appearance: button` rather
+ * than clearing it. The set stays whole; `f/button.tsx` carries the same
+ * note on the same four.
  */
 const RESET = 'appearance-none rounded-none border-0 m-0';
 
@@ -220,17 +223,21 @@ const ORDER_BUTTON = cn(
 
 /* 9px at 1280, 8px at 360 — the single place the recipe's own breakpoint
    changes the checklist's type (`recipe-360.html:519` against
-   `recipe-1280.html:1022`). `m-0`, `font-normal` and `leading-normal` answer
-   `globals.css:124`, which still sets a margin, a line height and a letter
-   spacing on every `h4` until M7. The heading is `f-ink-3` and NOT the
-   accent: `globals.css:1102` draws it accent with an accent-tinted rule
-   under it, and the design has neither the colour nor the rule.
+   `recipe-1280.html:1022`). `m-0`, `font-normal` and `leading-normal` were
+   written against `globals.css:124`, which set a margin, a line height and
+   a letter spacing on every `h4`, and against the user agent's own bold.
+   That file went at M7 and the preflight now answers the margin and the
+   weight; `leading-normal` is still the only writer, because a heading
+   otherwise inherits `1.6` from `theme.css`. The heading is `f-ink-3` and
+   NOT the accent: `globals.css:1102` drew it accent with an accent-tinted
+   rule under it, and the design has neither the colour nor the rule.
 
    `h3`, one level under F/Section 360's own `h2`. It was an `h4` under a
    heading-less `<span>`, so the outline of the primary screen went from the
-   `h1` straight to an `h4` with nothing in between. `globals.css:141` gives
-   `h3` a font size where `h4` had none, so `text-08`/`recipe:text-09`
-   answers that too. */
+   `h1` straight to an `h4` with nothing in between. `globals.css:141` gave
+   `h3` a font size where `h4` had none; the preflight resets every heading
+   to `font-size: inherit` since M7, and `text-08`/`recipe:text-09` states
+   the design's own value either way. */
 const GROUP_HEAD = cn(
   'm-0 text-08 leading-normal recipe:text-09',
   'font-mono font-normal tracking-spine uppercase text-ink-3',

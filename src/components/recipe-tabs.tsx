@@ -97,15 +97,18 @@ import { FOCUS_RING } from './f/button';
  * pixels are still decided entirely by the stylesheet. Only the attributes
  * on those same nodes differ.
  *
- * ── THE CLASS NAMES THAT ARE STILL HERE ────────────────────────────────
+ * ── THE CLASS NAMES THAT ARE GONE ──────────────────────────────────────
  *
- * `recipe-layout`, `recipe-tabs` and `recipe-aside` are §9.4 names and
- * R-CMP-16 retires them — but `globals.css` survives until M7 (D-03) and
- * `e2e/recipe-layout.spec.ts` selects on all three. They are kept as
- * selectors only, with `data-recipe`, `data-tab-strip` and `data-tab` beside
- * them for the migration, and EVERY property the legacy rules set on them is
- * overwritten by a utility below. The legacy declarations that had to be
- * answered, all of them properties the design does not draw:
+ * `recipe-layout`, `recipe-tabs` and `recipe-aside` were §9.4 names that
+ * R-CMP-16 retires. They stayed until M7 as selectors only, because
+ * `globals.css` still keyed on them (D-03) and `e2e/recipe-layout.spec.ts`
+ * selected on all three. M7 deleted that file and the three names with it:
+ * `data-recipe`, `data-tab-strip` and `data-recipe-aside` are the hooks now,
+ * and the spec reads those. `data-panels` and `data-aside`, which existed
+ * for the old stylesheet alone, went in the same pass.
+ *
+ * Every utility below that existed only to overwrite one of those legacy
+ * declarations went too. What the old rules drew, none of it in the design:
  *
  *   .recipe-layout   display:grid, grid-template-columns, gap, align-items
  *   .recipe-tabs     flex-wrap, gap, border-bottom, margin-bottom, and at
@@ -114,12 +117,12 @@ import { FOCUS_RING } from './f/button';
  *                    border-bottom, border-radius, background, colour
  *   .recipe-aside    position, top, gap
  *
- * The utilities layer beats the legacy layer, so each is winnable — but
- * only for a property something here actually writes. `overflow-x: auto` on
- * the phone strip is the one that had to go rather than be inherited: the
- * design's four `flex-1` tabs fit 328px with room to spare, and an
- * `overflow-x` scroller that never scrolls is exactly the UNREACHABLE shape
- * R-ACC-11 exists for.
+ * `overflow-x: auto` on the phone strip was the one that had to be turned
+ * off rather than inherited: the design's four `flex-1` tabs fit 328px with
+ * room to spare, and an `overflow-x` scroller that never scrolls is exactly
+ * the UNREACHABLE shape R-ACC-11 exists for. `max-recipe:overflow-visible`
+ * below is that answer, and it stays — it is now the only writer of the
+ * property, not a correction of one.
  */
 
 const LABELS = {
@@ -179,9 +182,13 @@ function readWidthOnServer(): boolean {
 /* ── The boxes ──────────────────────────────────────────────────────────── */
 
 /**
- * `Recipe body`. `items-stretch` at ≤900 is not decoration: `globals.css`
- * sets `align-items: start` at every width, and in a flex COLUMN that is the
- * horizontal axis, so every panel would shrink to its own content width.
+ * `Recipe body`. `items-stretch` at ≤900 was written against `globals.css`,
+ * which set `align-items: start` at every width — and in a flex COLUMN that
+ * is the horizontal axis, so every panel shrank to its own content width.
+ * That file went at M7 and `flex` defaults to `stretch` on its own, so the
+ * class now states the value rather than cancelling a rule. It stays: the
+ * `recipe:` line beside it writes `items-start`, and the pair reads as one
+ * decision at two widths.
  */
 const LAYOUT = cn(
   'group/panels flex w-full',
@@ -223,32 +230,32 @@ const COLUMN = cn('flex min-w-0 flex-1 flex-col gap-0', 'max-recipe:contents');
  *   tabs, so without a ground the body text scrolls through the gaps.
  *   (`globals.css` used `--bg-elevated`, which TOKEN-MAP §10.3 has already
  *   collapsed onto `f-paper` — the same colour, correctly named.)
- * - `overflow-visible`, written and not merely omitted, because the legacy
- *   `overflow-x: auto` still matches the class name that three tests need.
+ * - `overflow-visible`, written and not merely omitted. It began as the
+ *   answer to the legacy `overflow-x: auto`; that rule is gone and this is
+ *   now the only declaration of the property, which is how it should read.
  *
  * THE RULE IS ONE FOUR-VALUE DECLARATION AND NOT `border-b border-solid`.
- * The preflight is off until M7 (BUILD-PLAN §3.1) and `globals.css` has no
- * universal border reset — its only `*` rule sets `box-sizing` — so a bare
- * `border-solid` sets `border-style` on ALL FOUR sides while `border-b`
- * gives only the bottom a width, and the other three take the CSS initial
+ * That was forced while the preflight was off: `globals.css` had no
+ * universal border reset — its only `*` rule set `box-sizing` — so a bare
+ * `border-solid` set `border-style` on ALL FOUR sides while `border-b` gave
+ * only the bottom a width, and the other three took the CSS initial
  * `medium`. That drew a 3px `f-hair` box around the whole rail at every
  * width ≥901: the strip measured 39px against the design's 36, the tabs sat
  * 3px in from the panel they label, and the main column started 3px below
- * the aside. The export draws the four-value form itself
+ * the aside. The preflight's `* { border: 0 solid }` closes that trap since
+ * M7, but the four-value form stays: it is what the export itself draws
  * (`recipe-1280.html:1873`), and `recipe-detail.tsx`, `f/notice.tsx`,
  * `f/note.tsx`, `f/section-label.tsx` and `f/table-row.tsx` all write it.
  *
- * `max-recipe:border-b-0` stays. It answers the LEGACY `.recipe-tabs
- * { border-bottom: 1px solid var(--border) }` shorthand at `globals.css:870`,
- * which applies at every width until M7 — it was never neutralising the
- * declaration above it.
+ * `mb-0`, `max-recipe:p-0` and `max-recipe:border-b-0` are gone. All three
+ * cancelled a `.recipe-tabs` declaration and nothing else, and the preflight
+ * now zeroes every margin, padding and border width on its own.
  */
 const STRIP = cn(
-  'recipe-tabs',
-  'mb-0 flex w-full shrink-0 flex-row flex-nowrap items-center',
+  'flex w-full shrink-0 flex-row flex-nowrap items-center',
   'max-recipe:sticky max-recipe:top-[calc(var(--header-h,7rem)_+_0.5rem)]',
   'max-recipe:z-20 max-recipe:gap-1 max-recipe:overflow-visible',
-  'max-recipe:border-b-0 max-recipe:bg-paper max-recipe:p-0',
+  'max-recipe:bg-paper',
   'recipe:static recipe:gap-2 recipe:bg-transparent recipe:pb-2.5',
   'recipe:[border-style:solid] recipe:[border-width:0px_0px_1px_0px] recipe:border-b-hair',
 );
@@ -276,11 +283,15 @@ const STRIP_HIDDEN = cn(
  * `[ flex:1_1_0 ] p-[ 8px_0px ]` centred, 8px mono at 1.2px.
  *
  * `min-h-0`, `border-0`, `rounded-none` and `font-normal` are not
- * decoration: `globals.css:879` gives this button a 44px minimum height, a
- * 2px underline, an 8px top radius and `font-weight: 650`, and the design's
- * tab is a 25px filled block with none of them. `leading-normal` answers
- * `font: inherit`, which pulls the body's line-height in with everything
- * else.
+ * decoration. They were written against `globals.css:879`, which gave this
+ * button a 44px minimum height, a 2px underline, an 8px top radius and
+ * `font-weight: 650`, where the design's tab is a 25px filled block with
+ * none of them. That file went at M7, so none of the four cancels a rule
+ * any more: the preflight answers the border, the radius and the weight,
+ * and `min-h-0` restates the initial value. All four stay as the design's
+ * stated values. `leading-normal` is different — it answers the preflight's
+ * own `font: inherit`, which pulls the body's line-height in with
+ * everything else, and it is still the only writer.
  *
  * The 8px label clears the tap target at 360 by height, not by luck:
  * 8px + 8px of padding over a 10.4px line box is 26.4px, above the 24px
@@ -334,9 +345,12 @@ const TAB_GROUND = cn(
  * and would drop the first one it saw.
  *
  * The panel does NOT set `items-start`, though the drawing does. The design
- * gives every child of this box `w-full`; the blocks this panel actually
- * receives are still `globals.css` sections, and cross-axis `flex-start`
- * would shrink every one of them to its own text width.
+ * gives every child of this box `w-full`, and not every block this panel
+ * receives writes one, so cross-axis `flex-start` would shrink those to
+ * their own text width. It was written when those blocks were still
+ * `globals.css` sections; M6 rebuilt them and M7 deleted that file, and the
+ * reason survives both because it is about what the children declare, not
+ * about what any stylesheet drew.
  */
 const PANEL = cn(
   'box-border hidden w-full shrink-0 flex-col gap-10',
@@ -347,7 +361,7 @@ const PANEL = cn(
  * Which panel the stylesheet paints, given `data-active` alone.
  *
  * The second class on `method` is the desktop resolution of an
- * `ingredients` selection, which `globals.css:938` spells out as eight
+ * `ingredients` selection, which `globals.css:938` spelled out as eight
  * enumerated pairs of selectors. Note what this buys: the painted form is a
  * pure function of an attribute that is already in the server HTML.
  *
@@ -379,7 +393,6 @@ const PANEL_SHOWN: Partial<Record<TabKey, string>> = {
  * 107.7px at 390.
  */
 const ASIDE = cn(
-  'recipe-aside',
   'box-border hidden w-full shrink-0 flex-col gap-6',
   'group-data-[active=ingredients]/panels:flex',
   'recipe:flex recipe:-order-1 recipe:w-85',
@@ -475,16 +488,11 @@ export function RecipeTabs({
 
   return (
     <div
-      className={cn('recipe-layout', LAYOUT)}
+      className={LAYOUT}
       data-recipe=""
       data-active={active}
       data-tabs={panels.length}
       data-desk-tabs={deskTabs}
-      /* `data-panels` and `data-aside` are read by `globals.css` until M7.
-         They agree with the two counts above; they are a fallback, not the
-         source of truth. */
-      data-panels={panels.length}
-      data-aside={ingredients ? 'yes' : 'no'}
     >
       {/* R-SCR-28. The strip and the panels it switches are ONE column. At
         ≤900 the column dissolves and they become siblings of the aside in
@@ -573,6 +581,7 @@ export function RecipeTabs({
         <aside
           className={ASIDE}
           id="panel-ingredients"
+          data-recipe-aside=""
           data-tab="ingredients"
           /* At ≥901 no tab controls this box and it is never hidden, so it
              is not a tabpanel — it is the `<aside>` element's own

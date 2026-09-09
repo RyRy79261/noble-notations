@@ -28,11 +28,11 @@ import { useEffect } from 'react';
  * list, 54 without, 66 at 1280 — but it is still not a constant, so
  * R-NAV-05 still needs this.
  *
- * The selector is `[data-site-header]` and not `.site-header`. The rebuilt
- * header deliberately does not carry that class: `globals.css` still styles
- * it with a blur, a `color-mix` ground and its own padding, and none of the
- * three belongs to the design. The attribute is a hook with no stylesheet
- * attached to it.
+ * The selector is `[data-site-header]` and not a class. The rebuilt header
+ * deliberately never carried `globals.css`'s own name for itself, which drew
+ * a blur, a `color-mix` ground and its own padding — none of the three in the
+ * design. That file went at M7 and the attribute is what it always was: a
+ * hook with no stylesheet attached to it.
  */
 export function HeaderHeight() {
   useEffect(() => {

@@ -27,11 +27,14 @@
  *
  * SPACING IS A FLEX GAP, NEVER A MARGIN. Every `Centre` and `Col` in the
  * design is a flex column with an explicit gap. The root here is one, and
- * every child carries `m-0`. That is mandatory rather than tidy: Tailwind's
- * preflight is OFF until M7 and `globals.css` still sets
+ * every child carries `m-0`. It was mandatory rather than tidy while
+ * Tailwind's preflight was OFF, up to M7: `globals.css` then set
  * `p { margin: 0 0 1rem }` and `h1..h4 { line-height: 1.25; letter-spacing:
- * -0.015em; margin: 0 0 .5rem }`. Each of those has to be answered by hand,
- * the same way `section-label.tsx` answers them.
+ * -0.015em; margin: 0 0 .5rem }`, and every one had to be answered by hand.
+ * That file is gone and the preflight's `* { margin: 0 }` now answers the
+ * margins; the explicit leadings are still the only writers, because a
+ * heading inherits `1.6` from `theme.css`. The `m-0` classes stay as
+ * belt-and-braces, the same way `section-label.tsx` keeps its own.
  *
  * THE `cn()` TRAP. A size and its leading go in ONE argument. tailwind-merge
  * groups a leading with the font size, and every `--text-NN--line-height` in
@@ -50,7 +53,7 @@ import remarkGfm from 'remark-gfm';
 
 import { cn } from '@/lib/utils';
 
-import { PROSE_LINK } from './f/button';
+import { FOCUS_RING, PROSE_LINK } from './f/button';
 import { SectionLabel } from './f/section-label';
 
 /**
@@ -107,8 +110,15 @@ export { PROSE_LINK };
  * legal only because it sits between two labelled crumbs — a list marker
  * that is the row's only leading mark has to be readable.
  *
- * `list-none`, `m-0` and `p-0` are needed because the preflight is off, so
- * the user agent still draws its own marker and indent.
+ * `list-none`, `m-0` and `p-0` were needed while the preflight was off, up
+ * to M7, because the user agent then drew its own marker and indent. The
+ * preflight's `ol, ul, menu { list-style: none }` and `* { margin: 0;
+ * padding: 0 }` answer all three since M7, so they are belt-and-braces
+ * here. They are kept on every list this build styles by hand —
+ * `f/breadcrumb.tsx` and `f/mass-flow.tsx` write the same three. The one
+ * list that does NOT is `filterable-groups.tsx`, whose `<ul>` is bare: it
+ * dropped them with `globals.css` because nothing there answers a class
+ * name, and the drawing is identical either way.
  */
 const LIST = 'm-0 flex w-full list-none flex-col gap-2 p-0';
 
@@ -125,9 +135,10 @@ const ITEM_BODY = cn(
 );
 
 /* One four-value `border-width` and an explicit `border-style`, exactly as
-   `notice.tsx` and `note.tsx` write it: with the preflight off, a lone
-   `border-l-3` draws nothing and a `border-solid` beside it would give the
-   other three sides the CSS initial `medium` width. */
+   `notice.tsx` and `note.tsx` write it. The form was forced while the
+   preflight was off, up to M7 — a lone `border-l-3` drew nothing and a
+   `border-solid` beside it gave the other three sides the CSS initial
+   `medium` width — and it stays because it is what the export draws. */
 const LEFT_RULE = '[border-style:solid] [border-width:0px_0px_0px_3px]';
 
 const CELL_RULE = '[border-style:solid] [border-width:0px_0px_1px_0px]';
@@ -256,9 +267,19 @@ const COMPONENTS: Components = {
    * `overflow-x-auto` is R-STA-08 and R-STA-09 together. The design's block
    * wraps its own content by hand; a real code line will not, and the page
    * body must never scroll sideways.
+   *
+   * `FOCUS_RING` rides with it — see the note on the scroll box in
+   * `f/mass-flow.tsx`. A scroll container that actually overflows is
+   * keyboard-focusable in Chromium with no `tabindex`, and until M7 its ring
+   * came from the global `:focus-visible` rule in `globals.css`.
    */
   pre: ({ children }) => (
-    <pre className="m-0 flex w-full flex-col items-start gap-3 overflow-x-auto rounded-none border-0 bg-desk px-5.5 py-5 text-12 leading-180 font-mono whitespace-pre text-ink">
+    <pre
+      className={cn(
+        'm-0 flex w-full flex-col items-start gap-3 overflow-x-auto rounded-none border-0 bg-desk px-5.5 py-5 text-12 leading-180 font-mono whitespace-pre text-ink',
+        FOCUS_RING,
+      )}
+    >
       {children}
     </pre>
   ),
@@ -273,8 +294,12 @@ const COMPONENTS: Components = {
    * design agrees: it sets `DATABASE_URL` in the running Geist with no
    * distinguishing treatment at all (`plates-3-4.html:1020`).
    *
-   * `[font-size:inherit]` undoes `globals.css`'s `code { font-size: .9em }`
-   * without inventing a size; the face is what carries the role.
+   * `[font-size:inherit]` was written to undo `globals.css`'s
+   * `code { font-size: .9em }` without inventing a size. That file went at
+   * M7 and the preflight writes `code, kbd, samp, pre { font-size: 1em }`
+   * in its place, so the class is now a restatement of the reset rather
+   * than a cancellation of a rule. It stays for the same reason it was
+   * written: the face is what carries the role, not a size.
    */
   code: ({ className, children }) => {
     const language = /\blanguage-([\w-]+)/.exec(className ?? '')?.[1];
@@ -336,19 +361,26 @@ const COMPONENTS: Components = {
    * with the designer. It is written here as the declared token rather than
    * quietly substituted.
    */
+  /* The scroll box takes `FOCUS_RING` for the reason the note on
+     `f/mass-flow.tsx`'s own box gives. No seeded table is wide enough to
+     overflow today, so nothing here was measured losing a ring; the class
+     is written so a wide table cannot acquire the fault later. */
   table: ({ children }) => (
-    <div className="w-full overflow-x-auto">
+    <div className={cn('w-full overflow-x-auto', FOCUS_RING)}>
       <table className="m-0 w-full border-collapse text-left">{children}</table>
     </div>
   ),
 
   /*
-   * `bg-transparent` and `pt-0` answer two rules in the `legacy` layer that
-   * no other utility here reaches: `globals.css` gives `thead th` a
-   * `--surface-2` fill and `th, td` a `0.5rem 0.8rem` padding, and this cell
-   * writes `px-0 pb-2.5` — which leaves the ground and the top padding
-   * standing until M7 deletes the stylesheet. The design draws no ground on
-   * a table head; `f/table-row.tsx` says the same.
+   * `bg-transparent` and `pt-0` were written to answer two rules in the
+   * `legacy` layer that no other utility here reached: `globals.css` gave
+   * `thead th` a `--surface-2` fill and `th, td` a `0.5rem 0.8rem` padding,
+   * and this cell writes `px-0 pb-2.5`, which left the ground and the top
+   * padding standing. M7 deleted that file and that layer, so the padding
+   * is now the preflight's `* { padding: 0 }` and the ground is nobody's.
+   * Both classes stay: the design draws no ground on a table head and no
+   * top padding on this cell, and stating them keeps the cell readable
+   * against the export. `f/table-row.tsx` says the same.
    */
   th: ({ children, style }) => (
     <th

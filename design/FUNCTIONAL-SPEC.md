@@ -1,16 +1,19 @@
 # Noble Notations — User Interface Functional Specification
 
-| Field           | Value                                           |
-| --------------- | ----------------------------------------------- |
-| Document        | NN-FS-001                                       |
-| Version         | 1.6                                             |
-| Status          | Draft                                           |
-| Date            | 2026-09-08                                      |
-| Repository      | `RyRy79261/noble-notations`                     |
-| Baseline        | `main` at `466fd76` (pull request #6)           |
-| Language        | ASD-STE100 Simplified Technical English         |
-| Target stack    | Tailwind CSS and shadcn/ui. Both are mandatory. |
-| Design baseline | `design/v1-design.pen`, DIRECTION F — DOSSIER   |
+| Field           | Value                                                                                                                                   |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Document        | NN-FS-001                                                                                                                               |
+| Version         | 2.0                                                                                                                                     |
+| Status          | Issued. The build is complete.                                                                                                          |
+| Date            | 2026-09-09                                                                                                                              |
+| Repository      | `RyRy79261/noble-notations`                                                                                                             |
+| Baseline        | `build/design-system`, milestones M1 to M7                                                                                              |
+| Language        | ASD-STE100 Simplified Technical English in §1 to §14, which are normative. §15 onward record what the build made and are plain English. |
+| Target stack    | Tailwind CSS 4.3.3 and shadcn/ui. Both are installed.                                                                                   |
+| Design baseline | `design/v1-design.pen`, DIRECTION F — DOSSIER                                                                                           |
+| Build plan      | `design/BUILD-PLAN.md`                                                                                                                  |
+| Token map       | `design/TOKEN-MAP.md`                                                                                                                   |
+| Build decisions | `design/DECISIONS.md`                                                                                                                   |
 
 ---
 
@@ -18,20 +21,24 @@
 
 ### 1.1 Purpose
 
-This document tells you what each screen and each component must do. It is
-the input to the design work. The design work makes the visual design.
+This document tells you what each screen and each component must do.
 
-This document does not tell you how the screens must look. That is the
-decision of the designer.
+Version 1 was the input to the design work. The design work is complete.
+The build is complete. This issue records what the build made. Each
+requirement stays normative. A future change must still meet it.
+
+This document does not tell you how the screens must look. `design/v1-design.pen`
+does that, and `design/BUILD-PLAN.md` §2 makes the design the source of
+truth for colour, type and space.
 
 ### 1.2 Scope
 
-This document covers the website user interface. It covers all 23 routes and
-all 20 components.
+This document covers the website user interface. It covers the 25 addresses
+in §8.1 and all 20 components in §9.
 
 This version adopts the design in `design/v1-design.pen`. The design renamed
 6 routes and added a new section. §4.2 lists each change. The route names in
-§8.1 are now the design's names, not the names in the code today.
+§8.1 are the design's names, and the code now uses them.
 
 This document does not cover:
 
@@ -41,8 +48,10 @@ This document does not cover:
 
 ### 1.3 Audience
 
-The audience is the designer. The designer makes a component design system.
-A developer then builds that design system with Tailwind CSS and shadcn/ui.
+The audience was the designer. The design is complete and the build is
+complete, so the audience is now the person who changes the interface. That
+person reads this document to learn what a screen must do, and the design
+to learn how it must look.
 
 ### 1.4 Where the code is
 
@@ -50,15 +59,19 @@ This document lives in the repository at `design/FUNCTIONAL-SPEC.md`. Each
 table in §8 and §9 gives the file for the thing it describes. Appendix B
 holds the full file map.
 
-Read these 5 files first. They answer most questions.
+Read these 6 files first. They answer most questions.
 
-| Order | File                               | Why                                                                                                |
-| ----- | ---------------------------------- | -------------------------------------------------------------------------------------------------- |
-| 1     | `AGENTS.md`                        | The working guide. Stack, layout, data model and quality gates.                                    |
-| 2     | `src/app/globals.css`              | The design system now. The tokens are at the top. Each rule has a comment that says why it exists. |
-| 3     | `src/lib/site.ts`                  | Each label the interface shows.                                                                    |
-| 4     | `src/components/recipe-detail.tsx` | The primary screen. It assembles the 4 panels.                                                     |
-| 5     | `src/lib/queries/read.ts`          | The shape of each view. It tells you which fields can be empty.                                    |
+| Order | File                               | Why                                                                                          |
+| ----- | ---------------------------------- | -------------------------------------------------------------------------------------------- |
+| 1     | `AGENTS.md`                        | The working guide. Stack, layout, data model and quality gates.                              |
+| 2     | `src/app/theme.css`                | The design system now. Each token is here. Each block has a comment that says why it exists. |
+| 3     | `design/TOKEN-MAP.md`              | What each token means, what it measures, and which old name ends where.                      |
+| 4     | `src/lib/site.ts`                  | Each label the interface shows.                                                              |
+| 5     | `src/components/recipe-detail.tsx` | The primary screen. It assembles the 4 panels.                                               |
+| 6     | `src/lib/queries/read.ts`          | The shape of each view. It tells you which fields can be empty.                              |
+
+`src/app/globals.css` was the design system until M7. M7 deleted it. Do not
+look for it. `design/DECISIONS.md` D-03 records why it stayed until then.
 
 Do not change these directories:
 
@@ -111,19 +124,24 @@ requirement by its identifier in review.
 
 ## 4. Repository Status
 
-This is the status at the baseline commit.
+This is the status after M7. §4.1 and §4.2 are history. Read them to learn
+why a screen is the shape it is.
 
-| Item               | Status                                                       |
-| ------------------ | ------------------------------------------------------------ |
-| Open pull requests | **0.** Pull request #6 merged on 8 September 2026.           |
-| Branch             | `main` at `466fd76`                                          |
-| Tailwind CSS       | Not installed. It is **REQUIRED**. See §14.                  |
-| shadcn/ui          | Not installed. It is **REQUIRED**. See §14.                  |
-| Prior design work  | None. `design/v1-design.pen` holds an empty 800 × 600 frame. |
+| Item          | Status                                                                                                                                                |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Branch        | `build/design-system`. M1 to M7 are built.                                                                                                            |
+| Tailwind CSS  | **Installed.** `tailwindcss` 4.3.3 and `@tailwindcss/postcss` 4.3.3. The entry point is `src/app/theme.css`. There is no `tailwind.config`.           |
+| shadcn/ui     | **Installed.** `components.json` holds the New York style, RSC on and CSS variables on. Two primitives are vendored: `Sheet` and `Tooltip`.           |
+| Preflight     | **On.** M7 turned it on and deleted `src/app/globals.css` in the same commit. See §6.                                                                 |
+| Design work   | **Complete.** `design/v1-design.pen` holds 23 screens at 1280, 9 of them again in the dark theme, 26 at 360, and 36 components. See §4.2.             |
+| Design export | 18 HTML exports and one PNG for each screen, at `design/exports/`. `design/exports/png/INDEX.md` names each picture. Git ignores the whole directory. |
 
-### 4.1 What pull request #6 changed
+The stack is Next.js 16.3.3 on the App Router, React 19.2.8, TypeScript
+5.9, Drizzle over Postgres, and Playwright for the end-to-end tests.
 
-Read this section before you design the recipe screen. It changed 4 things.
+### 4.1 What pull request #6 changed — history
+
+This is why the recipe screen has the shape it has. It changed 4 things.
 
 1. **A step now names what it uses.** Each step shows chips. Each chip holds
    an amount and an ingredient name. The amounts follow the batch control.
@@ -135,7 +153,7 @@ Read this section before you design the recipe screen. It changed 4 things.
 
 The pull request also repaired 2 layout faults. See §10.2.2.
 
-### 4.2 What the design changed
+### 4.2 What the design changed — history
 
 The design is in `design/v1-design.pen`. It covers each route at 1280px and
 at 360px, and it covers 11 routes in the dark theme. It holds 36 components.
@@ -162,10 +180,13 @@ The design added 3 things.
 3. **A mass flow figure** on the recipe page. It shows the weight of the
    food at each stage.
 
-The design also answered 1 open question. The 360 navigation is a drawer.
-See R-NAV-06.
+The design also answered 4 open questions. The 360 navigation is a drawer
+(R-NAV-03). The revision timeline is its own tab (Q-04). A card carries no
+image (Q-03). Eight note kinds ride on three severities (Q-06). §16 records
+each answer.
 
-Five items in this document are not yet in the design. §18 lists them.
+Seven items in this document were not in the first design. The design closed
+all seven. §18 records each one.
 
 ---
 
@@ -210,23 +231,77 @@ To make a dish better, you add a revision. You do not edit the old one.
 
 ## 6. Current Implementation
 
-| Item       | Value                                                                                                                     |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Framework  | Next.js 16 App Router. React 19. TypeScript 5.9.                                                                          |
-| Styles now | One stylesheet, `src/app/globals.css`. About 1,900 lines. CSS custom properties. **Tailwind and shadcn/ui replace this.** |
-| Data       | Postgres through Drizzle. All reads go through `src/lib/queries/read.ts`.                                                 |
-| Rendering  | Server Components by default. There are 8 shared client components. See §9.3.                                             |
-| Tests      | 138 end-to-end tests. `pnpm audit:ui` reports 0 blockers across 176 page loads.                                           |
-| Deployment | Vercel. CI runs format, lint, typecheck, build and end-to-end tests.                                                      |
+| Item       | Value                                                                                                                                               |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Framework  | Next.js 16.3.3 App Router. React 19.2.8. TypeScript 5.9.                                                                                            |
+| Styles     | `src/app/theme.css`. It is the Tailwind entry point and it holds the DOSSIER token set. There is no other stylesheet.                               |
+| Preflight  | On. It arrives inside the single `@import 'tailwindcss'` in `src/app/theme.css`, which declares `@layer theme, base, components, utilities` itself. |
+| Data       | Postgres through Drizzle. All reads go through `src/lib/queries/read.ts`. There are 7 migrations, `0000` to `0006`.                                 |
+| Rendering  | Server Components by default. 11 client components live in `src/components/`. See §9.3.                                                             |
+| Components | 25 files under `src/components/f/`. Each one draws a family of the design. See §9.5.                                                                |
+| Tests      | 165 end-to-end tests in 14 files. `pnpm audit:ui` reports 0 blockers and 0 major faults across 176 page loads. See R-ACC-11.                        |
+| Deployment | Vercel. CI runs format, lint, typecheck, build and end-to-end tests.                                                                                |
+
+### 6.1 How the stylesheet changed
+
+The build removed the old design system in three steps.
+
+1. **M1** added Tailwind CSS beside `src/app/globals.css`. Preflight stayed
+   off, because preflight and the old base rules fight each other.
+   `src/app/theme.css` pulled the old file into a cascade layer named
+   `legacy`, so a Tailwind utility beat an old element rule.
+2. **M3** added a bridge block. The bridge gave each old custom property the
+   value of the matching DOSSIER token. A screen that was not yet rebuilt
+   then took the new palette. The bridge carried colour only. `design/DECISIONS.md`
+   D-09 says why it did not carry the faces or the radius.
+3. **M7** deleted `src/app/globals.css`, deleted the `legacy` layer, deleted
+   the bridge and turned preflight on.
+
+**Preflight is a near-complete replacement for the old base rules, not a
+total one.** It owns the box sizing, the margin and padding reset, the
+heading reset, the list reset, the form-control font, `border-collapse` and
+the placeholder colour. It does not own everything the old file did. So 7
+declarations are restored in an `@layer base` block in `src/app/theme.css`.
+Each one is a declaration the old file made, that preflight does not make,
+and that something on a page still needs. Two more sit in the same block:
+`font-family` and `font-size` on `body`. Both are stated for clarity and not
+out of need. The block holds 9 declarations in 4 rules. Nothing else from that file came
+back. Read the comment above the block: it says what was left out, and it
+says what each omission was measured to change.
+
+`design/DECISIONS.md` D-03 records why the old file stayed until M7 and what
+M7 measured before it went. `design/TOKEN-MAP.md` §10 records the bridge and
+its removal.
 
 ---
 
 ## 7. Design Tokens
 
-These are the tokens now in use. They are the start point. They are not
-fixed. Read §13 before you make any muted colour darker.
+**Read `design/TOKEN-MAP.md`. It is the source of truth for every token.**
+`design/BUILD-PLAN.md` §2 gives the design's own values, and
+`src/app/theme.css` declares them.
 
-### 7.1 Colour
+The design replaced the palette. R-TKN-03 permits this. The direction is
+**DOSSIER**: warm paper and ink in the light theme, cool graphite in the
+dark theme, one red accent. The old purple palette is gone from the code.
+
+| What you want                         | Where it is                                         |
+| ------------------------------------- | --------------------------------------------------- |
+| Each colour token, light and dark     | `design/BUILD-PLAN.md` §2.1 and `src/app/theme.css` |
+| The map from an old name to a new one | `design/TOKEN-MAP.md` §3                            |
+| The type scale and the 3 faces        | `design/TOKEN-MAP.md` §4.1 and §4.2                 |
+| Line height and letter spacing        | `design/TOKEN-MAP.md` §4.3                          |
+| The space scale                       | `design/TOKEN-MAP.md` §4.4                          |
+| Radius, shadow and elevation          | `design/TOKEN-MAP.md` §4.5                          |
+| The measured contrast of each pair    | `design/TOKEN-MAP.md` §6 for text, §7 for non-text  |
+| The 2 breakpoints                     | §7.2 below, and `design/TOKEN-MAP.md` §8.2          |
+
+### 7.1 Colour — HISTORY
+
+**This table is history. It records the palette before the design replaced
+it. No value here is in the code.** Read it only to understand a note that
+names an old token. `design/TOKEN-MAP.md` §3.2 says where each old name
+ends.
 
 The dark palette changed in pull request #6. The light palette did not
 change.
@@ -250,7 +325,7 @@ change.
 | `--warn-bg`         | `rgba(255,180,200,.10)` | `rgba(159,18,57,.07)`  |
 | `--warn-border`     | `rgba(255,180,200,.28)` | `rgba(159,18,57,.22)`  |
 
-Measured contrast on the dark palette:
+Measured contrast on the old dark palette:
 
 | Token          | On `--bg` | On `--surface-2` |
 | -------------- | --------- | ---------------- |
@@ -258,36 +333,63 @@ Measured contrast on the dark palette:
 | `--text-muted` | 8.48:1    | 7.27:1           |
 | `--text-faint` | 6.38:1    | 5.47:1           |
 
+`design/TOKEN-MAP.md` §6 gives the same measurement for the DOSSIER
+palette, in both themes.
+
 ### 7.2 Shape, type and layout
 
-| Token         | Value                                     |
-| ------------- | ----------------------------------------- |
-| `--radius`    | 12px                                      |
-| `--radius-sm` | 8px                                       |
-| `--font-sans` | System sans stack                         |
-| `--font-mono` | System mono stack. All numbers use it.    |
-| `--measure`   | 68ch. This is the width of a text block.  |
-| `--page`      | 1180px. This is the width of the content. |
+The design replaced these values too. The table below is history.
 
-Type scale now: h1 `clamp(1.75rem, 1.2rem + 2vw, 2.5rem)`, h2 1.35rem,
-h3 1.05rem, body 16px with a line height of 1.6.
+| Old token     | Old value                                 | What happened to it                                                                        |
+| ------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `--radius`    | 12px                                      | Dropped. The system now holds one radius, 2px, on a chip corner. TOKEN-MAP §4.5.           |
+| `--radius-sm` | 8px                                       | Dropped. There is no second radius.                                                        |
+| `--font-sans` | System sans stack                         | Geist. TOKEN-MAP §4.1.                                                                     |
+| `--font-mono` | System mono stack. All numbers use it.    | Geist Mono. All numbers still use it (R-CON-06).                                           |
+| `--measure`   | 68ch. This is the width of a text block.  | Dropped. The design sets no text measure. TOKEN-MAP §4.4.                                  |
+| `--page`      | 1180px. This is the width of the content. | Dropped. The frame is 1280px with a 60px gutter, so the content is 1160px. TOKEN-MAP §4.4. |
+| —             | —                                         | Newsreader is new. It is the third face and it carries each title. TOKEN-MAP §4.1.         |
 
-Breakpoints now: 34rem (544px), 700px and **900px**. The 900px breakpoint
-holds the recipe layout. See §10.2.2. The audit tool tests at 360, 390, 768
-and 1280.
+There are now **2 breakpoints**, and both are named tokens in
+`src/app/theme.css`:
+
+| Token                 | Width  | What it moves                                                                       |
+| --------------------- | ------ | ----------------------------------------------------------------------------------- |
+| `--breakpoint-shell`  | 1080px | The page gutter, the header row and the 360 drawer. Above it the 9 links are a row. |
+| `--breakpoint-recipe` | 901px  | The recipe layout only. §10.2.2 fixes 901. Above it the ingredients are an aside.   |
+
+At 768px the header is a drawer **and** the recipe is tabs. At 1024px the
+header is a drawer **and** the recipe is an aside. One DOM draws both
+states.
+
+The audit tool tests at 360, 390, 768 and 1280.
 
 ### 7.3 Requirements
 
 - R-TKN-01: The tokens **MUST** be Tailwind theme values. Put them in the
-  `@theme` block, or in the shadcn/ui CSS variable set.
-- R-TKN-02: Both themes **MUST** work after the change.
-- R-TKN-03: The designer **MAY** change any value in §7.1 and §7.2.
+  `@theme` block, or in the shadcn/ui CSS variable set. **Met.**
+  `src/app/theme.css` declares each raw value as a custom property under the
+  design's `f-` prefix, then maps it into Tailwind with `@theme inline`.
+  TOKEN-MAP §2 says why the two steps are separate.
+- R-TKN-02: Both themes **MUST** work after the change. **Met.** The dark
+  values are on plain `:root` and the light values come from
+  `prefers-color-scheme: light`.
+- R-TKN-03: The designer **MAY** change any value in §7.1 and §7.2. **Used.**
+  The design replaced every one.
 - R-TKN-04: A component **MUST** read a token. A component **MUST NOT** hold
-  a raw colour value.
+  a raw colour value. **Met, and enforced.** `src/app/theme.css` clears
+  Tailwind's own colour, radius, shadow, blur, type-size, line-height and
+  letter-spacing namespaces, so a utility that names a raw value emits no
+  rule.
 - R-TKN-05: The token names **SHOULD** follow the shadcn/ui names:
   `background`, `foreground`, `card`, `popover`, `primary`, `secondary`,
   `muted`, `accent`, `destructive`, `border`, `input`, `ring`. Give a map
-  from the old names to the new names.
+  from the old names to the new names. **Met.** Each token carries two
+  names. `bg-paper` and `bg-background` give the same colour.
+  `text-ink-3` and `text-muted-foreground` give the same colour. The
+  design's name is the primary one, because a reviewer must be able to find
+  it in the design file. `design/TOKEN-MAP.md` §3.1 is the map, and §3.2
+  lists the 8 old names that end there and are not replaced.
 
 ---
 
@@ -301,32 +403,44 @@ Each route is one file under `src/app/`. The shell for all of them is
 The **Route** column is the design's name. The **File** column is the file
 that serves it. M2 moved every file that had to move. See R-NAV-07.
 
-| Route                              | Screen                                                    | File today                                                                    |
-| ---------------------------------- | --------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `/`                                | Home                                                      | `src/app/page.tsx`                                                            |
-| `/recipes`                         | All entries in groups by kind                             | `src/app/recipes/page.tsx`                                                    |
-| `/recipes/[slug]`                  | Recipe, current revision. **This is the primary screen.** | `src/app/recipes/[slug]/page.tsx`, body in `src/components/recipe-detail.tsx` |
-| `/recipes/[slug]/revisions/[n]`    | An old revision                                           | `src/app/recipes/[slug]/revisions/[number]/page.tsx`                          |
-| `/batch-logs`                      | Every run, including a run with no recipe                 | `src/app/batch-logs/page.tsx`                                                 |
-| `/recipes/[slug]/batch-logs`       | The runs of one recipe                                    | `src/app/recipes/[slug]/batch-logs/page.tsx`                                  |
-| `/recipes/[slug]/batch-logs/[log]` | One run with its measurements                             | `src/app/recipes/[slug]/batch-logs/[log]/page.tsx`. See D-01.                 |
-| `/recipes/[slug].md`               | Markdown copy for agents. There is no user interface.     | `src/app/recipes/[slug]/md/route.ts`                                          |
-| `/science`                         | Every science note in one place                           | `src/app/science/page.tsx`                                                    |
-| `/science/[slug]`                  | One study, keyed by recipe slug                           | `src/app/science/[slug]/page.tsx`. See D-05.                                  |
-| `/cuisines`                        | Cuisine cards                                             | `src/app/cuisines/page.tsx`                                                   |
-| `/cuisines/[slug]`                 | One cuisine                                               | `src/app/cuisines/[slug]/page.tsx`                                            |
-| `/classes`                         | All classification in groups by category type             | `src/app/classes/page.tsx`                                                    |
-| `/classes/[type]/[slug]`           | One term                                                  | `src/app/classes/[type]/[slug]/page.tsx`                                      |
-| `/ingredients`                     | The ingredient table                                      | `src/app/ingredients/page.tsx`                                                |
-| `/ingredients/[slug]`              | One ingredient                                            | `src/app/ingredients/[slug]/page.tsx`                                         |
-| `/list`                            | The combined shopping list. The URL gives the selection.  | `src/app/list/page.tsx`, plus `list-recipes.tsx` and `basket-redirect.tsx`    |
-| `/archive`                         | The frozen Markdown archive                               | `src/app/archive/page.tsx`                                                    |
-| `/archive/[...slug]`               | One archived note                                         | `src/app/archive/[...slug]/page.tsx`                                          |
-| `/search`                          | Search with filters                                       | `src/app/search/page.tsx`                                                     |
-| `/connect`                         | MCP connector help. Not indexed. Linked from the footer.  | `src/app/connect/page.tsx`                                                    |
-| `/connect/done`                    | The agent is connected                                    | `src/app/connect/done/page.tsx`                                               |
-| `/sign-in`                         | Administrator sign-in                                     | `src/app/sign-in/page.tsx`, form in `sign-in-form.tsx`                        |
-| `404`                              | Not found                                                 | `src/app/not-found.tsx`                                                       |
+Each screen also composes its own page foot. The foot is a parallel route
+slot at `src/app/@foot/`, which mirrors the tree below. M6 added it. The design
+writes a different effectivity line in the foot of each screen, and a layout
+cannot read the `params` of the page below it.
+`src/app/@foot/default.tsx` serves a route with no foot of its own. See D-07.
+
+| Route                              | Screen                                                    | File today                                                                                                     |
+| ---------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `/`                                | Home                                                      | `src/app/page.tsx`                                                                                             |
+| `/recipes`                         | All entries in groups by kind                             | `src/app/recipes/page.tsx`                                                                                     |
+| `/recipes/[slug]`                  | Recipe, current revision. **This is the primary screen.** | `src/app/recipes/[slug]/page.tsx`, body in `src/components/recipe-detail.tsx`                                  |
+| `/recipes/[slug]/revisions/[n]`    | An old revision                                           | `src/app/recipes/[slug]/revisions/[number]/page.tsx`                                                           |
+| `/batch-logs`                      | Every run, including a run with no recipe                 | `src/app/batch-logs/page.tsx`                                                                                  |
+| `/recipes/[slug]/batch-logs`       | The runs of one recipe                                    | `src/app/recipes/[slug]/batch-logs/page.tsx`                                                                   |
+| `/recipes/[slug]/batch-logs/[log]` | One run with its measurements                             | `src/app/recipes/[slug]/batch-logs/[log]/page.tsx`. See D-01.                                                  |
+| `/batch-logs/[log]`                | One run that names no recipe                              | `src/app/batch-logs/[log]/page.tsx`. It redirects to the nested address when the run names a recipe. See D-01. |
+| `/recipes/[slug].md`               | Markdown copy for agents. There is no user interface.     | `src/app/recipes/[slug]/md/route.ts`                                                                           |
+| `/science`                         | Every science note in one place                           | `src/app/science/page.tsx`                                                                                     |
+| `/science/[slug]`                  | One study, keyed by recipe slug                           | `src/app/science/[slug]/page.tsx`. See D-05.                                                                   |
+| `/cuisines`                        | Cuisine cards                                             | `src/app/cuisines/page.tsx`                                                                                    |
+| `/cuisines/[slug]`                 | One cuisine                                               | `src/app/cuisines/[slug]/page.tsx`                                                                             |
+| `/classes`                         | All classification in groups by category type             | `src/app/classes/page.tsx`                                                                                     |
+| `/classes/[type]/[slug]`           | One term                                                  | `src/app/classes/[type]/[slug]/page.tsx`                                                                       |
+| `/ingredients`                     | The ingredient table                                      | `src/app/ingredients/page.tsx`                                                                                 |
+| `/ingredients/[slug]`              | One ingredient                                            | `src/app/ingredients/[slug]/page.tsx`                                                                          |
+| `/list`                            | The combined shopping list. The URL gives the selection.  | `src/app/list/page.tsx`, plus `list-recipes.tsx` and `basket-redirect.tsx`                                     |
+| `/archive`                         | The frozen Markdown archive                               | `src/app/archive/page.tsx`                                                                                     |
+| `/archive/[...slug]`               | One archived note                                         | `src/app/archive/[...slug]/page.tsx`                                                                           |
+| `/search`                          | Search with filters                                       | `src/app/search/page.tsx`                                                                                      |
+| `/connect`                         | MCP connector help. Not indexed. Linked from the footer.  | `src/app/connect/page.tsx`                                                                                     |
+| `/connect/done`                    | The agent is connected                                    | `src/app/connect/done/page.tsx`                                                                                |
+| `/sign-in`                         | Administrator sign-in                                     | `src/app/sign-in/page.tsx`, form in `sign-in-form.tsx`                                                         |
+| `404`                              | Not found                                                 | `src/app/not-found.tsx`                                                                                        |
+
+Three files under `src/app/batch-logs/` are shared by the batch-log screens:
+`batch-log-detail.tsx` is the body of both detail routes.
+`batch-log-parts.tsx` holds the ledger, the rows and the address of a run.
+`run-dates.ts` formats a run date.
 
 ### 8.2 Primary navigation
 
@@ -352,7 +466,9 @@ The list control sits beside the navigation. It shows a count.
   `/categories/[type]/[slug]`, `/experiments`, `/experiments/[slug]`,
   `/auth` and `/oauth-return` each need a permanent redirect. M2 shipped all
   seven, and repointed the two older `/taxonomy` rules so no request takes
-  two hops.
+  two hops. `next.config.ts` holds all 9 rules. Each one is a 308.
+  `e2e/redirects.spec.ts` asserts the status, the destination and that the
+  destination does not redirect again.
 - R-NAV-08: Every run **MUST** be reachable from `/batch-logs`. A run with
   no recipe has no nested address, so the top level index is its only
   address. See K-01.
@@ -370,35 +486,44 @@ The list control sits beside the navigation. It shows a count.
 
 ## 9. Component Requirements
 
-The shadcn/ui component in each table is a suggestion. The designer makes
-the decision.
+The **Suggested** column in each table was a suggestion to the designer. The
+design made its own decision. §9.5 gives the design component that draws each
+one, and the file it lives in. Only two shadcn/ui primitives are vendored:
+`Sheet`, which carries the 360 drawer, and `Tooltip`, which carries the term
+explanation. `design/TOKEN-MAP.md` §11 records every change made to both.
 
 ### 9.1 Shell components
 
-| ID   | Component           | File                                                  | Function                                                     | States            | Suggested                       |
-| ---- | ------------------- | ----------------------------------------------------- | ------------------------------------------------------------ | ----------------- | ------------------------------- |
-| C-01 | Skip link           | `src/app/layout.tsx`                                  | Moves the keyboard focus to `#main`.                         | hidden, focused   | —                               |
-| C-02 | Site header         | `src/app/layout.tsx`                                  | Holds the brand, the list control and the navigation.        | —                 | `NavigationMenu`, `Sheet`       |
-| C-03 | List control        | `src/components/shopping-basket.tsx` → `BasketButton` | Shows the count of collected recipes. Links to the list.     | hidden, 1 or more | `Button`, `Badge`               |
-| C-04 | Site footer         | `src/app/layout.tsx`                                  | Holds the copyright, the connector link and the source link. | —                 | —                               |
-| C-20 | Header height probe | `src/components/header-height.tsx`                    | Measures the header. Writes the value to `--header-h`.       | —                 | none. It has no user interface. |
+| ID   | Component           | File                                                  | Function                                                          | States            | Design component                     |
+| ---- | ------------------- | ----------------------------------------------------- | ----------------------------------------------------------------- | ----------------- | ------------------------------------ |
+| C-01 | Skip link           | `src/components/f/skip-link.tsx`                      | Moves the keyboard focus to `#main`.                              | hidden, focused   | `F/Skip link`                        |
+| C-02 | Site header         | `src/components/f/site-header.tsx`                    | Holds the brand, the list control and the navigation.             | —                 | `F/Site header`, `F/Site header 360` |
+| C-03 | List control        | `src/components/shopping-basket.tsx` → `BasketButton` | Shows the count of collected recipes. Links to the list.          | hidden, 1 or more | `List control`                       |
+| C-04 | Site footer         | `src/components/f/page-foot.tsx`, `src/app/@foot/`    | Holds the document issue, the connector link and the source link. | —                 | `F/Page foot`                        |
+| C-20 | Header height probe | `src/components/header-height.tsx`                    | Measures the header. Writes the value to `--header-h`.            | —                 | none. It has no user interface.      |
 
 - R-CMP-01: The list control **MUST** be hidden when the list is empty.
 - R-CMP-02: The list control **MUST NOT** be inside the navigation or the
   360 drawer.
 
+> **The footer no longer holds a copyright.** The design draws an
+> effectivity line in that slot, not a copyright, and it draws no `©`
+> anywhere. The default is the document issue, `Issue 01 · 08 Sep 2026`, a
+> constant in `src/lib/site.ts`. Each screen replaces it with its own
+> effectivity. See `design/DECISIONS.md` D-07.
+
 ### 9.2 Content components
 
-| ID   | Component       | File                                            | Function                                                                                                                           | States                                                                         | Suggested          |
-| ---- | --------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ------------------ |
-| C-05 | Recipe card     | `src/components/recipe-card.tsx` → `RecipeCard` | Shows a kind badge, a revision badge, a title link, a subtitle, a summary and up to 4 terms. The summary is cut at 160 characters. | with or without each optional field                                            | `Card`             |
-| C-06 | Recipe grid     | `src/components/recipe-card.tsx` → `RecipeGrid` | Shows recipe cards in a grid.                                                                                                      | full, empty                                                                    | —                  |
-| C-07 | Term tag        | `src/components/tags.tsx` → `TermTag`           | Shows one term. It links to the term page. It shows the term explanation.                                                          | primary, normal; with or without an explanation; with or without a type prefix | `Badge`, `Tooltip` |
-| C-08 | Term list       | `src/components/tags.tsx` → `TermList`          | Shows a row of term tags with a `+n` overflow chip.                                                                                | —                                                                              | —                  |
-| C-09 | Term hierarchy  | `src/components/term-hierarchy.tsx`             | Shows the parent term and the more specific terms.                                                                                 | —                                                                              | —                  |
-| C-10 | Note block      | `src/components/notes.tsx`                      | Shows one note: a kind badge, a title, a Markdown body and the sources. There are **8 kinds**.                                     | 8 kinds; with or without a title; with or without sources                      | `Alert`, `Card`    |
-| C-11 | Markdown        | `src/components/markdown.tsx`                   | Renders Markdown with GFM.                                                                                                         | —                                                                              | `Typography`       |
-| C-12 | Database notice | `src/components/database-notice.tsx`            | Tells the reader that the database is not available. It tells the reader what to do.                                               | not configured, read failed                                                    | `Alert`            |
+| ID   | Component       | File                                            | Function                                                                                                                                           | States                                                                         | Suggested          |
+| ---- | --------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ------------------ |
+| C-05 | Recipe card     | `src/components/recipe-card.tsx` → `RecipeCard` | Shows a kind badge, a revision badge, a title link, a subtitle, a summary and up to 3 terms. **The summary is no longer cut. See §20.7 and D-11.** | with or without each optional field                                            | `Card`             |
+| C-06 | Recipe grid     | `src/components/recipe-card.tsx` → `RecipeGrid` | Shows recipe cards in a grid.                                                                                                                      | full, empty                                                                    | —                  |
+| C-07 | Term tag        | `src/components/tags.tsx` → `TermTag`           | Shows one term. It links to the term page. It shows the term explanation.                                                                          | primary, normal; with or without an explanation; with or without a type prefix | `Badge`, `Tooltip` |
+| C-08 | Term list       | `src/components/tags.tsx` → `TermList`          | Shows a row of term tags with a `+n` overflow chip.                                                                                                | —                                                                              | —                  |
+| C-09 | Term hierarchy  | `src/components/term-hierarchy.tsx`             | Shows the parent term and the more specific terms.                                                                                                 | —                                                                              | —                  |
+| C-10 | Note block      | `src/components/notes.tsx`                      | Shows one note: a kind badge, a title, a Markdown body and the sources. There are **8 kinds**.                                                     | 8 kinds; with or without a title; with or without sources                      | `Alert`, `Card`    |
+| C-11 | Markdown        | `src/components/markdown.tsx`                   | Renders Markdown with GFM.                                                                                                                         | —                                                                              | `Typography`       |
+| C-12 | Database notice | `src/components/database-notice.tsx`            | Tells the reader that the database is not available. It tells the reader what to do.                                                               | not configured, read failed                                                    | `Alert`            |
 
 - R-CMP-03: The term tag **MUST** show its explanation on hover **and** on
   keyboard focus.
@@ -409,16 +534,28 @@ the decision.
   parent and no children. Most terms are flat.
 - R-CMP-06: Each of the 8 note kinds **MUST** have a different visual
   treatment. The kinds are: observation, research, substitution, warning,
-  result, idea, correction and science.
+  result, idea, correction and science. **Met, and the design answered it a
+  second way.** The 8 kinds carry 3 severities: note, caution and warning.
+  The severity gives the colour, and the kind word gives the rest. A label
+  reads `NOTE · OBSERVATION` or `CAUTION · SUBSTITUTION`. A warning drops
+  the second half and reads `WARNING`. `SEVERITY_BY_KIND` in
+  `src/components/f/mark.tsx` is the map, and `NOTE_KIND_LABELS` in
+  `src/lib/site.ts` holds the 8 words. This is the answer to Q-06.
 - R-CMP-07: The 4 recipe kinds **MUST** be easy to tell apart. The kinds are:
-  recipe, preparation, process and research.
+  recipe, preparation, process and research. **Met by the word, not by a
+  colour.** The design draws all 4 as the same solid `f-accent` block
+  (`F/Mark`). `KIND_LABELS` in `src/lib/site.ts` holds the 4 words. It also
+  holds `science`, which labels a note kind and not a recipe kind.
 - R-CMP-08: A badge, a term tag, a step chip and a shop chip **MUST** be easy
-  to tell apart. These 4 look the same today.
+  to tell apart. **Met.** The 4 are now 4 different components: `F/Mark` is
+  a solid block, `F/Tag` is a bare run of type, `F/Ingredient callout` is a
+  boxed amount and `F/List mark` is a square.
 
 ### 9.3 Interactive components
 
-These 8 components run in the browser. There are no others in
-`src/components/`.
+These 8 components run in the browser. The build added 3 more to
+`src/components/`, so there are 11. §9.3.1 names the 3 and says why each one
+had to run in the browser.
 
 | ID   | Component             | File                                                 | Function                                                                                                                             | States                        | Suggested                       |
 | ---- | --------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------- | ------------------------------- |
@@ -449,13 +586,49 @@ These 8 components run in the browser. There are no others in
 > screen reader read "1 kgJalapeño". A copied chip pasted the same way. The
 > layout looked correct and the content was wrong.
 
+> **The rule is wider than the chip, and M7 closed the last of it.** M4 put
+> a real space in `F/Band`, `F/Note`, `F/Citation`, `F/Mechanism`,
+> `F/Table row`, `F/List row`, `F/Revision` and `F/Section label`. Three
+> label-and-value components were missed and were found in the M7 review:
+> `F/Stat` and `F/Measure` in `src/components/f/stat.tsx`, and
+> `BatchSource` in `src/components/f/batch-line.tsx`. Measured on the
+> running build, `/` read `Recipes5 Revisions11 Ingredients42`,
+> `/batch-logs` read `SourceBaumy Biltong` and a recipe's step meta read
+> `WorkButchery` and `Time1 d–2 d`. All three now carry the same
+> whitespace-only text run, which CSS Flexbox §4 does not render as a flex
+> item, so no drawing moved.
+
 - R-CMP-15: A step chip **MUST** show only an ingredient line that is in
   this revision. Do not invent a chip for a name that does not resolve.
 
+#### 9.3.1 The 3 the build added
+
+| Component     | File                              | Why it runs in the browser                                                                                                                                                |
+| ------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Navigation`  | `src/components/f/nav-drawer.tsx` | The design marks the open destination in the header and the open section in the drawer. A layout cannot read the address of the page below it, so it reads `usePathname`. |
+| `Contents360` | `src/components/f/nav-drawer.tsx` | The 360 drawer. It needs open state, a focus trap and an Escape key. R-NAV-03 requires the drawer.                                                                        |
+| `Sheet`       | `src/components/ui/sheet.tsx`     | The vendored shadcn/ui overlay that carries the drawer.                                                                                                                   |
+| `Tooltip`     | `src/components/ui/tooltip.tsx`   | The vendored shadcn/ui panel that carries the term explanation (R-CMP-03, R-ACC-02).                                                                                      |
+
+`Navigation` and `Contents360` are in one file, so the client boundary is
+one file. Both still render to HTML on the server.
+
+`src/app/announcer.tsx` is a fourth client module. It is the document's one
+polite live region (R-ACC-06). It is a direct child of `<body>` and not a
+descendant of the shell. A live region inside the shell would hold the whole
+shell in the accessibility tree while the drawer is open. It lives
+in `src/app/`, so it is not one of the components this section counts.
+
+> **The cost.** With JavaScript off, the header below 1080px shows no
+> destination. The row of 9 links is `display: none` and the drawer cannot
+> open. R-NAV-03 makes the drawer mandatory, so this is the cost of the
+> rule. Every screen is still reachable from a link in the page body.
+
 ### 9.4 Layout patterns
 
-These are CSS classes today. They have no component. Map each one to a
-Tailwind utility set or a shadcn/ui component.
+These were CSS classes in `src/app/globals.css`. That file is gone. Each
+pattern is now a Tailwind utility set inside the component that draws it,
+and the components are the ones §9.5 names.
 
 `.page` `.prose-page` `.hero` `.section` `.section-head` `.panel` `.grid`
 `.card` `.row` `.stats` `.stat` `.breadcrumb` `.badge` `.tag` `.notice`
@@ -465,37 +638,78 @@ Tailwind utility set or a shadcn/ui component.
 `.table-scroll` `.filter-bar` `.search-bar` `.field` `.button-primary`
 `.button-secondary`
 
+**None of these names is in the markup.** A test or an audit that has to
+find one box reads a `data-` attribute instead — `data-group`,
+`data-recipe-column`, `data-step-uses`, `data-basket-control`. An attribute
+cannot be mistaken for a style hook and it cannot pick up a rule by
+accident. Each one carries a comment that says which test reads it. Do not
+bring a class name back for this.
+
 ---
 
 ### 9.5 The design components
 
-The design holds 36 components. Each name starts with `F/`. This table maps
-them onto §9. A build takes its names from the design.
+The design holds 36 components. Each name starts with `F/`. Each one is
+built. They live in 25 files under `src/components/f/`.
 
-| Design component                                | Covers                                      |
-| ----------------------------------------------- | ------------------------------------------- |
-| `F/Site header`, `F/Site header 360`            | C-02, C-03                                  |
-| `F/Page head`, `F/Page head 360`, `F/Page hero` | The hero, §10.2.1                           |
-| `F/Page foot`                                   | C-04                                        |
-| `F/Breadcrumb`                                  | The breadcrumb                              |
-| `F/Section label`, `F/Section 360`              | The section heading                         |
-| `F/Mark`, `F/Mark quiet`                        | The kind badge and the revision badge       |
-| `F/Tag`, `F/Tag CTA`, `F/Tag hierarchy`         | C-07, C-08, C-09                            |
-| `F/Recipe card`, `F/Index card`                 | C-05                                        |
-| `F/Ingredient row`, `F/Ingredient callout`      | C-14 rows, C-19 step chips                  |
-| `F/List row`, `F/List mark`                     | The shopping row and the source recipe chip |
-| `F/Table row`                                   | The ingredient table row                    |
-| `F/Revision`                                    | The timeline entry                          |
-| `F/Batch line`                                  | The batch log row                           |
-| `F/Provenance line`                             | The provenance row                          |
-| `F/Footnote`, `F/Warning`, `F/Note reference`   | C-10, the 8 note kinds                      |
-| `F/Mechanism`, `F/Citation`                     | §10.9, new                                  |
-| `F/Stat`, `F/Measure`                           | The statistic and the "At a glance" value   |
-| `F/Button`, `F/Field`, `F/Filter`               | The controls, C-17                          |
-| `F/Notice`, `F/Empty`                           | C-12, the empty state                       |
+Two rows below are not `F/` names. `Figure 1 — Mass flow` is a shape the
+design draws once, on the recipe screen. `F/Band` is the build's own name
+for the page spine. The design draws that spine on every screen. It names
+each one after its content, such as `CONTENTS` or `MECHANISMS`, rather than
+as a component.
+
+**One file holds one family.** The exported symbol carries the design's
+name; the file groups the family that shares its measurements. The design's
+own families differ by one value. `F/Mark` and `F/Mark quiet` differ by a
+ground. `F/Site header` and `F/Site header 360` differ by one step of every
+value. Two files for one family copy a constant twice. The two copies can
+then drift. `design/DECISIONS.md` D-06 records this and holds the full
+map.
+
+| Design component                                | File                                                             | Covers                                      |
+| ----------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------- |
+| `F/Skip link`                                   | `src/components/f/skip-link.tsx`                                 | C-01                                        |
+| `F/Site header`, `F/Site header 360`            | `src/components/f/site-header.tsx`                               | C-02, C-03                                  |
+| `F/Site header > Navigation`, `Contents — 360`  | `src/components/f/nav-drawer.tsx`                                | The 9 destinations and the 360 drawer       |
+| `F/Page head`, `F/Page head 360`, `F/Page hero` | `src/components/f/page-head.tsx`                                 | The hero, §10.2.1                           |
+| `F/Page foot`                                   | `src/components/f/page-foot.tsx`, and `src/app/@foot/` per route | C-04                                        |
+| `F/Band`                                        | `src/components/f/band.tsx`                                      | The page spine: a label, a body and a meta  |
+| `F/Breadcrumb`                                  | `src/components/f/breadcrumb.tsx`                                | The breadcrumb                              |
+| `F/Section label`, `F/Section 360`              | `src/components/f/section-label.tsx`                             | The section heading                         |
+| `F/Mark`, `F/Mark quiet`                        | `src/components/f/mark.tsx`                                      | The kind badge and the revision badge       |
+| `F/Tag`, `F/Tag CTA`, `F/Tag hierarchy`         | `src/components/f/tag.tsx`                                       | C-07, C-08, C-09                            |
+| `F/Recipe card`, `F/Index card`                 | `src/components/f/recipe-card.tsx`                               | C-05, C-06                                  |
+| `F/Ingredient row`, `F/Ingredient callout`      | `src/components/f/ingredient-row.tsx`                            | C-14 rows, C-19 step chips                  |
+| `F/List row`, `F/List mark`                     | `src/components/f/list-row.tsx`                                  | The shopping row and the source recipe chip |
+| `F/Table row`                                   | `src/components/f/table-row.tsx`                                 | The ingredient table row                    |
+| `F/Revision`                                    | `src/components/f/revision.tsx`                                  | The timeline entry                          |
+| `F/Batch line`                                  | `src/components/f/batch-line.tsx`                                | The batch log row                           |
+| `F/Provenance line`                             | `src/components/f/provenance.tsx`                                | The provenance row                          |
+| `F/Footnote`, `F/Warning`, `F/Note reference`   | `src/components/f/note.tsx`                                      | C-10, the 8 note kinds                      |
+| `F/Mechanism`                                   | `src/components/f/mechanism.tsx`                                 | §10.9, new                                  |
+| `F/Citation`                                    | `src/components/f/citation.tsx`                                  | The literature block and §10.9, new         |
+| `Figure 1 — Mass flow`                          | `src/components/f/mass-flow.tsx`                                 | R-SCR-39, new. See D-12 and §20.3.          |
+| `F/Stat`, `F/Measure`                           | `src/components/f/stat.tsx`                                      | The statistic and the "At a glance" value   |
+| `F/Button`                                      | `src/components/f/button.tsx`                                    | The controls                                |
+| `F/Field`, `F/Filter`                           | `src/components/f/field.tsx`                                     | The form field, C-17                        |
+| `F/Notice`, `F/Empty`                           | `src/components/f/notice.tsx`                                    | C-12, the empty state                       |
 
 - R-CMP-16: A build **MUST** use the design's component names. Do not carry
-  the class names in §9.4 forward.
+  the class names in §9.4 forward. **Met.** Two exports were renamed to the
+  design's own words: `PrimaryNav` became `Navigation` and `NavDrawer`
+  became `Contents360`. The design's name is greppable from the code, and
+  the code from the design. See D-06.
+
+**Four treatments in the build are not in the design.** The design has no
+case where each question arises, so each one is an invention and each one is
+recorded where it lives.
+
+| Treatment           | Where                         | Why it exists                                                                                                                                                                                                  |
+| ------------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FOCUS_RING`        | `src/components/f/button.tsx` | R-ACC-05. Each control must show a visible focus state.                                                                                                                                                        |
+| `FOCUS_RING_WITHIN` | `src/components/f/button.tsx` | The same, for a control whose focus lands on a child.                                                                                                                                                          |
+| `PROSE_LINK`        | `src/components/f/button.tsx` | C-11 and C-12 both need a link inside running prose. The design draws none. The accent alone measures 1.90:1 against the ink; WCAG 1.4.1 asks 3:1, so the treatment is the accent plus an underline. See D-10. |
+| The `+n` chip       | `src/components/tags.tsx`     | C-08 asks for an overflow chip. The design draws 3 terms and never a fourth, so it draws no overflow. The chip is mono, 13px, `f-ink-3`, with no box — a box would read as a step chip (R-CMP-08).             |
 
 ## 10. Screen Requirements
 
@@ -607,7 +821,10 @@ design.
 - R-SCR-39: The recipe **MAY** show a mass flow figure below the hero. It
   gives the weight of the food at each stage, for example 10 kg raw to
   4.5 kg dried. Show it only for a recipe that loses or gains weight in a
-  way the reader must plan for.
+  way the reader must plan for. **Built.** `recipe_mass_flows` holds one
+  figure for each revision, not for each recipe, because two batches of one
+  recipe weigh different amounts. `F/Mass flow` draws nothing at all when a
+  revision has no figure. See D-12 and §20.3.
 
 - R-SCR-05: The yield and the servings **MUST** show the scaled value.
 - R-SCR-06: The times **MUST NOT** scale.
@@ -810,7 +1027,10 @@ example a temperature, a time and a layer depth.
 
 - R-SCR-40: A science note **MUST** link back to its recipe.
 - R-SCR-41: A mechanism **MUST** show its conditions as separate values. Do
-  not write them into a sentence.
+  not write them into a sentence. **Met.** `notes.conditions` holds the
+  values, `F/Mechanism` draws them as a mono run with a middle dot between
+  each pair, and the seed fills 9 notes. Only the separator glyph is
+  `aria-hidden`. `e2e/render.spec.ts` guards it. See D-02.
 - R-SCR-42: A citation **MUST** show the work, the part and the date a
   person read it.
 - R-SCR-43: `/science` **MUST** show an empty state when no recipe has a
@@ -920,9 +1140,13 @@ each empty state. It is not decorative text.
 ### 13.6 Geometry
 
 - R-ACC-11: The design **MUST** pass `pnpm audit:ui`. The tool drives each
-  route at 360, 390, 768 and 1280 pixels. It reports geometric faults. The
-  baseline is 0 blockers and 0 major faults across 176 page loads — 22
-  routes, after M2 renamed five and added four.
+  route at 360, 390, 768 and 1280 pixels, in 2 states. It reports geometric
+  faults. **Met.** The result is 0 blockers and 0 major faults across 176
+  page loads — 22 routes × 4 widths × 2 states. `scripts/audit-ui.ts` holds
+  the route list. The audit also reports 52 minor faults. Each one
+  is a control under 24 × 24 pixels. `design/BUILD-PLAN.md` §6.1 holds the
+  shape they share. It also says why a naive fix makes it worse. §6.5 of the same
+  document records the 2 screens the route list does not reach.
 - R-ACC-13: A panel **MUST** start where its tab strip ends. Measure the box
   of each panel against the strip that opened it. "It is visible" is not the
   test.
@@ -941,7 +1165,9 @@ each empty state. It is not decorative text.
 - R-CON-10: The build **MUST** use Tailwind CSS.
 - R-CON-11: The build **MUST** use shadcn/ui.
 - R-CON-12: Tailwind and shadcn/ui replace `src/app/globals.css`. Both
-  themes **MUST** work after the change.
+  themes **MUST** work after the change. **Met in M7.** The file, the
+  `legacy` cascade layer and the palette bridge are all gone, and Tailwind's
+  preflight is on. See §6.1.
 - R-CON-13: The design **MUST** name one shadcn/ui component for each
   component in §9, or it **MUST** say that the component is custom.
 
@@ -950,7 +1176,10 @@ each empty state. It is not decorative text.
 - R-CON-01: The pages **MUST** stay Server Components by default. Only the 8
   components in §9.3 run in the browser. A shadcn/ui component that makes
   the recipe body, the ingredient table or the archive a client component is
-  a fault.
+  a fault. **Met for every page. 3 more components run in the browser than
+  this rule allows, and each one is recorded in §9.3.1 and §20.7.** The
+  recipe body, the ingredient table and the archive are all still Server
+  Components.
 - R-CON-02: A Server Component can pass JSX across the boundary. It cannot
   pass a function. A render callback **MUST NOT** be used at this boundary.
   The `FilterableGroups` component exists for this reason.
@@ -973,44 +1202,49 @@ each empty state. It is not decorative text.
 
 ## 15. Design Deliverables
 
-The designer supplies these items.
+The designer supplied these items. Each row says what was delivered and
+where. **Do not read the deliverable IDs here as the decision IDs in
+`design/DECISIONS.md`. The two sets share their numbers and mean different
+things.**
 
-| ID   | Deliverable                                                                                                                                 |
-| ---- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| D-01 | Foundations: colour for both themes, the type scale, spacing, radii, elevation, focus rings and motion. Give them as Tailwind theme tokens. |
-| D-02 | A distinct treatment for each component in §9. This is the main task.                                                                       |
-| D-03 | A navigation design for a screen 360px wide. It holds 9 destinations and the list control.                                                  |
-| D-04 | The recipe screen at 360, 768 and 1280 pixels. Show the change from tabs to aside plus tabs.                                                |
-| D-05 | The full ingredient checklist: both orders, ticked rows, unticked rows and the count.                                                       |
-| D-06 | **Both** batch controls: the servings stepper and the batch multiplier. **Open — see G-01.**                                                |
-| D-07 | A step with chips, a note, an image and a full meta row.                                                                                    |
-| D-08 | The full shopping list: the indeterminate tick-all, the combined amounts and the source recipes. **Open — see G-02.**                       |
-| D-09 | The empty state, the error state, the loading state and the partial data state for §11.                                                     |
-| D-10 | A component map. It names the shadcn/ui component for each of our components. It also names the components that need custom work.           |
-| D-11 | A token map. It maps each name in §7.1 onto a shadcn/ui token name.                                                                         |
+| ID   | Deliverable                                                                                                                                 | Delivered | Where                                                                                                                                                                                                                                                                                                                                                                                           |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D-01 | Foundations: colour for both themes, the type scale, spacing, radii, elevation, focus rings and motion. Give them as Tailwind theme tokens. | Yes       | `design/BUILD-PLAN.md` §2 and `design/TOKEN-MAP.md` §3 and §4. Built in `src/app/theme.css`. The focus ring is `FOCUS_RING` in `f/button.tsx`. The design draws **no motion and no elevation**: the 18 exports hold no transition, no animation, no keyframe and no shadow. The one moving part is the drawer overlay, and `src/app/theme.css` stops it under `prefers-reduced-motion: reduce`. |
+| D-02 | A distinct treatment for each component in §9. This is the main task.                                                                       | Yes       | 36 components on Plate II. Built in the 25 files in §9.5.                                                                                                                                                                                                                                                                                                                                       |
+| D-03 | A navigation design for a screen 360px wide. It holds 9 destinations and the list control.                                                  | Yes       | The drawer, `oP097.png`. Built as `Contents360` in `f/nav-drawer.tsx`.                                                                                                                                                                                                                                                                                                                          |
+| D-04 | The recipe screen at 360, 768 and 1280 pixels. Show the change from tabs to aside plus tabs.                                                | In part   | 1280 (`zMdv1.png`) and 360 (`wM3LG.png`) are drawn. **768 is not drawn.** The build reads it as the tab state, because 768 is below the 901px breakpoint.                                                                                                                                                                                                                                       |
+| D-05 | The full ingredient checklist: both orders, ticked rows, unticked rows and the count.                                                       | Yes       | `zMdv1.png` and `design/exports/recipe-1280.html`. Built in `ingredient-checklist.tsx` on `F/Ingredient row`.                                                                                                                                                                                                                                                                                   |
+| D-06 | **Both** batch controls: the servings stepper and the batch multiplier.                                                                     | Yes       | Plate F.6, "Batch control — two forms". G-01 closed it. Built in `scale.tsx`.                                                                                                                                                                                                                                                                                                                   |
+| D-07 | A step with chips, a note, an image and a full meta row.                                                                                    | In part   | The chips, the note and the meta row are drawn on `zMdv1.png`. **No step image is drawn.** There is no `<img>` in any of the 18 exports. The build draws one when a step has one.                                                                                                                                                                                                               |
+| D-08 | The full shopping list: the indeterminate tick-all, the combined amounts and the source recipes.                                            | Yes       | `N8MQ9.png` and Plate F.8. G-02 closed it. Built in `shopping-checklist.tsx` on `F/List row`.                                                                                                                                                                                                                                                                                                   |
+| D-09 | The empty state, the error state, the loading state and the partial data state for §11.                                                     | In part   | `F/Empty` and `F/Notice` carry the empty state, the error state and the partial data state. **No loading state is drawn**, and the build declares no `loading.tsx`.                                                                                                                                                                                                                             |
+| D-10 | A component map. It names the shadcn/ui component for each of our components. It also names the components that need custom work.           | Yes       | §9.5 above. `design/TOKEN-MAP.md` §11 lists the 2 shadcn/ui primitives that are vendored and every change made to them. Everything else is custom.                                                                                                                                                                                                                                              |
+| D-11 | A token map. It maps each name in §7.1 onto a shadcn/ui token name.                                                                         | Yes       | `design/TOKEN-MAP.md` §3.1. It gives 3 names for each colour: the old one, the design's own, and the shadcn/ui one.                                                                                                                                                                                                                                                                             |
 
-D-02 must cover these sets:
+D-02 covers these sets:
 
-- The 8 note kinds.
-- The 4 recipe kinds.
-- The 10 category types.
-- The badge, the term tag, the step chip and the shop chip.
+- The 8 note kinds. 3 severities carry them. See R-CMP-06.
+- The 4 recipe kinds. One `F/Mark`, 4 words. See R-CMP-07.
+- The 10 category types. `F/Tag` shows the type as a 9px prefix.
+- The badge, the term tag, the step chip and the shop chip. 4 components.
+  See R-CMP-08.
 
 ---
 
 ## 16. Open Questions
 
-The designer answers these questions. Each answer changes the design.
+The design and the build answered 5 of these 7 questions. 2 stay open. An
+answered question is struck through and says what answered it.
 
-| ID       | Question                                                                | Context                                                                                                                                                     |
-| -------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Q-01     | Is there a theme control?                                               | The site follows the system setting today.                                                                                                                  |
-| ~~Q-02~~ | ~~Is the mobile navigation a drawer or a bottom bar?~~                  | **Answered.** The design chose a drawer. See R-NAV-03.                                                                                                      |
-| Q-03     | Does a recipe card show an image?                                       | Images are optional. They come from any host through the MCP. Text first is the choice today.                                                               |
-| ~~Q-04~~ | ~~Is the revision timeline more prominent?~~                            | **Answered.** It is its own tab, and the design gives it a full section.                                                                                    |
-| Q-05     | Is there a cooking mode?                                                | One step at a time. The screen stays awake. The type is large. It is not built. `durationMinutes` is stored for each step, so a timer would read real data. |
-| Q-06     | How do 8 note kinds differ?                                             | The recipe page must not become a colour chart.                                                                                                             |
-| Q-07     | Do the step chips repeat the ingredient list, or replace it on a phone? | Both are on screen today. A phone shows them in two different tabs.                                                                                         |
+| ID       | Question                                                                | Answer                                                                                                                                                                                                                                                                                                          |
+| -------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ~~Q-01~~ | ~~Is there a theme control?~~                                           | **Answered by the build. No.** The theme comes from `prefers-color-scheme` and nothing else. shadcn/ui's `@custom-variant dark (&:is(.dark *))` is deliberately absent from `src/app/theme.css`, because nothing ever adds that class. See R-CON-08 and R-BLD-07. To add a control is still a product decision. |
+| ~~Q-02~~ | ~~Is the mobile navigation a drawer or a bottom bar?~~                  | **Answered by the design. A drawer.** See R-NAV-03 and `oP097.png`.                                                                                                                                                                                                                                             |
+| ~~Q-03~~ | ~~Does a recipe card show an image?~~                                   | **Answered by the design. No.** There is no image slot anywhere in the system. `<img>`, `<svg>` and `background-image` each occur 0 times across the 18 exports. `src/components/f/recipe-card.tsx` records the count.                                                                                          |
+| ~~Q-04~~ | ~~Is the revision timeline more prominent?~~                            | **Answered by the design.** It is its own tab, and the design gives it a full section on `F/Revision`.                                                                                                                                                                                                          |
+| Q-05     | Is there a cooking mode?                                                | **Open.** One step at a time. The screen stays awake. The type is large. It is not designed and it is not built. `durationMinutes` is stored for each step, so a timer would read real data.                                                                                                                    |
+| ~~Q-06~~ | ~~How do 8 note kinds differ?~~                                         | **Answered by the design.** 8 kinds ride on 3 severities: note, caution and warning. The severity gives the colour and the word gives the kind. The page does not become a colour chart. See R-CMP-06.                                                                                                          |
+| Q-07     | Do the step chips repeat the ingredient list, or replace it on a phone? | **Open. Both are still on screen.** The design draws 12 step chips at 1280. At 360 it draws the Ingredients panel open, and `METHOD` as a tab label only. It draws no step at that width. It does not answer the question. The build repeats them, as the build before it did.                                  |
 
 ---
 
@@ -1023,18 +1257,22 @@ The designer answers these questions. Each answer changes the design.
 | RFC 2119                    | The key words in §2.                                                                                              |
 | `src/lib/site.ts`           | Each label the interface shows. Category types, ingredient categories in shop order, recipe kinds and note kinds. |
 | `src/lib/queries/read.ts`   | The shape of each view the interface receives.                                                                    |
-| `scripts/audit-ui.ts`       | The geometric audit in R-ACC-11.                                                                                  |
-| `e2e/`                      | 108 Playwright tests. They lock the behaviour in this document.                                                   |
+| `scripts/audit-ui.ts`       | The geometric audit in R-ACC-11. It holds the route list.                                                         |
+| `e2e/`                      | 165 Playwright tests in 14 files. They lock the behaviour in this document. `pnpm test:e2e` runs them.            |
 | `e2e/recipe-layout.spec.ts` | The panel geometry tests for §10.2.2.                                                                             |
+| `design/BUILD-PLAN.md`      | The milestones, the design's own token values, and the numbers each milestone measured.                           |
+| `design/TOKEN-MAP.md`       | Each token, each measured contrast, and every change made to a vendored shadcn/ui primitive.                      |
+| `design/DECISIONS.md`       | D-01 to D-12. Each decision the build made that this document did not answer.                                     |
 
 ### 17.2 Informative
 
-| Reference               | Content                                            |
-| ----------------------- | -------------------------------------------------- |
-| `AGENTS.md`             | Conventions, the data model and the quality gates. |
-| `docs/mcp-connector.md` | The connector design.                              |
-| `src/app/globals.css`   | The current design system with its reasons.        |
-| Pull request #6         | The recipe screen changes in §4.1.                 |
+| Reference                     | Content                                                                     |
+| ----------------------------- | --------------------------------------------------------------------------- |
+| `AGENTS.md`                   | Conventions, the data model and the quality gates.                          |
+| `docs/mcp-connector.md`       | The connector design.                                                       |
+| `design/exports/`             | 18 HTML exports and one PNG for each screen. Git ignores it; regenerate it. |
+| `design/exports/png/INDEX.md` | The name of the picture for each screen.                                    |
+| Pull request #6               | The recipe screen changes in §4.1.                                          |
 
 ---
 
@@ -1057,12 +1295,128 @@ No gap is open.
 
 ## 19. Open Risks
 
-| ID       | Risk                                                                                                                                                          | What to decide                                                                                                                                                                                                                                                                                                  |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ~~K-01~~ | ~~**A batch log can have no recipe.**~~ `ExperimentView.recipe` is `null` when a run names no recipe, and the query is a left join.                           | **Decided 2026-09-08.** Keep a top level `/batch-logs` index. It lists every run, with or without a recipe. The nested `/recipes/[slug]/batch-logs` is the same grid filtered to one recipe. The recipe link stays optional, because a run is often logged before its recipe exists. See R-NAV-08 and R-SCR-44. |
-| K-02     | **A rename breaks a public address.** The site is indexed. 7 routes change.                                                                                   | R-NAV-07 requires a permanent redirect for each one.                                                                                                                                                                                                                                                            |
-| K-03     | **The navigation grew from 8 items to 9.** Science was added. R-NAV-01 still applies at 360px.                                                                | The drawer answers it. Check it at 360 with `pnpm audit:ui`.                                                                                                                                                                                                                                                    |
-| K-04     | **`/science` needs a query that does not exist.** `src/lib/queries/read.ts` reads notes for one recipe. It has no read for every science note across recipes. | Add the query, or build the index from the recipe list.                                                                                                                                                                                                                                                         |
+All 4 risks are closed. Each row says what closed it.
+
+| ID       | Risk                                                                                                                                                              | What closed it                                                                                                                                                                                                                                                                                                                                                                                     |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ~~K-01~~ | ~~**A batch log can have no recipe.**~~ `ExperimentView.recipe` is `null` when a run names no recipe, and the query is a left join.                               | **Decided 2026-09-08, built in M2.** A top level `/batch-logs` index lists every run, with or without a recipe. The nested `/recipes/[slug]/batch-logs` is the same grid filtered to one recipe. D-01 then settled the detail address: a run with no recipe answers at `/batch-logs/[log]`, and a run with a recipe redirects from there to its nested address. See R-NAV-08 and R-SCR-44.         |
+| ~~K-02~~ | ~~**A rename breaks a public address.** The site is indexed. 7 routes change.~~                                                                                   | **Closed by M2.** `next.config.ts` holds 9 permanent redirects: the 7 renames, and the 2 older `/taxonomy` rules repointed at the final address so no request takes two hops. `e2e/redirects.spec.ts` asserts the status code, the destination, and that the destination does not redirect again. See R-NAV-07.                                                                                    |
+| ~~K-03~~ | ~~**The navigation grew from 8 items to 9.** Science was added. R-NAV-01 still applies at 360px.~~                                                                | **Closed by M3.** The 9 items are a row above 1080px and a drawer below it. `Contents360` in `src/components/f/nav-drawer.tsx` draws the drawer on the vendored `Sheet`. The list control stays outside it (R-CMP-02). `e2e/site.spec.ts` asserts the 9 destinations, their order, and that the drawer hides the rest of the page from a screen reader. `pnpm audit:ui` drives every route at 360. |
+| ~~K-04~~ | ~~**`/science` needs a query that does not exist.** `src/lib/queries/read.ts` reads notes for one recipe. It has no read for every science note across recipes.~~ | **Closed by M2.** `listScienceIndex` reads every science note across every recipe. `getScienceStudy` reads one study. Both are in `src/lib/queries/read.ts`. D-05 records the 2 rules they obey: a study is any recipe of the `research` kind **or** any recipe that carries a science note, and which end of a `recipe_links` row means "applies this" depends on the kind of the link.           |
+
+---
+
+## 20. What the Build Did Not Deliver
+
+The design draws things this build does not draw. Each one is here. Read
+this section beside §18. §18 lists what the DESIGN did not draw and then
+drew. This section lists what the BUILD did not draw, and why.
+
+Nothing here is a defect that nobody saw. Each item was measured or read,
+and most of them have a decision behind them in `design/DECISIONS.md`.
+§20.5 does not: the intro to that file lists it as belonging to the designer
+and to the data rather than to any milestone.
+
+### 20.1 The 3 things on the recipe screen — D-12
+
+The design's recipe screen, `design/exports/png/zMdv1.png`, draws 3 things
+the repository holds no data for.
+
+| Thing                | State              | Why                                                                                                                                                                                                                                                                              |
+| -------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The mass flow figure | **Built in M5.5.** | Migration `0005` added `recipe_mass_flows` and `recipe_mass_flow_stages`, one figure for each revision. `F/Mass flow` draws it. See R-SCR-39 and D-12.                                                                                                                           |
+| The change apparatus | **Left out.**      | The design draws a toggle, `SHOWING CHANGES SINCE THE FIFTH REVISION`, an `S6` marker on each changed step, and a reserved gutter on each step that did not change. This is a revision-diff feature. It has no requirement, no component and no query. Raise it as its own work. |
+| The chapter kicker   | **Left out.**      | The hero's right slot reads `CHAPTER 04 · CURED AND DRIED`. There is no chapter in the data model and no requirement asks for one. It is a label from the design's own mock data.                                                                                                |
+
+### 20.2 Two stage figures that do not match the design
+
+The design draws `24 pieces` and `490.3 g` in the mass flow. The build seeds
+`25–30 pieces` and `459.8 g`.
+
+**The archive wins.** `content/biltong/batch-06-prep.md` says 25–30 twice,
+and the design's own prose on the same screen says "25–30 pieces". `24`
+appears in no archive file. `459.8` is the sum of this revision's own
+seasoning lines; nothing in the archive sums to `490.3`.
+
+The design governs how a screen **looks**. A number is not a look. Either
+design figure records a measurement that nobody took. Baumy Biltong is the
+one recipe in the repository that exists because it was measured. Do not
+write a figure into it. See D-12.
+
+### 20.3 The mass flow at 360
+
+The design draws no mass flow strip at 360. It carries the same fact in the
+control bar instead, as `MAKES 4.5 KG DRIED FROM 10 KG RAW`, at both widths.
+
+The build draws a strip that scrolls sideways at 360, and a readout that
+says `Makes 4.5 kg`. Neither form matches the design at that width. Nothing
+is unreachable: R-STA-08 and R-STA-09 both hold, and the first cell of the
+scroller sits at offset 0. The emphasised `DRIED` cell sits behind a scroll.
+
+This is not the one-line change it looks like. The readout scales.
+`MassFlowStageView.value` is a formatted string. It holds no number to
+multiply. An unscaled raw mass beside a scaled yield puts two batch sizes on
+one page. R-CMP-11 forbids that. A fix needs the first stage as a number and
+a unit. It must not be the figure's caption. See D-12.
+
+### 20.4 `describe_mechanism` has never been called by an agent
+
+R-SCR-41 is **met** and this entry is not about the screen. Migration `0005`
+added `notes.conditions`, `F/Mechanism` draws the row, `scripts/seed-data.ts`
+carries 9 sets of conditions and `scripts/ingest-archive.ts` writes them, so
+the row draws on both science screens and `e2e/render.spec.ts` guards it.
+
+What has not happened is the tool. `describe_mechanism` fills the field on a
+note that is already stored, and nothing has called it: every filled note
+was filled by the seed's own write path. A mechanism somebody adds through
+the connector still has to be described by hand. That is a use of the build,
+not a hole in it, and there is nothing to fix in `src/`.
+
+### 20.5 The batch-log ledger's 3 weight figures
+
+The design fills the band on both batch-log indexes with `RAW, TOTAL`,
+`DRIED, TOTAL`, `MEAN YIELD` and `SPENT`. The build draws `SPENT` and the
+per-row `RAW / DRIED / YIELD` panel. It does not draw the 3 page-level
+weight figures.
+
+3 of the 4 seeded runs never weighed anything out. A total and a mean cover
+only the runs that did weigh. The label claims all of them. Do not print a
+figure under a label that is wrong. The figures become drawable when a run
+records a final weight.
+
+### 20.6 What is absent and correct
+
+Three things look missing on the seeded site and are not.
+
+- **Total time and Active time** in "At a glance" on Baumy Biltong. That
+  revision states neither. Two of the eleven seeded revisions state a total
+  time and one states an active time, and each one draws it. Pickled
+  Jalapeños draws all three values. Demi-Glace draws a total time and no
+  yield. R-STA-05 governs the block: it draws the fields that are there.
+- **The literature block** on Baumy Biltong. That recipe cites nothing.
+  R-SCR-38 says the block is absent then. Demi-Glace cites 4 works and draws
+  it.
+- **A step image.** The design draws no image anywhere. The build draws one
+  when a step has one, because the data model holds it.
+
+### 20.7 The 3 rules the build bent
+
+Each of these is a deviation from a rule in this document. Each one is
+recorded where the code is.
+
+| Rule     | What the build did                                                                                                                                                                                                                                                                       |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R-CON-01 | §9.3 names 8 client components. There are 11. `Navigation` and `Contents360` read the address of the open page, which a Server Component in a layout cannot do, and the drawer needs open state. `Sheet` and `Tooltip` are the 2 vendored primitives that carry them. See §9.3.1.        |
+| C-05     | C-05 says a card summary "is cut at 160 characters". The card draws what it is given, and the cut is gone. The design draws the same card with summaries of 181 and 245 characters, set whole and wrapping freely, and there is no `line-clamp` and no ellipsis in any export. See D-11. |
+| C-04     | C-04 says the footer holds a copyright. The design draws no `©` anywhere. The slot holds a document issue or an effectivity statement in mono capitals. See D-07.                                                                                                                        |
+
+### 20.8 One rule the design cannot answer
+
+`F/Tag` shows its explanation in a tooltip, and a tooltip never opens for a
+coarse pointer. R-ACC-10 asks for a path that is not hover. The answer is to
+tap through to the term page, which shows the same text as body text. So an
+explanation on a tag now **requires** a link: the type of `F/Tag` makes the
+unreachable shape impossible to write. See D-08.
 
 ---
 
@@ -1073,10 +1427,29 @@ No gap is open.
 | 1.0     | 2026-09-08 | First issue. Baseline `main` at `f72fbb6`.                                                                                                                                                                                                                               |
 | 1.1     | 2026-09-08 | Baseline `main` at `466fd76`. Added pull request #6: step chips, the neutral dark ground, the servings stepper and the 4 panel tabs. Made Tailwind and shadcn/ui mandatory.                                                                                              |
 | 1.2     | 2026-09-08 | Added the file for each route and each component. Added §1.4 and Appendix B, the file map.                                                                                                                                                                               |
+| 2.0     | 2026-09-09 | **The build.** M1 to M7. Recorded the built state in §4, §6, §7, §8.1, §9.1, §9.3, §9.4, §9.5, §15, §16, §17 and §19. Pointed §7 at `design/TOKEN-MAP.md` and marked §7.1 and §7.2 as history. Added §6.1, §9.3.1, §20 and Appendix A.2. Status is now Issued.           |
 | 1.6     | 2026-09-09 | The design closed G-07. Added the screen `/batch-logs — Every batch log, 360` with a source chip on each run.                                                                                                                                                            |
 | 1.5     | 2026-09-08 | The design closed G-01 to G-06. Added the screen `/batch-logs — Every batch log, 1280`, the `F/Skip link` component, the two batch forms, the tick-all control and the Science tab on both 360 rails. G-03 was not a gap. Opened G-07: the new route has no 360 drawing. |
 | 1.4     | 2026-09-08 | Decided K-01. Added the top level `/batch-logs` index, R-NAV-08 and R-SCR-44.                                                                                                                                                                                            |
 | 1.3     | 2026-09-08 | Adopted the design in `design/v1-design.pen`. Renamed 6 routes and the basket. Added `/science`, the literature block and the mass flow figure. Navigation grew to 9 items. Answered Q-02 and Q-04. Added §9.5, §18 gaps and §19 risks.                                  |
+
+### A.2 The build
+
+Each milestone ended with one commit on `build/design-system`. Each one left
+`pnpm format`, `pnpm lint`, `pnpm typecheck` and `pnpm build` green.
+`design/BUILD-PLAN.md` §3 holds the plan. `design/DECISIONS.md` holds each
+decision a milestone made that this document did not answer.
+
+| ID   | What it did                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M1   | **Foundation.** Added Tailwind CSS 4.3.3 and shadcn/ui beside `src/app/globals.css`. Wrote the DOSSIER token set into `src/app/theme.css` and cleared 7 of Tailwind's own namespaces so a raw value cannot be written. Loaded Newsreader, Geist and Geist Mono through `next/font/google`. Preflight stayed off. See D-03.                                                                                                       |
+| M2   | **Routes, redirects and queries.** Renamed 6 routes to the design's names, added `/science`, `/science/[slug]` and `/batch-logs/[log]`, and added 9 permanent redirects. Added `listScienceIndex` and `getScienceStudy`, which closed K-04. Finished the rename in the page copy the navigation points at. See D-01, D-04 and D-05.                                                                                              |
+| M3   | **Shell and primitives.** Rebuilt the header, the 360 drawer, the footer and the skip link. Added the first design primitives under `src/components/f/`. Vendored 6 shadcn/ui primitives, rewrote each one onto the tokens, and deleted 4 that claimed a design name an `f/` component already owned. Added the palette bridge, which gave each old custom property the value of a DOSSIER token. See D-06, D-07, D-08 and D-09. |
+| M4   | **Content components.** Built 15 more components: the cards, the tags, the notes, the rows, the tables and the marks. Rebuilt the shared components onto them. `src/components/f/button.tsx` records the 3 treatments this build invented because the design draws no case for them: the focus ring, the focus ring within, and the body link. See D-10 and D-11.                                                                |
+| M5   | **The recipe screen.** Rebuilt the hero, the mass flow band, the control bar, the 4 panels, the steps, the batch control and the ingredient checklist. Moved the add-to-list control out of the Ingredients panel and above the tab strip (R-SCR-03, R-SCR-04).                                                                                                                                                                  |
+| M5.5 | **The data the design draws.** Migration `0005` added `recipe_mass_flows`, `recipe_mass_flow_stages` and `notes.conditions`. Added `add_mass_flow` and `describe_mechanism` to the connector. Built `F/Mass flow` and the conditions row on `F/Mechanism`. See D-02 and D-12.                                                                                                                                                    |
+| M6   | **The other screens.** Rebuilt the remaining 20 screens, light and dark, at 1280 and 360. Added the per-route page foot under `src/app/@foot/`. Migration `0006` gave `notes` a stable ordering key, which made `pnpm export` reproducible and let `/science/demi-glace` carry more than one mechanism.                                                                                                                          |
+| M7   | **Tests, audit and clean up.** Deleted `src/app/globals.css`, the `legacy` cascade layer and the palette bridge, and turned Tailwind's preflight on. Added the render tests that §4.1 of the build plan carried forward. Closed this document.                                                                                                                                                                                   |
 
 ---
 
@@ -1084,34 +1457,51 @@ No gap is open.
 
 Where to find each thing named in this document.
 
-### B.1 The design system now
+### B.1 The design system
 
-| Thing                        | Where                                                                                         |
-| ---------------------------- | --------------------------------------------------------------------------------------------- |
-| All tokens in §7.1 and §7.2  | `src/app/globals.css`, the `:root` block at the top                                           |
-| The light theme              | `src/app/globals.css`, the `@media (prefers-color-scheme: light)` block                       |
-| Each layout class in §9.4    | `src/app/globals.css`. Search for the class name.                                             |
-| The recipe layout in §10.2.2 | `src/app/globals.css`, the `@media (min-width: 901px)` and `@media (max-width: 900px)` blocks |
-| The reason for a rule        | The comment above it. Each rule that looks odd has one.                                       |
+| Thing                             | Where                                                                                   |
+| --------------------------------- | --------------------------------------------------------------------------------------- |
+| Every token                       | `src/app/theme.css`, the `:root` block. `design/TOKEN-MAP.md` says what each one means. |
+| The light theme                   | `src/app/theme.css`, the `@media (prefers-color-scheme: light)` block                   |
+| The Tailwind colour names         | `src/app/theme.css`, the `@theme inline` block                                          |
+| The 2 breakpoints                 | `src/app/theme.css`, `--breakpoint-shell` and `--breakpoint-recipe`                     |
+| The 3 faces                       | `src/app/layout.tsx`, through `next/font/google`. The variables are in `theme.css`.     |
+| The `prefers-reduced-motion` rule | `src/app/theme.css`, near the end of the token blocks                                   |
+| Each pattern in §9.4              | The component in §9.5 that draws it. There is no stylesheet to search.                  |
+| The recipe layout in §10.2.2      | `src/components/recipe-tabs.tsx`, on the `recipe:` breakpoint                           |
+| The reason for a rule             | The comment above it. Each rule that looks odd has one.                                 |
+| What the design draws             | `design/exports/`. One PNG for the shape, one HTML export for the numbers.              |
 
 ### B.2 The shell
 
-| Thing                                                                 | Where                                 |
-| --------------------------------------------------------------------- | ------------------------------------- |
-| The page shell, the header, the navigation, the footer, the skip link | `src/app/layout.tsx`                  |
-| The 8 navigation items                                                | `src/app/layout.tsx`, the `NAV` array |
-| The header height probe                                               | `src/components/header-height.tsx`    |
+| Thing                               | Where                                                                        |
+| ----------------------------------- | ---------------------------------------------------------------------------- |
+| The page shell and the `@foot` slot | `src/app/layout.tsx`                                                         |
+| The skip link                       | `src/components/f/skip-link.tsx`                                             |
+| The header                          | `src/components/f/site-header.tsx`                                           |
+| The 9 navigation items              | `src/components/f/nav-drawer.tsx`, the `NAV` array                           |
+| The 360 drawer                      | `src/components/f/nav-drawer.tsx`, `Contents360`                             |
+| The footer                          | `src/components/f/page-foot.tsx`, and one file per route in `src/app/@foot/` |
+| The default footer                  | `src/app/@foot/default.tsx`                                                  |
+| The document issue                  | `src/lib/site.ts`, `site.issue`. See D-07.                                   |
+| The live region                     | `src/app/announcer.tsx` and `src/lib/announce.ts`                            |
+| The header height probe             | `src/components/header-height.tsx`                                           |
 
 ### B.3 The screens
 
-Each route maps to one file. See the table in §8.1.
+Each route maps to one file. See the table in §8.1. Each screen's own page
+foot maps to one file under `src/app/@foot/`, which mirrors that tree.
 
 ### B.4 The components
 
-Each component maps to one file. See the tables in §9.1, §9.2 and §9.3.
+Each component maps to one file. See the tables in §9.1, §9.2, §9.3 and
+§9.3.1. §9.5 maps each design component onto its file.
 
 The primary screen is assembled in `src/components/recipe-detail.tsx`. Read
-it to see which block goes in which panel.
+it to see which block goes in which panel. Every mark on that screen is a
+component from §9.5 or a client component from §9.3. The file declares only
+the 4 shapes the design draws there and nowhere else: the hero, the control
+bar, the page-level band and the step.
 
 ### B.5 The labels and the data
 
@@ -1120,7 +1510,11 @@ it to see which block goes in which panel.
 | The 10 category types                       | `src/lib/site.ts`, `CATEGORY_TYPE_LABELS`                                                                                             |
 | The 16 ingredient categories, in shop order | `src/lib/site.ts`, `CATEGORY_ORDER` and `CATEGORY_LABELS`                                                                             |
 | The 4 recipe kinds                          | `src/lib/site.ts`, `KIND_LABELS`                                                                                                      |
-| The 7 note kinds, plus science              | `src/lib/site.ts`, `NOTE_KIND_LABELS`                                                                                                 |
+| The 8 note kinds                            | `src/lib/site.ts`, `NOTE_KIND_LABELS`                                                                                                 |
+| The severity of each note kind              | `src/components/f/mark.tsx`, `SEVERITY_BY_KIND`                                                                                       |
+| The document issue                          | `src/lib/site.ts`, `site.issue`                                                                                                       |
+| The mass flow of a revision                 | `src/lib/queries/read.ts`, `MassFlowStageView`. The tables are in `drizzle/0005_mass_flow_and_conditions.sql`.                        |
+| The conditions on a note                    | `src/lib/queries/read.ts`, `NoteView.conditions`. The column is in the same migration.                                                |
 | The site name, the tagline, the URL         | `src/lib/site.ts`, `site`                                                                                                             |
 | The shape of each view                      | `src/lib/queries/read.ts`. Search for `RecipeView`, `RecipeSummaryView`, `TermView`, `NoteView`, `IngredientLineView` and `StepView`. |
 | Which fields can be empty                   | The same types. A `\| null` in a type means the field can be empty.                                                                   |
@@ -1128,14 +1522,23 @@ it to see which block goes in which panel.
 
 ### B.6 The tests
 
-| Thing                                | Where                                                 |
-| ------------------------------------ | ----------------------------------------------------- |
-| The geometric audit in R-ACC-11      | `scripts/audit-ui.ts`. Run `pnpm audit:ui`.           |
-| The panel geometry tests for §10.2.2 | `e2e/recipe-layout.spec.ts`                           |
-| The checklist tests                  | `e2e/recipe-checklist.spec.ts`                        |
-| The shopping tests                   | `e2e/list.spec.ts` and `e2e/shopping-journey.spec.ts` |
-| The filter tests                     | `e2e/filtering.spec.ts`                               |
-| All tests                            | `e2e/`. Run `pnpm test:e2e`.                          |
+| Thing                                                          | Where                                                      |
+| -------------------------------------------------------------- | ---------------------------------------------------------- |
+| The geometric audit in R-ACC-11                                | `scripts/audit-ui.ts`. Run `pnpm audit:ui`.                |
+| The panel geometry tests for §10.2.2                           | `e2e/recipe-layout.spec.ts`                                |
+| The checklist tests                                            | `e2e/recipe-checklist.spec.ts`                             |
+| The shopping tests                                             | `e2e/list.spec.ts` and `e2e/shopping-journey.spec.ts`      |
+| The filter tests                                               | `e2e/filtering.spec.ts`                                    |
+| The redirect tests for R-NAV-07                                | `e2e/redirects.spec.ts`                                    |
+| The science tests for §10.9                                    | `e2e/science.spec.ts`                                      |
+| The class and cuisine tests                                    | `e2e/classes.spec.ts`                                      |
+| The render tests for R-SCR-38, R-SCR-39, R-SCR-41 and R-SCR-44 | `e2e/render.spec.ts`                                       |
+| The route smoke tests and the drawer                           | `e2e/site.spec.ts`                                         |
+| The connector tests                                            | `e2e/mcp-contract.spec.ts` and `e2e/mcp-lifecycle.spec.ts` |
+| The agent access tests                                         | `e2e/agent-access.spec.ts`                                 |
+| The backfill tests for `backfillRevision`                      | `e2e/backfill.spec.ts`                                     |
+| The scratch database it all runs on                            | `e2e/global-setup.ts`. It drops 2 schemas on every run.    |
+| All tests                                                      | `e2e/`. 165 tests in 14 files. Run `pnpm test:e2e`.        |
 
 ### B.7 The commands
 
@@ -1147,8 +1550,17 @@ pnpm format             # Prettier
 pnpm lint               # ESLint
 pnpm typecheck          # tsc --noEmit
 pnpm build              # production build
-pnpm test:e2e           # the 138 end-to-end tests
+pnpm test:e2e           # the end-to-end tests
 pnpm audit:ui           # the geometric audit
+pnpm export             # rewrite content/generated/ from the database
 ```
 
 CI runs format, lint, typecheck and build. All 4 must pass.
+
+`pnpm test:e2e` and `pnpm audit:ui` each need a database.
+`design/BUILD-PLAN.md` §5 gives the full procedure, and it names 3 traps: an
+audit reads whatever answers on port 3000; `e2e/global-setup.ts` drops
+schemas, so it must point at a scratch database only; and the end-to-end
+suite writes to the database it runs on, so an audit taken straight after it
+measures a site the suite has added rows to. **Run the audit before the
+suite, or reset the database between them.**

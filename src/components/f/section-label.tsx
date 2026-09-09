@@ -20,10 +20,16 @@
  * `--spacing-section-360` token is named for.
  *
  * `m-0`, `tracking-flat` and an explicit leading on the title are not
- * decoration. Tailwind's preflight is OFF until M7, and `globals.css` still
- * carries `h1, h2, h3, h4 { line-height: 1.25; letter-spacing: -0.015em;
- * margin: 0 0 0.5rem }`. Each of those three has to be answered or the old
- * rule draws it.
+ * decoration. All three were written against `globals.css`, which carried
+ * `h1, h2, h3, h4 { line-height: 1.25; letter-spacing: -0.015em;
+ * margin: 0 0 0.5rem }` while Tailwind's preflight was OFF, up to M7. That
+ * file is gone and the preflight is on, so each one now answers something
+ * different: `m-0` restates the preflight's own `* { margin: 0 }`, the
+ * leading answers `body { line-height: 1.6 }` in `theme.css` (the preflight
+ * resets a heading's SIZE and WEIGHT and neither of those), and
+ * `tracking-flat` states the design's `0px` where the inherited value would
+ * be `normal`. Every one of them is what the export draws, so all three
+ * stay.
  *
  * Server components.
  */
@@ -32,9 +38,10 @@ import type { ElementType, HTMLAttributes, ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
 
-/* The hairline. One declaration for all four widths, and an explicit style:
-   with the preflight off nothing sets a global `border-style`, so a lone
-   `border-b` would draw nothing. See the same note in `notice.tsx`. */
+/* The hairline. One declaration for all four widths and an explicit style,
+   which is the form the export draws. It was forced while the preflight was
+   off, up to M7, when nothing set a global `border-style` and a lone
+   `border-b` drew nothing. See the same note in `notice.tsx`. */
 const SECTION_RULE =
   '[border-style:solid] [border-width:0px_0px_1px_0px] border-b-hair';
 
@@ -215,11 +222,17 @@ export type Section360Props = HTMLAttributes<HTMLDivElement> & {
  * a `<span>` inside an unnamed `<section>`, which made the two most-read
  * blocks of the recipe screen — AT A GLANCE and INGREDIENTS — reachable
  * neither by heading navigation nor as a region, while every other band on
- * the same screen kept its `<h2>`. The three overrides below are what a real
- * heading costs with the preflight off: `globals.css:125` sets `h1..h4` to
- * `line-height: 1.25; letter-spacing: -0.015em; margin: 0 0 0.5rem`, `h2` to
- * `font-size: 1.35rem`, and the user agent draws it bold. Every one of them
- * is answered here, so the drawn label is unchanged to the pixel.
+ * the same screen kept its `<h2>`. `m-0`, `leading-normal`, `text-09` and
+ * `font-normal` are what a real heading costs, and the bill changed at M7.
+ * They were written against `globals.css:125`, which set `h1..h4` to
+ * `line-height: 1.25; letter-spacing: -0.015em; margin: 0 0 0.5rem` and
+ * `h2` to `font-size: 1.35rem`, with the user agent drawing it bold on top.
+ * That file is gone. The preflight now answers the size and the weight for
+ * every heading — `h1..h6 { font-size: inherit; font-weight: inherit }` —
+ * and the margin through `* { margin: 0 }`; the leading is answered here
+ * and nowhere else, because a heading otherwise inherits `1.6` from
+ * `theme.css`. All four are kept, because each one is a value the export
+ * draws, and the drawn label is unchanged to the pixel either way.
  */
 export function Section360({
   label,

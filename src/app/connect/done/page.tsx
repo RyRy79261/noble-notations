@@ -111,9 +111,11 @@ export default async function OAuthReturnPage() {
  * 1280; a 9px tracked mono label and a 12px mono value.
  *
  * `<dl>`/`<dt>`/`<dd>` rather than four divs: this is a list of terms and
- * their values, and the design's own K/V naming says so. The margin reset on
- * `dd` is not decoration — Tailwind's preflight is OFF until M7 and the user
- * agent still gives it `margin-inline-start: 40px`.
+ * their values, and the design's own K/V naming says so. The `m-0` on the
+ * `dd` was load-bearing while Tailwind's preflight was OFF, up to M7 — the
+ * user agent gives a `dd` `margin-inline-start: 40px`. Since M7 the
+ * preflight's `* { margin: 0 }` takes it, so the class is belt-and-braces
+ * and is kept for that reason.
  */
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (

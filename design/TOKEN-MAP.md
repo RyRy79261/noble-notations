@@ -3,12 +3,18 @@
 | Field       | Value                                                     |
 | ----------- | --------------------------------------------------------- |
 | Document    | NN-TM-001                                                 |
-| Version     | 1.0                                                       |
+| Version     | 1.1                                                       |
 | Date        | 2026-09-09                                                |
 | Deliverable | D-11                                                      |
 | Input       | `design/BUILD-PLAN.md` §2, `design/FUNCTIONAL-SPEC.md` §7 |
 | Implements  | R-TKN-01, R-TKN-05, R-ACC-01                              |
 | Built by    | M1 (Foundation), in `src/app/theme.css`                   |
+
+**Change note — 1.0 → 1.1, at M7.** §10 was the palette bridge. M7 deleted
+the bridge, and §10 is now the tombstone that records what it was, why it
+went, and the seven declarations that had to be kept when `globals.css`
+went with it. §2, §9 and §11 are corrected to the past tense where they described
+the old stylesheet as live. No token changed value.
 
 ---
 
@@ -36,10 +42,10 @@ names: the design name and the shadcn/ui name. Both names work.
 The raw value is a plain CSS custom property. Its name carries the design's
 `f-` prefix. An example is `--f-ink-2`.
 
-The prefix does two jobs. It keeps the design's own name. It also keeps the
-name clear of `src/app/globals.css`, which declares `--accent`, `--warn`,
-`--border` and `--text` for the old palette. The old stylesheet stays until
-M7.
+The prefix does two jobs. It keeps the design's own name. It also kept the
+name clear of `src/app/globals.css`, which declared `--accent`, `--warn`,
+`--border` and `--text` for the old palette. M7 deleted that file (D-03).
+The prefix stays: it is the design's own name, not a collision guard.
 
 A `@theme inline` block then maps each raw value into Tailwind's colour
 namespace. The block gives each value both names.
@@ -58,7 +64,7 @@ emits `--color-border: var(--f-hair)` in the `theme` layer, because a
 utility asked for it. Do not depend on this. A later build that drops the
 utility also drops the name.
 
-The design is dark first. R-CON-07 says so, and `src/app/globals.css` does
+The design is dark first. R-CON-07 says so, and `src/app/globals.css` did
 the same. The dark values are on plain `:root`. The light values are in one
 `@media (prefers-color-scheme: light)` block. Only the raw values change. No
 name changes, and no utility changes. Media Queries Level 5 makes the light
@@ -66,8 +72,8 @@ query match when the reader has expressed no preference, so a reader with no
 preference gets the light theme.
 
 `src/app/theme.css` also sets `color-scheme` in both blocks. That makes the
-scrollbar and the native form widgets follow the theme. `globals.css` sets it
-too today; stating it here keeps it after M7 deletes that file.
+scrollbar and the native form widgets follow the theme. `globals.css` set it
+too; stating it here is what kept it after M7 deleted that file.
 
 This meets R-BLD-07 and R-CON-08: the theme comes from the media query, and
 there is no theme control.
@@ -148,10 +154,13 @@ WOFF2 file at build time. It then serves the file from the same origin. The
 CSP allows this. A `<link>` to `fonts.googleapis.com` is blocked, because
 `style-src` does not list that host.
 
-The sans and mono variables carry a `-ui` suffix. `globals.css` still
-declares `--font-sans` and `--font-mono` for its own rules. The suffix
-prevents a collision. M7 removes the old stylesheet, and the suffix can go
-with it.
+The sans and mono variables carry a `-ui` suffix. `globals.css` declared its
+own `--font-sans` and `--font-mono` for the system stacks, and the suffix
+prevented a collision. M7 removed that file, and the suffix stayed: the two
+names are now what Tailwind's `--default-font-family` and
+`--default-mono-font-family` resolve to, which is how the preflight's `html`
+and `code, kbd, samp, pre` rules end up in Geist and Geist Mono. Renaming
+them would touch `layout.tsx`, `utils.ts` and the base block for nothing.
 
 Newsreader asks for the `opsz` axis by name. The titles run from 24px to
 72px, and the face is an optical-size design.
@@ -298,7 +307,7 @@ through `rounded-4xl` do not exist. One token replaces them:
 `rounded-none` and `rounded-full` still work. Tailwind builds those two
 without a token.
 
-`src/app/theme.css` clears six of Tailwind's default namespaces in all:
+`src/app/theme.css` clears seven of Tailwind's default namespaces in all:
 
 | Namespace      | What goes                                      |
 | -------------- | ---------------------------------------------- |
@@ -631,16 +640,16 @@ to the designer so a later reader does not take it as ground truth.
 
 ## 9. What M1 built
 
-| File                   | Change                                                              |
-| ---------------------- | ------------------------------------------------------------------- |
-| `src/app/theme.css`    | New. Holds every token in this document.                            |
-| `src/app/layout.tsx`   | Loads the three faces. Imports `theme.css`.                         |
-| `src/app/globals.css`  | Not changed. `theme.css` imports it into a `legacy` layer.          |
-| `src/lib/utils.ts`     | New. The `cn()` helper, taught this theme's token names.            |
-| `components.json`      | New. The shadcn/ui configuration.                                   |
-| `postcss.config.mjs`   | New. Runs the Tailwind plugin.                                      |
-| `design/BUILD-PLAN.md` | The `f-paper` and `f-desk` roles in §2.1 corrected. See §5, item 1. |
-| `AGENTS.md`            | The stack and the repository layout record the styling files.       |
+| File                   | Change                                                                                                              |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `src/app/theme.css`    | New. Holds every token in this document.                                                                            |
+| `src/app/layout.tsx`   | Loads the three faces. Imports `theme.css`.                                                                         |
+| `src/app/globals.css`  | Not changed. `theme.css` imported it into a `legacy` layer. M7 deleted the file, the layer and the import. See §10. |
+| `src/lib/utils.ts`     | New. The `cn()` helper, taught this theme's token names.                                                            |
+| `components.json`      | New. The shadcn/ui configuration.                                                                                   |
+| `postcss.config.mjs`   | New. Runs the Tailwind plugin.                                                                                      |
+| `design/BUILD-PLAN.md` | The `f-paper` and `f-desk` roles in §2.1 corrected. See §5, item 1.                                                 |
+| `AGENTS.md`            | The stack and the repository layout record the styling files.                                                       |
 
 `src/app/layout.tsx` asks Newsreader for `style: ['normal', 'italic']`, so
 four WOFF2 files are preloaded on each page, not three: Newsreader upright,
@@ -655,240 +664,231 @@ every shadcn/ui overlay asks for them. One unlayered
 `@media (prefers-reduced-motion: reduce)` block near the palette cuts every
 animation and transition to 0.01ms. That is cheaper and safer than a
 `motion-safe:` prefix on fourteen primitives, each of which can be
-forgotten. `globals.css` holds no `!important` and no `@keyframes`, so the
-block cannot reverse a precedence the old stylesheet relies on.
+forgotten. `globals.css` held no `!important` and no `@keyframes`, so the
+block could not reverse a precedence the old stylesheet relied on.
 
-Tailwind's preflight is off until M7. The old stylesheet and the reset fight
-each other.
+**M1 to M6: the preflight was off, and the old stylesheet was layered.** The
+reset and the old base rules fight each other, so `theme.css` imported
+`tailwindcss/theme.css` and `tailwindcss/utilities.css` and left
+`tailwindcss/preflight.css` commented out. `globals.css` came in under a
+cascade layer called `legacy`, with the order `theme`, `base`, `legacy`,
+`components`, `utilities`. Two facts made that necessary. Unlayered CSS
+beats every layer whatever the order, and `globals.css` held bare element
+rules for `html`, `body`, `a`, `h1`, `p`, `code`, `table` and more — left
+unlayered, each would have beaten a Tailwind utility. And `globals.css`
+declared three custom properties that Tailwind's own theme declares,
+`--font-sans`, `--font-mono` and `--radius-sm`; `legacy` sits above `theme`,
+so the old values won and no unrebuilt screen changed.
 
-`globals.css` is imported into a cascade layer called `legacy`. The layer
-order is `theme`, `base`, `legacy`, `components`, `utilities`. Two facts make
-this necessary.
-
-Unlayered CSS beats every layer, whatever the order. `globals.css` holds bare
-element rules for `html`, `body`, `a`, `h1`, `p`, `code`, `table` and more.
-Left unlayered, each one would beat a Tailwind utility.
-
-`globals.css` also declares three custom properties that Tailwind's own theme
-declares: `--font-sans`, `--font-mono` and `--radius-sm`. The `legacy` layer
-sits above `theme`, so the old values win and no screen changes.
-
-M7 deletes the old stylesheet, deletes the `legacy` layer and turns the
-preflight import on.
+**M7 undid all of it.** `git rm src/app/globals.css`, the `legacy` layer and
+its `@import` gone from `theme.css`, and the three-part import collapsed back
+to one `@import 'tailwindcss'` — which is the same three parts in the same
+three layers, plus the preflight, and declares the layer order itself so the
+two can never drift apart. §10 records what had to be kept.
 
 ---
 
-## 10. The palette bridge — M3, and deleted at M7
+## 10. The palette bridge — M3, and DELETED at M7
 
-`src/app/globals.css` still styles the twenty screens that M4 to M6 have not
-rebuilt. It declares its own palette and reads it in about 400 rules. Until
-M3 those declarations still held the old purple, so a header rebuilt in
-DOSSIER sat on a page painted in purple.
+**This section is a tombstone. The bridge is gone.**
 
-`src/app/theme.css` now redefines every **colour** property `globals.css`
-declares in terms of the `f-` tokens. Every old screen adopts the new colour
-at once. Its layout, its spacing and its shape stay old until its own
-milestone rebuilds it.
+### 10.1 What it was
 
-**This section is deleted at M7, together with `globals.css`.** D-03 removes
-the old stylesheet whole; the block in `theme.css` carries the same note.
+`src/app/globals.css` styled the twenty screens that M4 to M6 had not
+rebuilt. It declared its own palette — `--bg`, `--surface`, `--text`,
+`--accent` and twelve more — and read it in about 400 rules, and those
+values were still the old purple. A header rebuilt in DOSSIER sat on a page
+painted in purple, and the pairing was not guaranteed to pass R-ACC-01.
 
-### 10.1 Where it goes, and why it wins
+M3 answered it with sixteen lines: an **unlayered** `:root` block in
+`src/app/theme.css` that redefined every colour property `globals.css`
+declared in terms of a `var(--f-*)` token. Unlayered CSS beats every cascade
+layer whatever the order, and `globals.css` was imported into
+`layer(legacy)`, so those sixteen declarations won over **both** of its
+`:root` blocks — the dark one and the one inside its light media query. A
+media query adds no specificity and changes no layer, so one block served
+both themes and the direction was inherited from the `f-` tokens rather than
+repeated. There was no second block and there must not have been one: a
+bridge written as two blocks of hex can be written the wrong way round and
+invert the site.
 
-The block is a plain, **unlayered** `:root` in `src/app/theme.css`, placed
-between the light media query and the reduced-motion rule.
+It was **colour only**. The six non-colour properties `globals.css`
+declared — `--radius`, `--radius-sm`, `--font-sans`, `--font-mono`,
+`--measure` and `--page` — were deliberately not bridged. Colour is
+self-completing: it repainted twenty screens with no geometric change at
+all, so the end-to-end tests and the `pnpm audit:ui` baseline were
+untouched. Radius and type are half-jobs. Flipping `--radius` to 2px would
+have squared fifteen corners and left eighteen hard-coded ones rounded;
+flipping the faces would have reflowed every line on every old screen and
+silently rescaled `--measure: 68ch` by about 8%, because Geist's `0` is
+wider than the system stack's. Both are shape, not colour, and both belonged
+to the milestone that rebuilt each screen.
 
-`globals.css` is imported at the top of `theme.css` as
-`@import './globals.css' layer(legacy)`. Unlayered CSS beats every cascade
-layer whatever the layer order and whatever the specificity, so one
-unlayered block wins over **both** of globals.css's `:root` blocks — the
-dark one on plain `:root` and the one inside its
-`@media (prefers-color-scheme: light)`. A media query adds no specificity
-and changes no layer.
+Every screen it served has since been rebuilt. It did its job.
 
-Verified in the shipped stylesheet: the layers are emitted in the order
-`theme` → `base` → `legacy` → `components` → `utilities`, globals.css's
-`--bg: #131211` sits inside `@layer legacy`, and the bridge sits unlayered
-after it.
+### 10.2 The deletion
 
-Three things it must not be:
+M7 removed all three parts in one commit, exactly as D-03 says:
 
-- **Not inside `@theme` or `@theme inline`.** `@theme` clears the radius
-  namespace with `--radius-*: initial`. Putting `--radius` or `--radius-sm`
-  back there would rebuild `rounded-sm` as a utility and reverse §4.5.
-- **Not two blocks.** See §10.2.
-- **Not an edit to `globals.css`.** That file is history. It is read, not
-  changed, and it is deleted whole.
+| Part                      | Where                                                                         | Action   |
+| ------------------------- | ----------------------------------------------------------------------------- | -------- |
+| the old stylesheet        | `src/app/globals.css`, 1,892 lines                                            | `git rm` |
+| the layer that carried it | `theme.css` — `@layer … legacy …` and `@import './globals.css' layer(legacy)` | deleted  |
+| the bridge itself         | `theme.css` — the unlayered `:root` block, 91 lines                           | deleted  |
 
-### 10.2 One block, not two — the direction is inherited, not repeated
+Nothing read the old palette any more. Measured before the deletion: zero
+reads of `var(--bg | --surface | --text | --accent | --border | --warn |
+--radius | --measure | --page | --font-sans | --font-mono)` anywhere in
+`src/` outside a comment. The bridge had no consumer left, so it went with
+the file it was bridging to.
 
-Both files are dark first, and they agree. `globals.css`:
+The `@theme inline` map in §3.1 is **not** affected. It never fed
+`globals.css`; it is how a component reads a token, and it is the whole
+colour system now.
 
-```css
-:root {
-  color-scheme: dark;
-  --bg: #131211;            /* dark, on plain :root */
-...
-@media (prefers-color-scheme: light) {
-  :root {
-    color-scheme: light;
-    --bg: #fbfaff;          /* light, in the media query */
-```
+### 10.3 What replaced it — the seven declarations that survived
 
-`theme.css`:
+Deleting `globals.css` turns Tailwind's preflight on, and preflight is a
+near-complete replacement for what that file's base rules did: it owns the
+box sizing, the margin and padding reset, `-webkit-text-size-adjust`, the
+heading size and weight reset, the list reset, the form-control font, the
+`border-collapse` and the placeholder colour. It is **not** a total one.
+Seven declarations had no counterpart and are restored in an `@layer base`
+block in `theme.css`, placed after the preflight arrives in the same layer
+so it wins on source order. They sit in four rules, and the `body` rule
+carries two of them in one line:
 
-```css
-:root {
-  color-scheme: dark;
-  --f-paper: #17191b;       /* dark, on plain :root */
-...
-@media (prefers-color-scheme: light) {
-  :root {
-    color-scheme: light;
-    --f-paper: #fcfaf6;     /* light, in the media query */
-```
+| Declaration                       | Why it has no replacement                                                                                                                                                                                                          |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `html { scroll-padding-top: … }`  | Preflight has no scroll rule at all. Without it the property is `auto` on every page load and every in-page jump — the skip link, an anchor, focus scrolling — lands under the sticky header.                                      |
+| `body { background; color }`      | Preflight paints nothing and leaves the body transparent, so the browser's own canvas shows through and the page loses its ground and its ink.                                                                                     |
+| `body { line-height: 1.6 }`       | Preflight sets `html { line-height: 1.5 }`. 1.5 is on no scale in this design. Measured, the difference is 1.6px on 144 elements and it cascades into 532 vertical shifts of up to 29px. Load-bearing, not cosmetic.               |
+| `body { -webkit-font-smoothing }` | No counterpart, and no effect on Linux — so no headless measurement can catch it. Dropping it thickens every glyph on macOS and Safari.                                                                                            |
+| `h1 … h6 { text-wrap: balance }`  | Its three neighbours in the old heading rule — line height, letter spacing and margin — are written by every rebuilt heading and by preflight. This one is written by nothing, and 14 of 88 page loads re-wrap a title without it. |
+| `#main:focus { outline: none }`   | `#main` is a `tabindex="-1"` landmark, not a control, and Chromium matches it against `:focus-visible` all the same. Without the rule, taking the skip link draws a 1px ring around the whole main column.                         |
 
-Every value in the bridge is a `var(--f-*)`, and the `f-` tokens already
-flip thirty lines above. The bridge therefore **inherits** the flip instead
-of repeating it, and one block serves both themes.
+`body { font-size: 16px }` and `body { font-family }` are in the same block
+and are **not** part of the seven. Neither is strictly required — the first
+is the browser default and the second is what preflight's
+`--default-font-family` resolves to — but both are what every screen was
+measured against, and stating them keeps the page off a Tailwind internal.
+Nine declarations in four rules is what the block actually holds: seven that
+preflight does not cover, plus these two.
 
-That is a correctness property, not a saving. A bridge written as two blocks
-of hex can be written the wrong way round, and the result is a site that is
-unreadable in one theme and looks deliberate in the other. A bridge that
-names no hex literal at all cannot be inverted, because there is no second
-block to get backwards.
+Four things `globals.css` did are **deliberately not** restored, because
+preflight contradicts them and the design agrees with preflight:
 
-Measured in a headless browser against the built stylesheet, in both
-`prefers-color-scheme` states:
+- `a { color: var(--accent); text-decoration-color: 35% accent }`. Preflight
+  sets `color: inherit`. Every rebuilt anchor writes its own colour, and
+  `PROSE_LINK` writes its own offset. The one measured change is that its
+  underline goes from a 35%-alpha accent to the full accent, which is what
+  D-10 asks for.
+- `h1 { clamp(…) } h2 { 1.35rem } h3 { 1.05rem }`. Preflight resets heading
+  size and weight to `inherit`. **Zero** headings changed either.
+- `:focus-visible { outline: 2px solid accent; outline-offset: 2px;
+border-radius: 4px }`. **The rule had three declarations, and the first
+  measurement of it counted only the outline.** Of 2,848 focusable elements
+  measured, 74 outline values change and 73 are inert — the control carries
+  `outline-none` and the ring is on the box around it. Three real changes
+  follow, not one:
 
-|                   | Light                | Dark              |
-| ----------------- | -------------------- | ----------------- |
-| `--bg`            | `#fcfaf6`            | `#17191b`         |
-| `--text`          | `#2b1f1c`            | `#edeff1`         |
-| `--accent`        | `#8e2a1e`            | `#ff7a6b`         |
-| `body` background | `rgb(252, 250, 246)` | `rgb(23, 25, 27)` |
+  1. **Every focus ring in the app is now square.** `border-radius: 4px`
+     applied to every focused element and nothing replaces it. That end
+     state is the design — §4.5 counts one radius in the whole system, the
+     2px chip corner — but it is a change on every screen, and it is
+     invisible to a resting-state pixel diff because a ring is only painted
+     while focused.
+  2. `F/Skip link`. Its 2px offset did not drop to 0; it fell through to
+     Chromium's own `:focus-visible` default of 1px. `f/skip-link.tsx` now
+     writes `outline-offset-0`, which is the flush ring
+     `foundations.html:1750` draws.
+  3. **A scroll box is a third case, and it is not a control.** Chromium
+     makes an overflowing scroll container keyboard-focusable with no
+     `tabindex`. The mass flow strip is 1002px in a 328px box at 360, so it
+     is a tab stop on `/recipes/baumy-biltong`, it drew the accent ring from
+     the deleted rule, and it fell through to Chromium's black-and-white
+     `outline-style: auto`. `f/mass-flow.tsx` now carries `FOCUS_RING`, and
+     so do the four other scroll boxes in `src/` — `markdown.tsx`'s table
+     and its `pre`, the measurement table in `batch-log-detail.tsx` and the
+     callerless table branch of `filterable-groups.tsx`. Measured, none of
+     those four overflows on the seeded site at any audited width, so the
+     mass flow strip was the only element in the app in that state.
 
-### 10.3 The map
+- `input, select { padding: 0.55rem 0.75rem }`. Preflight's `* { padding: 0 }`
+  takes the user agent's own control padding with it. `f/field.tsx` and
+  `scale.tsx` write theirs. The four scale presets on the recipe screen lose
+  6px of UA padding each and equalise, which is the design.
 
-Sixteen properties. `globals.css` declares each of these twice; the bridge
-declares each once.
+### 10.4 The class names that went with the file
 
-| `globals.css` property | Now resolves to        | Light     | Dark        | Why                                                                                                                                                                                                                                                                                                      |
-| ---------------------- | ---------------------- | --------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--bg`                 | `var(--f-paper)`       | `#FCFAF6` | `#17191B`   | §3.1, verbatim.                                                                                                                                                                                                                                                                                          |
-| `--bg-elevated`        | `var(--f-paper)`       | `#FCFAF6` | `#17191B`   | §3.2 drops it: the design has no raised ground. Only `f-paper` is fully opaque, which `globals.css` requires at `.tag-tooltip` and `e2e/classes.spec.ts` asserts. What used to be its separation is now `--border-strong`.                                                                               |
-| `--surface`            | `var(--f-paper)`       | `#FCFAF6` | `#17191B`   | §3.1 (`card`, `popover`). §5 item 2: a card is a rule, not a fill. `.card`, `.panel`, `.stat`, `.notice` become fill-less ruled blocks. That is the intent.                                                                                                                                              |
-| `--surface-2`          | `var(--f-desk)`        | `#F3EDE5` | `#101214`   | §3.1. `f-desk` is the recessed fill, which is what `--surface-2` is used for: chips, `thead th`, `input`, `pre`.                                                                                                                                                                                         |
-| `--border`             | `var(--f-hair)`        | `#E4D8D0` | `#2C3033`   | §3.1, verbatim.                                                                                                                                                                                                                                                                                          |
-| `--border-strong`      | `var(--f-ink-3)`       | `#79655F` | `#8C9297`   | §3.2 says use `f-ink-3` for a stronger line. Load-bearing: with `--bg-elevated` collapsed onto the page, this rule is the only edge on the tag tooltip and the modal, and it is the timeline's current-revision dot and the scale stepper's border. 1.61:1 → **5.25:1** light, 1.88:1 → **5.60:1** dark. |
-| `--text`               | `var(--f-ink)`         | `#2B1F1C` | `#EDEFF1`   | §3.1.                                                                                                                                                                                                                                                                                                    |
-| `--text-muted`         | `var(--f-ink-2)`       | `#574843` | `#B7BCC0`   | §3.1. §5 item 6: do not collapse it onto `f-ink-3`.                                                                                                                                                                                                                                                      |
-| `--text-faint`         | `var(--f-ink-3)`       | `#79655F` | `#8C9297`   | §3.1. §13.1 of the specification warns this is not decorative text.                                                                                                                                                                                                                                      |
-| `--accent`             | `var(--f-accent)`      | `#8E2A1E` | `#FF7A6B`   | §3.1. The most-used token in the old file.                                                                                                                                                                                                                                                               |
-| `--accent-strong`      | `var(--f-accent)`      | `#8E2A1E` | `#FF7A6B`   | §3.2 drops it — the design draws no hover colour — and it has no `var()` use left in `globals.css`. Bridged anyway, one line, so no later edit can bring the purple back.                                                                                                                                |
-| `--accent-dim`         | `var(--f-accent-wash)` | `#F7E8E3` | `#FF7A6B1F` | §3.1. Opaque light, 12% alpha dark; both are legal as a background and both were measured.                                                                                                                                                                                                               |
-| `--accent-contrast`    | `var(--f-on-accent)`   | `#FCFAF6` | `#17191B`   | §3.1. Pairs with `--accent` on `.button-primary` and `.skip-link:focus`: 8.06:1 / 6.92:1.                                                                                                                                                                                                                |
-| `--warn`               | `var(--f-warn)`        | `#C42B1C` | `#FF6F5E`   | §3.1.                                                                                                                                                                                                                                                                                                    |
-| `--warn-bg`            | `var(--f-warn-wash)`   | `#FBEDE9` | `#FF6F5E1F` | §3.1.                                                                                                                                                                                                                                                                                                    |
-| `--warn-border`        | `var(--f-warn)`        | `#C42B1C` | `#FF6F5E`   | §3.2: the design draws a solid rule, not a soft border. Its one use is `.form-error`, where a solid 1px red rule beats the 22%-alpha ghost it replaces for WCAG 1.4.11.                                                                                                                                  |
+Thirteen class names in `src/` existed only as `globals.css` selectors or as
+end-to-end test hooks hung on one. Each is now a data attribute, and every
+utility that stood beside one purely to cancel a legacy declaration went with
+the rule it cancelled.
 
-### 10.4 The six properties that are NOT bridged
+| Was                                     | Is                      | On                                                                                 |
+| --------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------- |
+| `.shopping-item`                        | `[data-shopping-item]`  | `shopping-checklist.tsx`                                                           |
+| `.shopping-group-heading`               | `[data-shopping-group]` | `shopping-checklist.tsx`                                                           |
+| `.checklist-head`                       | `[data-checklist-head]` | `shopping-checklist.tsx`                                                           |
+| `.basket-button`                        | `[data-basket-control]` | `shopping-basket.tsx`                                                              |
+| `.button-primary` / `.button-secondary` | `[data-in-basket]`      | `shopping-basket.tsx` — a state marker, read by the wrapper in `recipe-detail.tsx` |
+| `.site-footer`                          | `[data-page-foot]`      | `f/page-foot.tsx`                                                                  |
+| `.list-recipes`                         | `[data-list-recipes]`   | `app/list/list-recipes.tsx`                                                        |
+| `.recipe-hero-image`                    | `[data-hero-image]`     | `recipe-detail.tsx`                                                                |
+| `.step-image`                           | `[data-step-image]`     | `recipe-detail.tsx`                                                                |
+| `.recipe-tabs`                          | `[data-tab-strip]`      | `recipe-tabs.tsx` — the attribute already existed                                  |
+| `.recipe-layout`                        | `[data-recipe]`         | `recipe-tabs.tsx` — the attribute already existed                                  |
+| `.recipe-aside`                         | `[data-recipe-aside]`   | `recipe-tabs.tsx`                                                                  |
+| `.tag-wrap`                             | `[data-tag]`            | `tags.tsx`, on `TermTag` and not on every `Tag`                                    |
+| `.section`                              | `[data-group]`          | `filterable-groups.tsx`                                                            |
 
-`globals.css` declares six more custom properties. Each stays exactly as it
-is until the milestone that rebuilds the screen reading it.
+`.basket-cta`, `.shopping-list` and `.plain-list` were in no rule and no
+test — the last was never a rule in any stylesheet — and were deleted
+outright. `data-panels` and `data-aside` on `recipe-tabs.tsx` existed for
+`globals.css` alone and went with it.
 
-| Property      | Today          | The design     | Verdict                                                        |
-| ------------- | -------------- | -------------- | -------------------------------------------------------------- |
-| `--radius`    | `12px`         | 2px (§4.5)     | **Leave.**                                                     |
-| `--radius-sm` | `8px`          | 2px            | **Leave.**                                                     |
-| `--font-sans` | a system stack | Geist          | **Leave.**                                                     |
-| `--font-mono` | a system stack | Geist Mono     | **Leave.**                                                     |
-| `--measure`   | `68ch`         | dropped (§3.2) | **Leave.** No token to bridge to.                              |
-| `--page`      | `1180px`       | dropped (§3.2) | **Leave.** The frame is a layout change, not a palette change. |
+`scripts/audit-ui.ts` needed no change: its `.tag` and `.check` are string
+building and property access, not selectors.
 
-Colour is the only one of the three that is **self-completing**. Sixteen
-lines repaint all twenty old screens with no geometric change at all, so the
-end-to-end suite and the `pnpm audit:ui` baseline are untouched.
+### 10.5 What the bridge did NOT fix, and where that stands
 
-Radius and type are half-jobs that cost real risk.
+Every fault §10.5 used to list was a `globals.css` rule, and each was closed
+by the milestone that replaced that rule. The last of them, the
+`.list-recipes[data-pending] { opacity: 0.6 }` group opacity that composited
+live text against the page, went with the file: `app/list/list-recipes.tsx`
+had already stopped drawing it, and the `opacity-100` that cancelled it is
+gone too.
 
-**Radius.** `var(--radius)` and `var(--radius-sm)` reach 15 corners.
-Eighteen more are hard-coded and would not move: the `999px` pills on `.tag`,
-`.step-uses li`, `.scale-stepper button`, `.basket-button` and
-`.list-recipes li`, the `50%` circles on the step number and the timeline
-dot, and the literal `4px`, `5px`, `8px`, `10px`, `12px` and `14px` corners
-elsewhere — including the `4px` on `:focus-visible`, which a reader sees on
-every screen. Flipping produces a 2px card holding 999px pills beside a 5px
-badge under a 4px focus ring: measurably less coherent than the 12px-and-pill
-pairing it replaces.
+### 10.6 What the 88-load measurement did not cover
 
-**Type.** Three separate costs. The stacks Tailwind emits are
-`"Geist", "Geist Fallback"` and `"Geist Mono", "Geist Mono Fallback"`, and
-neither ends in a generic family — so a naive `--font-sans: var(--font-sans-ui)`
-renders all twenty old screens in Times New Roman the moment the next/font
-class is absent from `<html>`. `--measure: 68ch` is silently coupled to the
-face: Geist's `0` is 11.000px at 16px against the system stack's 10.188px, so
-`68ch` grows from 692.8px to 748.0px — **+8%** — and every line break in
-every hero and lede moves. And `playwright.config.ts` sets no `colorScheme`
-and `scripts/audit-ui.ts` never calls `emulateMedia`, so both gates run in
-the **light theme only**: a reflow of that size would land on 176 page loads
-that measure geometry, with the dark half unguarded.
+The deletion was measured as 88 before-and-after page loads: the 22 routes
+in `scripts/audit-ui.ts` at 360 and 1280, light and dark, with every element
+in `header`, `main` and `footer` compared on 23 computed properties. **Read
+the coverage before you read the number.** Three things sit outside it, and
+each was found later by somebody re-measuring:
 
-Both are shape, not colour. Both belong to the milestone that rebuilds the
-screen.
+1. **`border-radius` was not one of the 23 properties**, and the deleted
+   `:focus-visible` rule set it. §10.3 records what that changed.
+2. **A focus ring is only painted while focused**, so a resting-state pixel
+   diff cannot see one at all. The three changes in §10.3 all needed a
+   keyboard sweep to find.
+3. **`/list` is audited with an EMPTY basket**, so `ShoppingChecklist`,
+   `ListRecipes` and `TickAll` never rendered in any of the 88. One real
+   change landed there: `[data-checklist-head]` computed `gap: 12px` before
+   and `gap: normal` after, because `globals.css`'s
+   `.checklist-head { gap: 0.75rem }` was the only writer of it and
+   `TickAll` in `f/list-row.tsx` writes none. On `/list?r=…` at 360 the
+   readout box moves 12px and the `0 OF 16 IN THE TROLLEY` run shifts about
+   7px left, in both themes. **Nothing is fixed, because the new value is
+   the design**: `list-search-archive-1280.html:489` draws `Tick all` as
+   `gap-0 p-[14px_16px] justify-between`. The comment that authorised the
+   removal — "the old rule is the same flex row `TickAll` already draws" —
+   was wrong about the gap and right about the outcome by accident.
 
-### 10.5 What the bridge does NOT fix
-
-Each of these is pre-existing. None is caused by the bridge; none is
-reachable from `theme.css`, because the fix would have to be an edit to
-`globals.css`. Each is fixed by the milestone that replaces the rule.
-
-| Where                           | Fault                                                                                                                                           | Fixed by                                                                                                                           |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `.note[data-kind='research']`   | A raw `#6ee7b7` mint rule — an R-BLD-02 violation, and 1.46:1 against the light page, so effectively invisible. DOSSIER has no green.           | M4, with `F/Footnote`. The 8th note kind's mark needs a decision: `science` already owns the accent.                               |
-| `.note[data-kind='correction']` | A raw `#fbbf24` amber rule, 1.60:1 light. `f-caution` is the DOSSIER equivalent at 5.67:1 / 9.16:1.                                             | M4, with `F/Warning`.                                                                                                              |
-| `.tag.primary` outline          | `color-mix(--accent 40%)` is 2.07:1 light and 2.13:1 dark. WCAG 1.4.11 asks 3:1 of an interactive control. The design's answer is `f-cta-line`. | M4, with `F/Tag CTA`.                                                                                                              |
-| `.basket-button` outline        | The same 2.07:1 / 2.13:1, on the list control in the header — a primary control.                                                                | **FIXED in M3.** C-03 was rebuilt and the four resets on it (`border-0 rounded-none bg-transparent p-0`) leave no outline to fail. |
-
-**The one fault the bridge caused, and where it was fixed.**
-
-`globals.css` line 1890 is `.list-recipes[data-pending] { opacity: 0.6 }`.
-A group opacity composites live text against the page, and the bridge takes
-that pair from 4.66:1 to **4.23:1** in the light theme — below AA, on links
-that stay focusable and clickable throughout the pending action, so WCAG
-1.4.3's relief for an inactive control does not apply. The sibling remove
-control on the same rule measured 2.75:1 → 3.02:1.
-
-This table first routed it to "M3, when C-03 is rebuilt". **That routing was
-wrong**: C-03 is `BasketButton` in `src/components/shopping-basket.tsx`, and
-`.list-recipes` is a different component on a different route. The fix is
-owned by whichever milestone rebuilds `/list`, and it did not have to wait
-for one. `globals.css` is not edited (D-03), but the rule is reachable from
-the component: `src/app/list/list-recipes.tsx` now carries `opacity-100` on
-the section — `@layer utilities` sits above `@layer legacy`, so it wins over
-that rule without touching the file — and draws the pending state with a
-colour instead, which is what `globals.css` itself does at its two other
-pending controls. Measured after the change:
-
-|       | Chip link             | Remove `×`            |
-| ----- | --------------------- | --------------------- |
-| Light | **5.25:1** (was 4.23) | **5.25:1** (was 3.02) |
-| Dark  | **5.60:1** (was 6.20) | **5.60:1** (was 4.12) |
-
-No gate would have caught it. `scripts/audit-ui.ts` has eight checks and
-none of them is a contrast check, and `pnpm test:e2e` asserts colour in one
-place only.
-
-Everything else was measured. Across the 67 text-on-ground pairs
-`globals.css` actually draws, in both themes, **no pair falls below 4.5:1**
-after the bridge. The light minimum is 4.70:1, at `.tag .facet` and
-`input::placeholder` — `f-ink-3` on `f-desk`, which §6.4 already names as the
-thinnest margin in the palette. The dark minimum is 5.47:1, at `.form-error`.
-
-Five WCAG 1.4.11 failures are cleared as a side effect, all of them by
-`--border-strong` taking `f-ink-3`: the tooltip edge, the modal edge, the
-44px scale stepper's border, the timeline's current-revision dot, and the
-card hover rule.
+The lesson for the next measurement is the coverage, not the properties: a
+route list built for a geometric audit visits each screen in its resting
+state, and a state a reader reaches by clicking is not in it.
 
 ---
 
@@ -897,7 +897,7 @@ card hover rule.
 **Two** primitives live in `src/components/ui/`: `sheet.tsx` and
 `tooltip.tsx`. Each was vendored with `pnpm dlx shadcn@latest add <name>` —
 the CLI works on this machine — and then **rewritten**. §4.5 explains why
-rewriting is not optional: `theme.css` clears six of Tailwind's namespaces,
+rewriting is not optional: `theme.css` clears seven of Tailwind's namespaces,
 and Tailwind emits no rule and no warning for a utility it cannot resolve.
 Stock new-york is full of `rounded-md`, `text-sm`, `shadow-xs` and `h-9`,
 and every one of them would have lost its property silently.
@@ -1056,9 +1056,10 @@ boundary carries only props (R-CON-02).
 #### `tooltip.tsx` — C-07, R-ACC-02, R-ACC-03
 
 **The design draws no tooltip.** Grep the eighteen exports and there is
-nothing. The treatment is therefore derived, and it is derived from the one
-`globals.css` already draws at `.tag-tooltip`, so the two agree while both
-are on the site: an opaque page-ground fill with one strong rule.
+nothing. The treatment is therefore derived, and it was derived from the one
+`globals.css` drew at `.tag-tooltip`, so the two agreed while both were on
+the site: an opaque page-ground fill with one strong rule. That file went at
+M7; this is the only drawing of the tooltip now.
 
 | Stock                                                                       | Now                                           | Note                                                                                                                                                                                                                                                                    |
 | --------------------------------------------------------------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1090,7 +1091,7 @@ The design draws it as the frame `Contents — 360` in
 | `bg-background`                                                                                                                                   | `bg-paper text-ink`                                                                      | Design name; and §3.2 — there is no raised ground to put it on.                                                                                                                                                             |
 | `shadow-lg`                                                                                                                                       | dropped                                                                                  | Silent, and §4.5 forbids it.                                                                                                                                                                                                |
 | —                                                                                                                                                 | `rounded-none`                                                                           | Stated rather than assumed.                                                                                                                                                                                                 |
-| `border-l` / `border-r` / `border-t` / `border-b`                                                                                                 | `+ border-hair`                                                                          | Stock leaves the colour to preflight, which is off until M7.                                                                                                                                                                |
+| `border-l` / `border-r` / `border-t` / `border-b`                                                                                                 | `+ border-hair`                                                                          | Stock leaves the colour to preflight, which was off until M7 and is on now. Writing the colour is still right: `border-hair` is a token and preflight's `currentColor` is not.                                              |
 | overlay `bg-black/50`                                                                                                                             | **kept**                                                                                 | The one place `black` survives §4.5's clearing, and the comment in `theme.css` says why: shadcn/ui draws its scrim with it. A full-width drawer hides it, but the layer still catches the dismissing click.                 |
 | close: `rounded-xs opacity-70 hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 data-[state=open]:bg-secondary` + lucide `XIcon` | `size-7 rounded-none font-mono text-18 text-ink hover:bg-accent-wash` + the design's `×` | `rounded-xs` was silent, and opacity is out. The design draws this control as `×` in Geist Mono at 18px. 28px box, above `audit-ui`'s 24 × 24 floor. Pass `showCloseButton={false}` when `F/Site header 360` draws its own. |
 | `SheetHeader`: `flex-col gap-1.5 p-4`                                                                                                             | `flex-row items-center justify-between gap-2 border-b border-hair p-4`                   | The design's drawer header is a 16px box with a 1px `f-hair` rule under it.                                                                                                                                                 |

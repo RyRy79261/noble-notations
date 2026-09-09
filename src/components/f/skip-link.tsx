@@ -57,10 +57,21 @@ export function SkipLink({
         'px-3.5 py-2',
         'rounded-none no-underline bg-accent',
         'text-10 font-mono tracking-label uppercase whitespace-nowrap text-on-accent',
-        /* The design's own ring: 2px solid ink. `globals.css` still adds a
-           2px offset through its own `:focus-visible` rule; that offset goes
-           when M7 removes that file. */
-        'focus:outline-2 focus:outline-ink',
+        /* The design's own ring: 2px solid ink, flush against the block.
+           `foundations.html:1750` writes `[ outline:2px_solid_#2B1F1C ]` and
+           no offset at all, so flush is 0. The spaces inside the brackets
+           are deliberate: Tailwind v4 scans raw source text, comments and
+           all, so writing the class string closed would ship a real rule
+           carrying a raw hex and break R-BLD-02. AGENTS.md names the trap.
+
+           `outline-offset-0` is written and not left out. Until M7 the
+           global `:focus-visible` rule in `globals.css` added 2px here;
+           deleting that file did not take the offset to 0, it took it to
+           Chromium's own `:focus-visible` default of 1px — measured, after
+           one Tab on `/` at 1280. Nothing else in the build writes the
+           property at 0, so the class is the only thing that makes the
+           drawn ring match the drawing. */
+        'focus:outline-2 focus:outline-offset-0 focus:outline-ink',
         className,
       )}
       {...props}

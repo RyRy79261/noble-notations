@@ -58,11 +58,15 @@ import { cn } from '@/lib/utils';
 import { FOCUS_RING } from './button';
 
 /*
- * The rules. One declaration for all four widths and an explicit style: the
- * preflight is OFF until M7, so nothing sets a global `border-style` and a
- * lone `border-b` would draw nothing, while adding `border-solid` to fix
- * that would give the other three sides the CSS initial `medium` width. Same
- * note as `notice.tsx` and `section-label.tsx`.
+ * The rules. One declaration for all four widths and an explicit style,
+ * which is what the export itself draws (`recipe-1280.html:1873`).
+ *
+ * It was forced while the preflight was OFF, up to M7: nothing then set a
+ * global `border-style`, so a lone `border-b` drew nothing and adding
+ * `border-solid` to fix that gave the other three sides the CSS initial
+ * `medium` width. The preflight's `* { border: 0 solid }` closes that trap
+ * since M7 and the form stays. Same note as `notice.tsx` and
+ * `section-label.tsx`.
  */
 const HEAD_RULE =
   '[border-style:solid] [border-width:0px_0px_1px_0px] border-b-hair';
@@ -225,10 +229,12 @@ export function TableRow({
       </span>{' '}
       <span role="cell" className={cn(NAME_CELL, NAME_COL)}>
         {href ? (
-          /* The colour has to be on the anchor. `globals.css` is still
-             live until M7 and carries `a { color: var(--accent) }`, and a
-             colour specified on the element beats one inherited from the
-             cell around it. */
+          /* The colour has to be on the anchor. `globals.css` carried
+             `a { color: var(--accent) }` up to M7, and a colour specified
+             on the element beats one inherited from the cell around it.
+             That file is gone and the preflight sets `a { color: inherit }`
+             instead, so this class is now the anchor's only colour. Same
+             note as `f/batch-line.tsx`. */
           <Link href={href} className={cn('text-ink no-underline', FOCUS_RING)}>
             {name}
           </Link>

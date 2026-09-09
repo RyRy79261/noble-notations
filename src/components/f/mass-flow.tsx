@@ -67,6 +67,8 @@ import type { HTMLAttributes } from 'react';
 
 import { cn } from '@/lib/utils';
 
+import { FOCUS_RING } from './button';
+
 export type MassFlowStage = {
   /**
    * `Raw`, `Cut`, `Dried`. Stored as written and uppercased by the
@@ -135,9 +137,12 @@ const GUIDE_TEXT = cn(
 
 /* `border border-solid` and not the four-value form: all four sides are
    1px, so `border` sets every width and `border-solid` every style with no
-   side left holding the CSS initial `medium`. The preflight is off until
-   M7, so the style has to be written or the box draws nothing —
-   `ingredient-row.tsx:289` records the same. `box-border` is Tailwind's
+   side left holding the CSS initial `medium`. `border-solid` was forced
+   while the preflight was off, because nothing then set a global
+   `border-style` and a lone `border` drew nothing; since M7 the preflight's
+   `* { border: 0 solid }` supplies the style, and the class stays because
+   it is what the export writes — `ingredient-row.tsx:289` records the same.
+   `box-border` is Tailwind's
    default, so the 126px is the border box and the strip arithmetic is
    exact. */
 const CELL = cn(
@@ -201,8 +206,12 @@ export function MassFlow({
   const figures = summary?.filter((entry) => entry !== '') ?? [];
 
   return (
-    /* `m-0` is not decoration. The preflight is off until M7, so the user
-       agent still gives a <figure> its own `1em 40px` margin. */
+    /* `m-0` is belt-and-braces since M7. The user agent gives a <figure> its
+       own `1em 40px` margin and the preflight was off until then, so the
+       class was load-bearing when it was written; the preflight's
+       `* { margin: 0 }` now zeroes it as well. Kept, not deleted: every
+       other box in this file writes its own spacing and a reader should not
+       have to know which reset is doing the work. */
     <figure
       className={cn(
         'm-0 flex w-full shrink-0 flex-col items-start gap-4',
@@ -232,8 +241,20 @@ export function MassFlow({
           whitespace is legal inside an <ol>, so all three cost no pixel:
           the strip still starts 79px in at 1280, measured. */}
       {/* The scroll box. See the header: `justify-center` is on the row
-          INSIDE this, never on this element. */}
-      <div className="w-full overflow-x-auto">
+          INSIDE this, never on this element.
+
+          IT TAKES `FOCUS_RING`, and it is the one element in the app that
+          needs the ring without being a control. The strip is 1002px and
+          the box is 328px at 360, so Chromium makes an overflowing scroll
+          container keyboard-focusable on its own — measured, it is tab stop
+          13 on `/recipes/baumy-biltong` at that width, and `:focus-visible`
+          matches it. Until M7 the global `:focus-visible` rule in
+          `globals.css` drew the accent ring on it; with that rule gone and
+          no utility here it fell through to Chromium's own black-and-white
+          `outline-style: auto`. A keyboard sweep of the whole app finds no
+          other element in that state, which is why TOKEN-MAP §10.3's
+          "every rebuilt control writes its own ring" was so nearly true. */}
+      <div className={cn('w-full overflow-x-auto', FOCUS_RING)}>
         {/* `items-stretch` where the export draws `items-center`, and it is
             the one deliberate change to the drawing. With complete data
             every cell is the same height and the two are identical, so the
@@ -243,8 +264,11 @@ export function MassFlow({
             with every box beside it, and the strip visibly breaks. R-STA-05
             says the design must not assume a field is present.
 
-            `list-none m-0 p-0`: the preflight is off, so a bare <ol> still
-            carries the user agent's marker and indent. */}
+            `list-none m-0 p-0` is belt-and-braces since M7, for the same
+            reason as the `m-0` on the <figure> above: the preflight's
+            `ol, ul, menu { list-style: none }` and its `* { margin: 0;
+            padding: 0 }` now zero the user agent's marker and indent. It
+            was load-bearing while the preflight was off. */}
         <ol className="m-0 flex w-fit min-w-full list-none flex-row items-stretch justify-center gap-0 p-0">
           {drawn.map((stage, index) => (
             /* The leader belongs to the stage that follows it, so the list

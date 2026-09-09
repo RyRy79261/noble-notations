@@ -180,8 +180,11 @@ export function ListMark({
           onClick={onRemove}
           aria-label={removeLabel}
           className={cn(
-            /* The preflight is off until M7, so a bare <button> still
-               carries the user agent's border, ground, radius and font. */
+            /* A bare <button> carries the user agent's border, ground,
+               radius and font. Every reset here was load-bearing while the
+               preflight was off, up to M7; the preflight answers all of
+               them since, and they stay as the stated values — see the
+               longer note in `f/button.tsx`. */
             'inline-flex shrink-0 cursor-pointer appearance-none',
             'rounded-none border-0 bg-transparent p-0',
             'text-13 font-mono text-ink-3',
@@ -201,8 +204,9 @@ export function ListMark({
  * 11px of padding and a quiet rule at 360; 10px and no rule at 1280. The
  * width is written as a four-value `border-width` at BOTH widths rather than
  * a `shell:border-b-0`, so the two are the same declaration and the variant
- * is what decides. The style has to be written out because the preflight is
- * off until M7 — same note as `table-row.tsx` and `notice.tsx`.
+ * is what decides. The style is written out because that is the form the
+ * export draws; it was forced while the preflight was off, up to M7 — same
+ * note as `table-row.tsx` and `notice.tsx`.
  */
 const ROW = cn(
   'flex w-full shrink-0 flex-row items-start gap-3 py-2.75',

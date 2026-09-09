@@ -5,6 +5,31 @@ answer. Read it before you review the branch.
 
 Each entry says what I chose, why, and what to do to change it.
 
+The build is complete. This table is the state of each decision after M7.
+An entry that a later milestone settled says so in place.
+
+| ID   | Decision                                                | State after M7                                                                       |
+| ---- | ------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| D-01 | The address of a batch log with no recipe               | Built in M2. Two routes, one canonical address for each run.                         |
+| D-02 | The conditions on a mechanism block                     | Option A built in M5.5. M6 fixed the drawing and seeded 9 notes. **Met, and drawn.** |
+| D-03 | The old stylesheet stays until M7                       | **Done. M7 deleted the file, the layer and the bridge, and turned preflight on.**    |
+| D-04 | The rename reaches the page copy in M2                  | Built in M2.                                                                         |
+| D-05 | What "Applied in" means, and what counts as a study     | Built in M2. M6 seeded the 4 missing demi-glace mechanisms.                          |
+| D-06 | One file per design component, or one file per family   | Held for the whole build. 25 files carry 36 design names.                            |
+| D-07 | The page foot's left slot is a document issue           | Built in M3. M6 gave each screen its own effectivity through `src/app/@foot/`.       |
+| D-08 | An explanation on a tag requires a term page            | Built in M3. The unreachable shape is not representable.                             |
+| D-09 | The bridge carries colour, not the faces or the radius  | **Done. The bridge is gone. M7 deleted it with the stylesheet it fed.**              |
+| D-10 | The body link is an underline                           | Built in M4.                                                                         |
+| D-11 | A card summary is not cut at 160 characters             | Built in M4. C-05 of the specification is corrected in §20.7.                        |
+| D-12 | Three things the design draws that the data cannot fill | The figure is built. The other two stay out. **The 360 readout is still open.**      |
+
+Two things are still open at the end of the build, and
+`design/BUILD-PLAN.md` §6 carries both:
+
+1. The mass flow readout at 360 — D-12.
+2. The batch-log ledger's 3 page-level weight figures — it belongs to the
+   designer and to the data, not to a milestone.
+
 ---
 
 ## D-01 — The address of a batch log with no recipe
@@ -142,33 +167,41 @@ second silently replaces the first. The connector is multi-client by
 design, so `describeMechanism` reads `FOR UPDATE` and repeats the emptiness
 test in the `UPDATE`'s own `WHERE` clause.
 
-### Still open for M6
+### What M6 did — closed
 
-The two science screens carry M5.5's **data** and M2's **look**. The
-conditions draw as bordered pill badges at 11.52px where the design draws a
-9px mono run in `f-ink-3`, its values joined by a middle dot. M6 rebuilds both screens onto
-`F/Mechanism`, which already draws the run correctly on the recipe screen.
+M6 closed both halves of this.
 
-`/science/demi-glace` also draws one mechanism where the design draws five,
-and `/science` lists five where the design lists seven. The four missing
-bodies are in `content/research/demi-glace.md:21-46`, so transcribing them
-is a reading of the archive rather than an invention — but it is blocked on
-an ordering key. `notes.created_at` defaults to `now()`, which Postgres
-holds fixed for a transaction, so every note ingested with one recipe
-shares a timestamp and the order falls to `asc(notes.id)`, a random uuid.
-Five demi-glace science notes would randomise the `M1…Mn` codes and
-`e2e/science.spec.ts:146` — which asserts "Why each layer exists" is M1 —
-would fail four runs in five. **M6 needs a stable ordering key on `notes`**
-(a `position` column, or `created_at` set per row) before it seeds them.
-The same fact is why `pnpm export` reorders two notes in
-`content/generated/baumy-biltong/current.md` between two ingests of the
-same seed.
+**The look.** Both science screens moved onto `F/Mechanism`. The conditions
+now draw as a 9px mono run in `f-ink-3` with a middle dot between the
+values, which is what the design draws, and not as the bordered 11.52px pill
+badges M2 left behind.
+
+**The data.** Migration `0006` gave `notes` a stable ordering key, so the
+`M1…Mn` codes no longer fall to a random uuid. `notes.created_at` defaults
+to `now()`, which Postgres holds fixed for a whole transaction, so every note
+ingested with one recipe used to share a timestamp and the order fell to
+`asc(notes.id)`. With the key in place M6 seeded the 4 missing demi-glace
+mechanisms from `content/research/demi-glace.md`, so that study now carries 5. The same key made `pnpm export` reproducible: two runs over one seed no
+longer order the notes differently.
+
+**The field is filled on 9 notes and the row draws.** `scripts/seed-data.ts`
+carries 9 `conditions` arrays and `scripts/ingest-archive.ts` writes them
+through the same path `describe_mechanism` uses, so a fresh
+`pnpm db:migrate && pnpm ingest` gives
+`select count(*) from notes where array_length(conditions,1) > 0` the answer 9. Both science screens draw the row, and `e2e/render.spec.ts` guards it:
+its six `a mechanism draws its conditions` tests fail on deleting
+`f/mechanism.tsx:122-170`. R-SCR-41 is **met**.
+
+The one residue is that no agent has called `describe_mechanism` — the tool
+exists, it is exercised only by the seed's own write path, and a mechanism
+somebody adds through the connector still has to be described by hand. That
+is a use, not a gap in the build.
 
 ---
 
 ## D-03 — The old stylesheet stays until M7
 
-**Status:** Decided.
+**Status:** Decided, and **done. M7 deleted the file.**
 **Date:** 2026-09-09
 **Touches:** R-CON-12
 
@@ -184,6 +217,21 @@ the old stylesheet and turns Tailwind preflight on.
 
 The other option was to remove it in M1. The site would then look broken
 until M6 finished, and the end-to-end tests would fail for the whole build.
+
+### What M7 did
+
+M7 deleted `src/app/globals.css`, deleted the `legacy` cascade layer that
+held it, deleted the M3 palette bridge that fed it, and turned Tailwind's
+preflight on. All four in one commit: the bridge exists only to serve the
+old file, and the layer exists only to hold it, so removing one without the
+others leaves dead code.
+
+**Preflight is the risk of that change and it was measured, not assumed.**
+Preflight resets margins, list styles, heading sizes, form control fonts and
+image display on every element of every screen at once. M6 had already
+measured the deletion of the 223 legacy CLASS rules — 19 of 20 screens
+changed 0 elements — but deleting a class rule and turning a reset on are
+two different changes, so M7 measured the second one on its own.
 
 ---
 
@@ -431,7 +479,8 @@ in the same commit. Do not relax it alone.
 
 ## D-09 — The bridge carries colour, not the faces or the radius
 
-**Status:** Decided. This is the orchestrator's ruling on M3.
+**Status:** Decided, and **done. The bridge is gone. M7 deleted it with the
+stylesheet it fed.**
 **Date:** 2026-09-09
 **Touches:** R-CON-12, D-03
 
@@ -472,9 +521,14 @@ coexistence strategy in D-03, not a new cost.
 
 ### To change it
 
-Add the three properties to the bridge block in `src/app/theme.css`, then
-re-run `pnpm audit:ui` at all four widths in both themes and fix what
-reflows.
+Nothing to change. The bridge was deleted in M7 together with
+`src/app/globals.css`, and every screen it served was rebuilt before then.
+The mixed state it caused — two faces and two radii on one page — ended when
+M6 rebuilt the last screen.
+
+`design/TOKEN-MAP.md` §10 keeps the full record of what the bridge did and
+what it deliberately did not do. Read it if a rebuilt screen ever needs the
+same trick again.
 
 ---
 
@@ -653,7 +707,10 @@ records that batch six is planned rather than cooked.
 
 To change it: two properties in one object in `scripts/seed-data.ts`.
 
-#### Still open for M6 — the readout at 360
+#### STILL OPEN — the readout at 360
+
+**M6 did not close this and M7 did not close it. It is the one open item on
+the recipe screen.** `design/BUILD-PLAN.md` §6 carries it forward.
 
 The design draws no mass flow strip at 360 (`grep 'MASS FLOW'
 design/exports/recipe-360.html` returns nothing). It carries the fact in
@@ -665,13 +722,14 @@ is unreachable — R-STA-08 and R-STA-09 both hold, the scroller's first cell
 sits at offset 0 and `document.scrollWidth` equals `window.innerWidth` —
 but the emphasised DRIED cell sits off-screen behind a scroll.
 
-M5.5 did not close this, and it is **not** the one-line change it looks
-like. The readout scales: `e2e/shopping-journey.spec.ts` asserts `13.5 kg`
-at ×3. `MassFlowStageView.value` is a formatted string, `"10 kg"`, with no
-number behind it to multiply, so drawing the raw mass unscaled beside a
-scaled yield would put two batch sizes on one page — exactly what R-CMP-11
-forbids. M6 needs the first stage as a number and a unit, not as the
-figure's caption, and should then decide whether to hide the strip below
+It is **not** the one-line change it looks like. The readout scales:
+`e2e/shopping-journey.spec.ts` asserts `13.5 kg` at ×3.
+`MassFlowStageView.value` is a formatted string, `"10 kg"`, with no number
+behind it to multiply, so drawing the raw mass unscaled beside a scaled
+yield would put two batch sizes on one page — exactly what R-CMP-11 forbids.
+
+**What a fix needs.** The first stage as a number and a unit, not as the
+figure's caption. Then a decision on whether to hide the strip below
 `shell:` as the design does.
 
 ### 2. The change apparatus

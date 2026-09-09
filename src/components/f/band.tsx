@@ -46,10 +46,14 @@ import { cn } from '@/lib/utils';
 
 /*
  * The rule that exists only at 360. One four-value declaration and an
- * explicit style, because Tailwind's preflight is OFF until M7: nothing sets
- * a global `border-style`, so a lone `border-b` draws nothing at all and a
- * `border-solid` beside it would give the other three sides the CSS initial
- * `medium` width. Same note as `notice.tsx` and `section-label.tsx`.
+ * explicit style, which is the form the export draws.
+ *
+ * It was forced while Tailwind's preflight was OFF, up to M7: nothing then
+ * set a global `border-style`, so a lone `border-b` drew nothing at all and
+ * a `border-solid` beside it gave the other three sides the CSS initial
+ * `medium` width. The preflight's `* { border: 0 solid }` closes that trap
+ * since M7 and the form stays. Same note as `notice.tsx` and
+ * `section-label.tsx`.
  */
 const HEAD_RULE = cn(
   '[border-style:solid] [border-width:0px_0px_1px_0px] border-b-hair',

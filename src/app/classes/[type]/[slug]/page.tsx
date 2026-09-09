@@ -97,8 +97,10 @@ function termPath(term: Pick<TermView, 'categoryType' | 'slug'>) {
 /* The ruled row shared by both lists. The rule is on the TOP at 1280 and on
    the bottom at 360, and it quietens to `f-hair-2` there — the same
    inversion `/classes` and `/cuisines` make. One four-value declaration per
-   side, because the preflight is off until M7 and a lone `border-t` draws
-   nothing at all. */
+   side and an explicit style, which is the form the export draws. It was
+   forced while the preflight was off, up to M7, when nothing set a global
+   `border-style` and a lone `border-t` drew nothing at all; the preflight's
+   `* { border: 0 solid }` closes that trap since M7 and the form stays. */
 const ROW = cn(
   'flex h-fit w-full shrink-0 flex-row flex-wrap items-start pb-4.5',
   '[border-style:solid] [border-width:0px_0px_1px_0px] border-b-hair-2',

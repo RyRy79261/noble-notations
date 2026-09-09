@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type ReactNode } from 'react';
 
+import { FOCUS_RING } from '@/components/f/button';
 import { Filter } from '@/components/f/field';
 import { Empty } from '@/components/f/notice';
 import { useAnnounce } from '@/lib/announce';
@@ -118,9 +119,13 @@ function GroupBody({ group }: { group: FilterableGroup }) {
        drew a border and a radius; the design draws neither — a table in
        this system is four hairlines under four rows and nothing around the
        outside (`F/Table row`, `foundations.html:3369`). The rows themselves
-       are still the page's own `<tr>`s and are M6's to rebuild. */
+       are still the page's own `<tr>`s and are M6's to rebuild.
+
+       `FOCUS_RING` for the reason the note on `f/mass-flow.tsx`'s scroll box
+       gives. This branch has no caller today, so the class is written to
+       stop the first one inheriting the fault. */
     return (
-      <div className="w-full overflow-x-auto">
+      <div className={cn('w-full overflow-x-auto', FOCUS_RING)}>
         <table className="w-full">
           {group.tableHead}
           <tbody>{nodes}</tbody>
@@ -130,16 +135,13 @@ function GroupBody({ group }: { group: FilterableGroup }) {
   }
 
   if (group.layout === 'list') {
-    /* `list-none m-0 p-0` are not decoration: Tailwind's preflight is off
-       until M7, so a bare `<ul>` still carries the user agent's marker and
-       indent. `gap-0` is the design's `Rows`. */
+    /* The preflight zeroes the marker and the indent of a bare `<ul>` since
+       M7, so `list-none m-0 p-0` went with `globals.css`. `gap-0` is the
+       design's `Rows` and is still written, because a `flex` column has no
+       gap the preflight could reset. `plain-list` was the fallback here and
+       was never a rule in any stylesheet — it went with the same commit. */
     return (
-      <ul
-        className={cn(
-          'm-0 flex w-full list-none flex-col gap-0 p-0',
-          group.listClassName ?? 'plain-list',
-        )}
-      >
+      <ul className={cn('flex w-full flex-col gap-0', group.listClassName)}>
         {nodes}
       </ul>
     );
@@ -266,16 +268,16 @@ export function FilterableGroups({
       ) : (
         <Body head={head} tableLabel={tableLabel}>
           {visible.map((group) => (
-            /* `section` is a SELECTOR and `mt-0` cancels the one declaration
-               globals.css hangs on it. `e2e/filtering.spec.ts` scopes its
-               "the hidden group is really gone" assertion to
-               `section.section`, and `globals.css` keys the shopping list's
-               first heading off it. Both go with globals.css at M7. */
+            /* `data-group` is a SELECTOR, not a style:
+               `e2e/filtering.spec.ts` scopes its "the hidden group is really
+               gone" assertion to one group so the page's own intro prose
+               does not answer it. It replaced the `section` class at M7, and
+               the `mt-0` beside it — which cancelled the one `.section
+               { margin-top: 3rem }` declaration `globals.css` hung on that
+               name — went with the rule it cancelled. */
             <section
-              className={cn(
-                'section',
-                'mt-0 flex w-full flex-col items-start gap-4',
-              )}
+              data-group=""
+              className="flex w-full flex-col items-start gap-4"
               key={group.key}
             >
               {group.heading}

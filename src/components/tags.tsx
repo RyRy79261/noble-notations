@@ -106,12 +106,14 @@ export type TermTagProps = {
  * term is created on demand when a recipe is tagged, so an undescribed term
  * is normal (R-STA-05).
  *
- * `tag-wrap` is a SELECTOR, not a style. `e2e/filtering.spec.ts` counts
- * `.tag-wrap` to prove that filtering `/classes` hides rows, and that suite
- * belongs to M7. The two declarations globals.css hangs on the name —
- * `position: relative` and `display: inline-flex` — are what F/Tag draws
- * anyway, so the class changes nothing on the page. It goes when M7 deletes
- * globals.css and rewrites the assertion.
+ * `data-tag` is a SELECTOR, not a style. `e2e/filtering.spec.ts` counts
+ * `[data-tag]` to prove that filtering `/classes` hides rows. It replaced
+ * the `tag-wrap` class at M7: the two declarations `globals.css` hung on
+ * that name — `position: relative` and `display: inline-flex` — are what
+ * F/Tag draws anyway, so neither the class nor its removal changes a pixel.
+ *
+ * It sits on `TermTag` and not on `Tag`, so it marks the term a page filters
+ * and not every tag shape in the system.
  */
 export function TermTag({
   term,
@@ -126,7 +128,7 @@ export function TermTag({
     prefix: showFacet ? facet : undefined,
     primary: term.isPrimary,
     pill,
-    className: cn('tag-wrap', className),
+    className,
   };
 
   /* The two shapes are written out rather than spread, because `TagProps`
@@ -136,6 +138,7 @@ export function TermTag({
   return term.description ? (
     <Tag
       {...shared}
+      data-tag=""
       href={termHref(term)}
       explanation={term.description}
       /* The facet goes in the panel on EVERY described term, whether or not
@@ -145,7 +148,7 @@ export function TermTag({
       explanationLabel={facet}
     />
   ) : (
-    <Tag {...shared} href={termHref(term)} />
+    <Tag {...shared} data-tag="" href={termHref(term)} />
   );
 }
 

@@ -277,10 +277,11 @@ export function BatchLogRows({ logs, source = true }: BatchLogRowsProps) {
           className={cn(
             'flex w-full shrink-0 flex-col items-start gap-3 pt-4 pb-4.5',
             'shell:flex-row shell:items-start shell:gap-8',
-            /* One four-value declaration and an explicit style: the preflight
-               is off until M7, so a lone `border-t` draws nothing. The rule
-               is on the TOP of the row, which is what puts a hairline above
-               the first one and none under the last. */
+            /* One four-value declaration and an explicit style, the form
+               the export draws; it was forced while the preflight was off,
+               up to M7, when a lone `border-t` drew nothing. The rule is on
+               the TOP of the row, which is what puts a hairline above the
+               first one and none under the last. */
             '[border-style:solid] [border-width:1px_0px_0px_0px] border-t-hair',
           )}
         >

@@ -85,17 +85,18 @@ export function PageFoot({ left = site.issue, right = 'NN' }: PageFootProps) {
 
   return (
     /*
-     * `site-footer` is a test hook, not a style. `e2e/site.spec.ts` asserts
-     * that the connector link is in `.site-footer` and nowhere louder.
-     * `globals.css` still styles the class — a top border, 2rem/1.25rem of
-     * padding, `--text-faint` and a 0.88rem size. The utilities below reset
-     * all four ON THE ELEMENT ITSELF, size and colour included, so nothing
-     * added to this foot later inherits the old type by omission. The class
-     * goes when that file does at M7.
+     * `data-page-foot` is a test hook, not a style. `e2e/site.spec.ts`
+     * asserts that the connector link is in the foot and nowhere louder.
+     * It replaced the `site-footer` class at M7, when `globals.css` went and
+     * with it the top border, the 2rem/1.25rem padding, the `--text-faint`
+     * and the 0.88rem size that class used to draw. Every one of those is
+     * written by a utility below, ON THE ELEMENT ITSELF, so nothing added to
+     * this foot later inherits the old type by omission.
      */
     <footer
+      data-page-foot=""
       className={cn(
-        'site-footer flex w-full shrink-0 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-4 border-t border-hair px-4 py-6',
+        'flex w-full shrink-0 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-4 border-t border-hair px-4 py-6',
         'text-09 leading-normal font-mono text-ink-3',
         'shell:flex-nowrap shell:gap-y-0 shell:px-15 shell:py-6.5 shell:text-09-5',
       )}

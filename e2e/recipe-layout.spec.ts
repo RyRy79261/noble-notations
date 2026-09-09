@@ -129,8 +129,10 @@ test.describe('a step names what it uses', () => {
 
     // `[data-step-uses] > *` and not `.step-uses li`: M5 rebuilt the chip on
     // `F/Ingredient callout`, which is a two-celled hairline box rather than
-    // a pill, and the `.step-uses` rules in `globals.css` still draw the old
-    // 999px shape. The hook carries no stylesheet (R-CMP-16).
+    // a pill, and the `.step-uses` rules in `globals.css` drew the old 999px
+    // shape. M7 deleted that file; the hook is still an attribute rather
+    // than a class, because R-CMP-16 says a test selects on a `data-`
+    // attribute and never on a style name.
     await expect(page.locator('[data-step-uses] > *').first()).toBeVisible();
 
     // Not just the name: the quantity, or the chip saves nobody a scroll.
@@ -250,9 +252,9 @@ test.describe('a selected panel is where you are looking', () => {
       // not where it belongs. Measure from the top of the document.
       await page.evaluate(() => window.scrollTo(0, 0));
 
-      const strip = await page.locator('.recipe-tabs').boundingBox();
+      const strip = await page.locator('[data-tab-strip]').boundingBox();
       const column = await page.locator('[data-recipe-column]').boundingBox();
-      const aside = await page.locator('.recipe-aside').boundingBox();
+      const aside = await page.locator('[data-recipe-aside]').boundingBox();
       const panel = await page
         .locator(`[data-tab="${name.toLowerCase()}"]`)
         .boundingBox();
@@ -281,10 +283,12 @@ test.describe('a selected panel is where you are looking', () => {
 
       // The rule under the strip is a rule, not a box. R-ACC-13 measures
       // zero either way — a border is inside the border box — so nothing
-      // above catches `border-b` beside a bare `border-solid`, which with
-      // the preflight off gives the other three sides the CSS initial
+      // above catches `border-b` beside a bare `border-solid`, which without
+      // a universal border reset gives the other three sides the CSS initial
       // `medium` and draws a 3px `f-hair` rectangle around the whole rail.
-      const rule = await page.locator('.recipe-tabs').evaluate((el) => {
+      // The preflight's `* { border: 0 solid }` closes that since M7. The
+      // measurement stays: it is what proves the reset is still in force.
+      const rule = await page.locator('[data-tab-strip]').evaluate((el) => {
         const style = getComputedStyle(el);
         return [
           style.borderTopWidth,
@@ -303,10 +307,10 @@ test.describe('a selected panel is where you are looking', () => {
 
     // No ingredients and no yield, so no aside — and without this the page
     // held a third of the screen open beside its only column of content.
-    await expect(page.locator('.recipe-aside')).toHaveCount(0);
+    await expect(page.locator('[data-recipe-aside]')).toHaveCount(0);
 
     const method = await page.locator('[data-tab="method"]').boundingBox();
-    const page_ = await page.locator('.recipe-layout').boundingBox();
+    const page_ = await page.locator('[data-recipe]').boundingBox();
     expect(method!.width).toBeGreaterThan(page_!.width * 0.9);
   });
 });

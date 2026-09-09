@@ -16,8 +16,12 @@
  * `aria-current="page"` on the last crumb, a `<nav>` with a name and an
  * ordered list are this build's: the design draws the picture and says
  * nothing about the markup, and a trail of bare `<div>`s reads as one run-on
- * line. `list-none`, `m-0` and `p-0` are needed because Tailwind's preflight
- * is OFF until M7, so the user agent still draws markers and an indent.
+ * line. `list-none`, `m-0` and `p-0` were needed while Tailwind's preflight
+ * was OFF, up to M7, because the user agent then drew its own markers and
+ * indent. The preflight's `ol, ul, menu { list-style: none }` and its
+ * `* { margin: 0; padding: 0 }` answer all three since M7, so they are
+ * belt-and-braces here — kept for the reason `markdown.tsx` gives on its
+ * own list.
  *
  * A server component.
  */

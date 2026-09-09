@@ -12,8 +12,9 @@ const RECIPE = '/recipes/berlin-crayfish-boil';
  * M5 SELECTOR MIGRATION. The §9.4 class names this file used to select on —
  * `.ingredient-list`, `.checklist`, `.ingredient-group`, `.amount`, `.what` —
  * are gone (R-CMP-16). Keeping them would have re-applied the `globals.css`
- * rules that hang on them, including the strikethrough at line 1714, which
- * the design does not draw. Each is replaced by the data hook C-14 emits in
+ * rules that hung on them, including the strikethrough at line 1714, which
+ * the design does not draw; M7 then deleted that file. Each is replaced by
+ * the data hook C-14 emits in
  * its place: `[data-checklist]` for the panel, `[data-group]` for a category
  * group, `[data-ticked]` for a ticked row and `[role=listitem]` for a row.
  *
@@ -151,17 +152,17 @@ test('a recipe can be added to the basket and built into a list', async ({
   // document's polite live region (`src/app/announcer.tsx`, a sibling of the
   // shell) says the same count out loud when the second recipe is added.
   await expect(page.locator('main').getByText(/2 recipes/i)).toBeVisible();
-  await expect(page.locator('.shopping-item').first()).toBeVisible();
+  await expect(page.locator('[data-shopping-item]').first()).toBeVisible();
 });
 
 test('the shopping list stays in step with the basket', async ({ page }) => {
   await page.goto(RECIPE);
   await page.getByRole('button', { name: /add to list/i }).click();
   await page.getByRole('link', { name: /list 1/i }).click();
-  await expect(page.locator('.shopping-item').first()).toBeVisible();
+  await expect(page.locator('[data-shopping-item]').first()).toBeVisible();
 
   // Emptying the list has to empty the basket too. When it did not, the
   // header kept counting a recipe the list no longer held.
   await page.getByRole('button', { name: /remove .* from the list/i }).click();
-  await expect(page.locator('.basket-button')).toHaveCount(0);
+  await expect(page.locator('[data-basket-control]')).toHaveCount(0);
 });

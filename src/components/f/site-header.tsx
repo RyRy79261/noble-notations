@@ -100,9 +100,12 @@ export function SiteHeader() {
       /*
        * R-NAV-05: the probe in `header-height.tsx` finds the header by this
        * attribute and publishes its measured height as `--header-h`. It is
-       * an attribute and not a class on purpose — `globals.css` still
-       * styles `.site-header` with a blur, a colour-mix ground and its own
-       * padding, and this header must not inherit any of the three.
+       * an attribute and not a class on purpose. `globals.css` styled
+       * `.site-header` with a blur, a colour-mix ground and its own
+       * padding, and this header had to inherit none of the three. That
+       * file went at M7; the attribute stays because AGENTS.md's rule is
+       * that a hook a probe or a test needs is a `data-` attribute and
+       * never a class name.
        */
       data-site-header
       className={cn(
