@@ -172,8 +172,14 @@ docker run -d --rm --name nn-test \
 
 export DATABASE_URL=postgresql://postgres:nn@localhost:55432/noble_test
 pnpm db:migrate && pnpm ingest
-pnpm test:e2e     # 138 tests
+pnpm test:e2e     # 140 tests. Playwright starts its own server.
+
+# audit:ui drives a browser against a server that is already running. It
+# does not start one. Without this step it reports 176 blockers, all of
+# them a refused connection.
+pnpm build && pnpm start &
 pnpm audit:ui     # 22 routes × 4 widths × 2 states = 176 page loads
+kill %1
 
 docker rm -f nn-test
 ```
@@ -181,5 +187,18 @@ docker rm -f nn-test
 `e2e/global-setup.ts` drops the `public` and `drizzle` schemas on every run.
 Point it at a scratch database only.
 
-The baseline after M2 is 138 tests passed, and 0 blockers and 0 major faults
-across 176 page loads.
+**If the port refuses to bind.** This machine sometimes reports
+`address already in use` for a published port that nothing holds. Start the
+container with no `-p` and read its address instead:
+
+```bash
+docker run -d --name nn-test -e POSTGRES_PASSWORD=nn \
+  -e POSTGRES_DB=noble_test postgres:16
+IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' nn-test)
+export DATABASE_URL=postgresql://postgres:nn@$IP:5432/noble_test
+```
+
+The baseline after M3 is 140 tests passed, and 0 blockers and 0 major faults
+across 176 page loads. The audit also reports 64 minor faults, unchanged
+since M2: 48 small tap targets on body-copy links and 16 duplicate
+identifiers from `src/components/tags.tsx`, which M4 rebuilds.

@@ -17,6 +17,12 @@ export const site = {
     process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/$/, '') ||
     'https://noble-notations.ryanjnoble.dev',
   repository: 'https://github.com/RyRy79261/noble-notations',
+  // The design stamps a document issue in the left slot of the page foot on
+  // every screen that has no effectivity of its own — `/connect`,
+  // `/sign-in`, `/connect/done` and the 404 all read this string. It is the
+  // issue of the document, not today's date, so it is a constant and it
+  // changes when the document is reissued. See D-07.
+  issue: 'Issue 01 · 08 Sep 2026',
   author: 'Ryan Noble',
   locale: 'en',
 } as const;
@@ -99,4 +105,9 @@ export const NOTE_KIND_LABELS: Record<string, string> = {
   result: 'Result',
   idea: 'Idea',
   correction: 'Correction',
+  // The eighth kind of §9.2 and R-CMP-06. `noteKindLabel` in
+  // `src/components/f/mark.tsx` used to reach it only through its raw-key
+  // fallback, which happened to render the right string and would have
+  // stopped the moment the label wanted different wording.
+  science: 'Science',
 };

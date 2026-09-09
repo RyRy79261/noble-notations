@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { FilterableGroups } from '@/components/filterable-groups';
+import { useAnnounce } from '@/lib/announce';
 import { CATEGORY_LABELS } from '@/lib/site';
 
 /**
@@ -80,6 +81,9 @@ export function ShoppingChecklist({
     [groups],
   );
   const done = allKeys.filter((entryKey) => checked.has(entryKey)).length;
+  // `ready` is the hydration flag: the ticks restored from storage on
+  // arrival are the baseline, not an announcement.
+  useAnnounce(`${done} of ${allKeys.length} in the trolley`, ready);
   const allDone = allKeys.length > 0 && done === allKeys.length;
 
   function toggle(entryKey: string) {
@@ -171,7 +175,9 @@ export function ShoppingChecklist({
           />
           <span>{allDone ? 'Untick all' : 'Tick all'}</span>
         </label>
-        <span className="faint" aria-live="polite">
+        {/* Announced through the document's one live region, not from
+            here: see the note in `filterable-groups.tsx`. */}
+        <span className="faint">
           {done} / {allKeys.length} in the trolley
         </span>
       </div>

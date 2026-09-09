@@ -564,6 +564,59 @@ column width. M1 keeps both as a width, under `--container-*`. See §4.4.
 designer whether 10px is a header value or a general one, and rename the
 token if it is general.
 
+### 8.1 How an off-scale LENGTH is written — the fractional multiple
+
+The nine tokens above are the off-scale values that carry a _role_: a type
+size, a tracking, a named gap. A padding is different. The design draws
+`4px 9px`, `11px 18px`, `15px 17px`, `10px 14px`, `11px 13px`, `7px` and a
+82px column, and none of those is a role anything else reuses — naming nine
+tokens for nine one-off paddings would be a scale nobody reads.
+
+They are written as **fractional multiples of `--spacing`**, never as an
+arbitrary pixel length:
+
+| The design  | Written as        | Where                      |
+| ----------- | ----------------- | -------------------------- |
+| `9px`       | `px-2.25`         | `F/Mark`, `F/Mark quiet`   |
+| `18px 11px` | `px-4.5 py-2.75`  | `F/Button`                 |
+| `13px 11px` | `px-3.25 py-2.75` | `F/Filter`                 |
+| `10px`      | `py-2.5`          | `F/Field`, `F/Tag CTA`     |
+| `17px 15px` | `px-4.25 py-3.75` | `F/Notice`                 |
+| `14px`      | `px-3.5`          | `F/Tag CTA`, `F/Skip link` |
+| `18px`      | `px-4.5`          | `F/Tag hierarchy`          |
+| `7px`       | `pb-1.75`         | `F/Section label`          |
+| `82px`      | `w-20.5`          | `F/Measure`                |
+
+`--spacing` is pinned to 4px (§4.4), so every one of these still reads the
+token: change the unit and the whole system moves together, which an
+arbitrary `px-[18px]` does not. M3 shipped both conventions for a while —
+`px-4.5` and `px-[18px]` for the same 18px on the same component — and one
+of them had to go.
+
+They stay just as greppable as the arbitrary form. A decimal point in a
+spacing utility means exactly "off the four-pixel grid":
+
+```bash
+grep -rnE '\b[pwmh][xybtlre]?-[0-9]*\.[0-9]' src/
+```
+
+### 8.2 The shell's one breakpoint
+
+`--breakpoint-shell: 1080px`, in the `@theme` block, giving the `shell:`
+variant. The design draws 1280 and it draws 360 and it does not say where
+one becomes the other; the build has to choose, and 1080 is the first width
+the drawn 1280 header row fits in — brand 194.4 + navigation 676.5 + list
+control 56.8 + two 60px gutters = 1047.7px. Tailwind's `lg` is 1024 and
+overflows that, which is the UNREACHABLE fault R-ACC-11 exists for; `xl` is
+1280 and is a knife edge, because a classic scrollbar takes the query below
+the viewport `pnpm audit:ui` drives at.
+
+It was a literal `min-[1080px]:` repeated 38 times across five files. It is
+one token now, mirrored in `src/lib/utils.ts` under `breakpoint` with every
+other name this file adds (§4.5). Tailwind's five stock breakpoints are left
+alone: nothing uses them, and clearing the namespace would only make a stock
+name emit nothing rather than fail.
+
 **Plate IV in `design/exports/plates-3-4.html` carries a superseded palette.**
 Its swatch grid reads `f-paper` `#1E1613`, `f-desk` `#14100D`, `f-ink`
 `#F6F0EA`, `f-ink-2` `#C4B6AE` — a warm dark, not the cool graphite of Plate
@@ -622,3 +675,457 @@ sits above `theme`, so the old values win and no screen changes.
 
 M7 deletes the old stylesheet, deletes the `legacy` layer and turns the
 preflight import on.
+
+---
+
+## 10. The palette bridge — M3, and deleted at M7
+
+`src/app/globals.css` still styles the twenty screens that M4 to M6 have not
+rebuilt. It declares its own palette and reads it in about 400 rules. Until
+M3 those declarations still held the old purple, so a header rebuilt in
+DOSSIER sat on a page painted in purple.
+
+`src/app/theme.css` now redefines every **colour** property `globals.css`
+declares in terms of the `f-` tokens. Every old screen adopts the new colour
+at once. Its layout, its spacing and its shape stay old until its own
+milestone rebuilds it.
+
+**This section is deleted at M7, together with `globals.css`.** D-03 removes
+the old stylesheet whole; the block in `theme.css` carries the same note.
+
+### 10.1 Where it goes, and why it wins
+
+The block is a plain, **unlayered** `:root` in `src/app/theme.css`, placed
+between the light media query and the reduced-motion rule.
+
+`globals.css` is imported at the top of `theme.css` as
+`@import './globals.css' layer(legacy)`. Unlayered CSS beats every cascade
+layer whatever the layer order and whatever the specificity, so one
+unlayered block wins over **both** of globals.css's `:root` blocks — the
+dark one on plain `:root` and the one inside its
+`@media (prefers-color-scheme: light)`. A media query adds no specificity
+and changes no layer.
+
+Verified in the shipped stylesheet: the layers are emitted in the order
+`theme` → `base` → `legacy` → `components` → `utilities`, globals.css's
+`--bg: #131211` sits inside `@layer legacy`, and the bridge sits unlayered
+after it.
+
+Three things it must not be:
+
+- **Not inside `@theme` or `@theme inline`.** `@theme` clears the radius
+  namespace with `--radius-*: initial`. Putting `--radius` or `--radius-sm`
+  back there would rebuild `rounded-sm` as a utility and reverse §4.5.
+- **Not two blocks.** See §10.2.
+- **Not an edit to `globals.css`.** That file is history. It is read, not
+  changed, and it is deleted whole.
+
+### 10.2 One block, not two — the direction is inherited, not repeated
+
+Both files are dark first, and they agree. `globals.css`:
+
+```css
+:root {
+  color-scheme: dark;
+  --bg: #131211;            /* dark, on plain :root */
+...
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --bg: #fbfaff;          /* light, in the media query */
+```
+
+`theme.css`:
+
+```css
+:root {
+  color-scheme: dark;
+  --f-paper: #17191b;       /* dark, on plain :root */
+...
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --f-paper: #fcfaf6;     /* light, in the media query */
+```
+
+Every value in the bridge is a `var(--f-*)`, and the `f-` tokens already
+flip thirty lines above. The bridge therefore **inherits** the flip instead
+of repeating it, and one block serves both themes.
+
+That is a correctness property, not a saving. A bridge written as two blocks
+of hex can be written the wrong way round, and the result is a site that is
+unreadable in one theme and looks deliberate in the other. A bridge that
+names no hex literal at all cannot be inverted, because there is no second
+block to get backwards.
+
+Measured in a headless browser against the built stylesheet, in both
+`prefers-color-scheme` states:
+
+|                   | Light                | Dark              |
+| ----------------- | -------------------- | ----------------- |
+| `--bg`            | `#fcfaf6`            | `#17191b`         |
+| `--text`          | `#2b1f1c`            | `#edeff1`         |
+| `--accent`        | `#8e2a1e`            | `#ff7a6b`         |
+| `body` background | `rgb(252, 250, 246)` | `rgb(23, 25, 27)` |
+
+### 10.3 The map
+
+Sixteen properties. `globals.css` declares each of these twice; the bridge
+declares each once.
+
+| `globals.css` property | Now resolves to        | Light     | Dark        | Why                                                                                                                                                                                                                                                                                                      |
+| ---------------------- | ---------------------- | --------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--bg`                 | `var(--f-paper)`       | `#FCFAF6` | `#17191B`   | §3.1, verbatim.                                                                                                                                                                                                                                                                                          |
+| `--bg-elevated`        | `var(--f-paper)`       | `#FCFAF6` | `#17191B`   | §3.2 drops it: the design has no raised ground. Only `f-paper` is fully opaque, which `globals.css` requires at `.tag-tooltip` and `e2e/classes.spec.ts` asserts. What used to be its separation is now `--border-strong`.                                                                               |
+| `--surface`            | `var(--f-paper)`       | `#FCFAF6` | `#17191B`   | §3.1 (`card`, `popover`). §5 item 2: a card is a rule, not a fill. `.card`, `.panel`, `.stat`, `.notice` become fill-less ruled blocks. That is the intent.                                                                                                                                              |
+| `--surface-2`          | `var(--f-desk)`        | `#F3EDE5` | `#101214`   | §3.1. `f-desk` is the recessed fill, which is what `--surface-2` is used for: chips, `thead th`, `input`, `pre`.                                                                                                                                                                                         |
+| `--border`             | `var(--f-hair)`        | `#E4D8D0` | `#2C3033`   | §3.1, verbatim.                                                                                                                                                                                                                                                                                          |
+| `--border-strong`      | `var(--f-ink-3)`       | `#79655F` | `#8C9297`   | §3.2 says use `f-ink-3` for a stronger line. Load-bearing: with `--bg-elevated` collapsed onto the page, this rule is the only edge on the tag tooltip and the modal, and it is the timeline's current-revision dot and the scale stepper's border. 1.61:1 → **5.25:1** light, 1.88:1 → **5.60:1** dark. |
+| `--text`               | `var(--f-ink)`         | `#2B1F1C` | `#EDEFF1`   | §3.1.                                                                                                                                                                                                                                                                                                    |
+| `--text-muted`         | `var(--f-ink-2)`       | `#574843` | `#B7BCC0`   | §3.1. §5 item 6: do not collapse it onto `f-ink-3`.                                                                                                                                                                                                                                                      |
+| `--text-faint`         | `var(--f-ink-3)`       | `#79655F` | `#8C9297`   | §3.1. §13.1 of the specification warns this is not decorative text.                                                                                                                                                                                                                                      |
+| `--accent`             | `var(--f-accent)`      | `#8E2A1E` | `#FF7A6B`   | §3.1. The most-used token in the old file.                                                                                                                                                                                                                                                               |
+| `--accent-strong`      | `var(--f-accent)`      | `#8E2A1E` | `#FF7A6B`   | §3.2 drops it — the design draws no hover colour — and it has no `var()` use left in `globals.css`. Bridged anyway, one line, so no later edit can bring the purple back.                                                                                                                                |
+| `--accent-dim`         | `var(--f-accent-wash)` | `#F7E8E3` | `#FF7A6B1F` | §3.1. Opaque light, 12% alpha dark; both are legal as a background and both were measured.                                                                                                                                                                                                               |
+| `--accent-contrast`    | `var(--f-on-accent)`   | `#FCFAF6` | `#17191B`   | §3.1. Pairs with `--accent` on `.button-primary` and `.skip-link:focus`: 8.06:1 / 6.92:1.                                                                                                                                                                                                                |
+| `--warn`               | `var(--f-warn)`        | `#C42B1C` | `#FF6F5E`   | §3.1.                                                                                                                                                                                                                                                                                                    |
+| `--warn-bg`            | `var(--f-warn-wash)`   | `#FBEDE9` | `#FF6F5E1F` | §3.1.                                                                                                                                                                                                                                                                                                    |
+| `--warn-border`        | `var(--f-warn)`        | `#C42B1C` | `#FF6F5E`   | §3.2: the design draws a solid rule, not a soft border. Its one use is `.form-error`, where a solid 1px red rule beats the 22%-alpha ghost it replaces for WCAG 1.4.11.                                                                                                                                  |
+
+### 10.4 The six properties that are NOT bridged
+
+`globals.css` declares six more custom properties. Each stays exactly as it
+is until the milestone that rebuilds the screen reading it.
+
+| Property      | Today          | The design     | Verdict                                                        |
+| ------------- | -------------- | -------------- | -------------------------------------------------------------- |
+| `--radius`    | `12px`         | 2px (§4.5)     | **Leave.**                                                     |
+| `--radius-sm` | `8px`          | 2px            | **Leave.**                                                     |
+| `--font-sans` | a system stack | Geist          | **Leave.**                                                     |
+| `--font-mono` | a system stack | Geist Mono     | **Leave.**                                                     |
+| `--measure`   | `68ch`         | dropped (§3.2) | **Leave.** No token to bridge to.                              |
+| `--page`      | `1180px`       | dropped (§3.2) | **Leave.** The frame is a layout change, not a palette change. |
+
+Colour is the only one of the three that is **self-completing**. Sixteen
+lines repaint all twenty old screens with no geometric change at all, so the
+end-to-end suite and the `pnpm audit:ui` baseline are untouched.
+
+Radius and type are half-jobs that cost real risk.
+
+**Radius.** `var(--radius)` and `var(--radius-sm)` reach 15 corners.
+Eighteen more are hard-coded and would not move: the `999px` pills on `.tag`,
+`.step-uses li`, `.scale-stepper button`, `.basket-button` and
+`.list-recipes li`, the `50%` circles on the step number and the timeline
+dot, and the literal `4px`, `5px`, `8px`, `10px`, `12px` and `14px` corners
+elsewhere — including the `4px` on `:focus-visible`, which a reader sees on
+every screen. Flipping produces a 2px card holding 999px pills beside a 5px
+badge under a 4px focus ring: measurably less coherent than the 12px-and-pill
+pairing it replaces.
+
+**Type.** Three separate costs. The stacks Tailwind emits are
+`"Geist", "Geist Fallback"` and `"Geist Mono", "Geist Mono Fallback"`, and
+neither ends in a generic family — so a naive `--font-sans: var(--font-sans-ui)`
+renders all twenty old screens in Times New Roman the moment the next/font
+class is absent from `<html>`. `--measure: 68ch` is silently coupled to the
+face: Geist's `0` is 11.000px at 16px against the system stack's 10.188px, so
+`68ch` grows from 692.8px to 748.0px — **+8%** — and every line break in
+every hero and lede moves. And `playwright.config.ts` sets no `colorScheme`
+and `scripts/audit-ui.ts` never calls `emulateMedia`, so both gates run in
+the **light theme only**: a reflow of that size would land on 176 page loads
+that measure geometry, with the dark half unguarded.
+
+Both are shape, not colour. Both belong to the milestone that rebuilds the
+screen.
+
+### 10.5 What the bridge does NOT fix
+
+Each of these is pre-existing. None is caused by the bridge; none is
+reachable from `theme.css`, because the fix would have to be an edit to
+`globals.css`. Each is fixed by the milestone that replaces the rule.
+
+| Where                           | Fault                                                                                                                                           | Fixed by                                                                                                                           |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `.note[data-kind='research']`   | A raw `#6ee7b7` mint rule — an R-BLD-02 violation, and 1.46:1 against the light page, so effectively invisible. DOSSIER has no green.           | M4, with `F/Footnote`. The 8th note kind's mark needs a decision: `science` already owns the accent.                               |
+| `.note[data-kind='correction']` | A raw `#fbbf24` amber rule, 1.60:1 light. `f-caution` is the DOSSIER equivalent at 5.67:1 / 9.16:1.                                             | M4, with `F/Warning`.                                                                                                              |
+| `.tag.primary` outline          | `color-mix(--accent 40%)` is 2.07:1 light and 2.13:1 dark. WCAG 1.4.11 asks 3:1 of an interactive control. The design's answer is `f-cta-line`. | M4, with `F/Tag CTA`.                                                                                                              |
+| `.basket-button` outline        | The same 2.07:1 / 2.13:1, on the list control in the header — a primary control.                                                                | **FIXED in M3.** C-03 was rebuilt and the four resets on it (`border-0 rounded-none bg-transparent p-0`) leave no outline to fail. |
+
+**The one fault the bridge caused, and where it was fixed.**
+
+`globals.css` line 1890 is `.list-recipes[data-pending] { opacity: 0.6 }`.
+A group opacity composites live text against the page, and the bridge takes
+that pair from 4.66:1 to **4.23:1** in the light theme — below AA, on links
+that stay focusable and clickable throughout the pending action, so WCAG
+1.4.3's relief for an inactive control does not apply. The sibling remove
+control on the same rule measured 2.75:1 → 3.02:1.
+
+This table first routed it to "M3, when C-03 is rebuilt". **That routing was
+wrong**: C-03 is `BasketButton` in `src/components/shopping-basket.tsx`, and
+`.list-recipes` is a different component on a different route. The fix is
+owned by whichever milestone rebuilds `/list`, and it did not have to wait
+for one. `globals.css` is not edited (D-03), but the rule is reachable from
+the component: `src/app/list/list-recipes.tsx` now carries `opacity-100` on
+the section — `@layer utilities` sits above `@layer legacy`, so it wins over
+that rule without touching the file — and draws the pending state with a
+colour instead, which is what `globals.css` itself does at its two other
+pending controls. Measured after the change:
+
+|       | Chip link             | Remove `×`            |
+| ----- | --------------------- | --------------------- |
+| Light | **5.25:1** (was 4.23) | **5.25:1** (was 3.02) |
+| Dark  | **5.60:1** (was 6.20) | **5.60:1** (was 4.12) |
+
+No gate would have caught it. `scripts/audit-ui.ts` has eight checks and
+none of them is a contrast check, and `pnpm test:e2e` asserts colour in one
+place only.
+
+Everything else was measured. Across the 67 text-on-ground pairs
+`globals.css` actually draws, in both themes, **no pair falls below 4.5:1**
+after the bridge. The light minimum is 4.70:1, at `.tag .facet` and
+`input::placeholder` — `f-ink-3` on `f-desk`, which §6.4 already names as the
+thinnest margin in the palette. The dark minimum is 5.47:1, at `.form-error`.
+
+Five WCAG 1.4.11 failures are cleared as a side effect, all of them by
+`--border-strong` taking `f-ink-3`: the tooltip edge, the modal edge, the
+44px scale stepper's border, the timeline's current-revision dot, and the
+card hover rule.
+
+---
+
+## 11. The vendored shadcn/ui primitives — M3
+
+**Two** primitives live in `src/components/ui/`: `sheet.tsx` and
+`tooltip.tsx`. Each was vendored with `pnpm dlx shadcn@latest add <name>` —
+the CLI works on this machine — and then **rewritten**. §4.5 explains why
+rewriting is not optional: `theme.css` clears six of Tailwind's namespaces,
+and Tailwind emits no rule and no warning for a utility it cannot resolve.
+Stock new-york is full of `rounded-md`, `text-sm`, `shadow-xs` and `h-9`,
+and every one of them would have lost its property silently.
+
+### 11.0 Four more were vendored, and then deleted
+
+M3 also vendored `button.tsx`, `badge.tsx`, `input.tsx` and `separator.tsx`.
+All four are gone. **The reason is R-CMP-16, not tidiness.**
+
+Each of the four claimed a design name that a component in
+`src/components/f/` already owned and shipped — `ui/button.tsx` said it was
+`F/Button` and `F/Button > Quiet`, which `f/button.tsx` implements;
+`ui/badge.tsx` said it was `F/Mark`, `F/Mark quiet` and `F/Tag CTA`, which
+`f/mark.tsx` and `f/tag.tsx` implement; `ui/input.tsx` said it was `F/Field`
+and `F/Filter`, which `f/field.tsx` implements. None of the four had a
+single importer. R-CMP-16 asks for one component per design name and there
+were two, and **the unused one was the one that disagreed with the export**:
+
+| Design name        | The export draws                  | `f/` (shipped)                      | `ui/` (deleted)                                   |
+| ------------------ | --------------------------------- | ----------------------------------- | ------------------------------------------------- |
+| `F/Button`         | no border of any kind             | `bg-accent text-on-accent`          | `border border-accent …` — 2px wider and taller   |
+| `F/Button > Quiet` | a 1px inset **outline** at −0.5px | `outline-1 outline-offset-[-0.5px]` | `border border-hair` — a border, so the box grows |
+| `F/Tag CTA`        | `gap-[12px]`, an inset outline    | `gap-3` + the inset outline         | `gap-1` (4px) never overridden, and a border      |
+| `F/Mark`           | `p-[4px_9px]`, no border          | `px-2.25 py-1`                      | `border border-transparent` — 9/4 inset by 1px    |
+
+They also contradicted each other on what the design contains: `ui/button`
+shipped `sm`, `lg`, `glyph`, `secondary`, `destructive`, `ghost` and `link`,
+while `f/button.tsx` records from the exports that there is exactly one size
+and none of those variants. `ui/separator.tsx` additionally carried
+`'use client'` and pulled a Radix package into the runtime for no consumer,
+against §9.3.
+
+M4 builds fifteen more components. It must not be able to pick the wrong
+one. §11.3 keeps every conversion the four made, because the readings are
+still the record of what stock gets wrong in this theme, and the next
+`shadcn add` will meet all of them again.
+
+Three rules were applied to all six.
+
+1. **The design's names, not shadcn/ui's.** R-BLD-03. `bg-accent`, not
+   `bg-primary`; `text-ink-3`, not `text-muted-foreground`. Both names
+   resolve to the same value (§3.1), so this is legibility, not behaviour.
+2. **No opacity, anywhere.** §4.5: the design draws none. Stock uses it for
+   hover (`/90`), for focus (`ring-ring/50`) and for the disabled state
+   (`opacity-50`). A group opacity also composites live text against
+   whatever is behind it, which is exactly how the old stylesheet lost
+   contrast on two controls. Every one is replaced by a token colour.
+3. **No `dark:` variant.** §5 item 7: nothing in this build adds a `.dark`
+   class, so every `dark:` utility stock ships is dead code. All removed.
+
+### 11.1 What the CLI got wrong
+
+Two things, both corrected, both worth knowing before the next `add`:
+
+- It wrote `import { cn } from "cn"` — a bare module specifier, not the
+  `@/lib/utils` alias `components.json` declares — and then installed the
+  unrelated npm package **`cn`** to satisfy it. Removed from `package.json`,
+  and every import repointed at `@/lib/utils`.
+- It installed the unified **`radix-ui`** package (310 transitive packages)
+  and imported `{ Slot }`, `{ Dialog as SheetPrimitive }` and so on from it.
+  Replaced with the four primitives actually used.
+
+### 11.2 The dependencies
+
+Both declare `react` `^19.0` and `react-dom` `^19.0` as peers, so React
+19.2.8 is in range. Pinned exactly, matching how the other user-interface
+dependencies in `package.json` are pinned.
+
+| Package                   | Version  | Needed by                    |
+| ------------------------- | -------- | ---------------------------- |
+| `@radix-ui/react-dialog`  | `1.1.23` | `sheet.tsx` — the 360 drawer |
+| `@radix-ui/react-tooltip` | `1.2.16` | `tooltip.tsx`                |
+
+`@radix-ui/react-separator`, `@radix-ui/react-slot` and
+`class-variance-authority` went with the four deleted files (§11.0) and are
+out of `package.json`; `shadcn add` reinstalls what M4 needs. `clsx` and
+`tailwind-merge` were already present. `lucide-react` is used by neither of
+the two: the drawer's close control is the design's own `×` glyph.
+
+### 11.3 Every conversion
+
+A **dropped** row means the stock utility was removed and nothing replaced
+it. A **silent** row means the stock utility resolved to nothing at all
+before the rewrite, because §4.5 had cleared its namespace.
+
+The first four tables — `button`, `badge`, `input`, `separator` — are the
+**record of a deleted file** (§11.0). They are kept because they are the
+list of what stock new-york gets wrong under this theme, and the next
+`shadcn add` meets all of it again. Do not read them as shipping code; the
+shipping answers for those design names are in `src/components/f/`.
+
+#### `button.tsx` — C-03, C-18, and `F/Button` — DELETED, see §11.0
+
+| Stock                                                                                    | Now                                                                             | Note                                                                                                                                                                                               |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rounded-md`                                                                             | `rounded-none`                                                                  | Silent. §4.5: one radius, 2px, and it is a chip's.                                                                                                                                                 |
+| `text-sm font-medium`                                                                    | `font-mono text-10 leading-normal font-normal tracking-spine uppercase`         | Silent. `F/Button > Label` is Geist Mono 10px at 1.5px tracking. Size and leading in one argument — §4.3.                                                                                          |
+| `h-9 px-4 py-2 has-[>svg]:px-3`                                                          | `px-4.5 py-2.75`                                                                | The design sizes a button by padding, not height. `--spacing` is 4px, so this is 18px × 11px — `F/Button`'s own box, read from a token rather than written as a raw length.                        |
+| `h-6/h-8/h-10`, `size-9`, `icon-xs`, `icon-sm`, `icon-lg`                                | `sm`, `lg`, `glyph`                                                             | Four icon sizes collapse to one 28px `glyph` — the `≡` that opens the drawer. 28px and not 24px so `scripts/audit-ui.ts`, which reports any control under 24 × 24, has margin.                     |
+| `focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50`          | `focus-visible:outline-solid outline-2 outline-offset-2 outline-accent`         | `ring-[3px]` is a raw length and `/50` is opacity. R-ACC-05; the ring is `f-accent`, 8.06:1 / 6.92:1 (§7). `outline-none` sets `--tw-outline-style: none`, so `outline-solid` has to set it back.  |
+| `disabled:opacity-50`                                                                    | `disabled:border-hair disabled:bg-desk disabled:text-ink-3`                     | Recessed with a colour. 4.70:1, so it clears R-ACC-01 even though WCAG 1.4.3 exempts an inactive control.                                                                                          |
+| `aria-invalid:ring-destructive/20`, `dark:aria-invalid:ring-destructive/40`              | `aria-invalid:border-warn aria-invalid:text-warn`                               | Opacity out, `dark:` dead.                                                                                                                                                                         |
+| `bg-primary text-primary-foreground hover:bg-primary/90`                                 | `border-accent bg-accent text-on-accent hover:bg-accent-wash hover:text-accent` | `F/Button`. §3.2 records that the design draws no hover colour, so this one is derived: fill and label swap, 7.04:1 light and 5.76:1 dark. The rule is on in both states so the box does not move. |
+| `outline`: `border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground` | `border border-hair bg-transparent text-ink hover:bg-desk`                      | `F/Button > Quiet`. `shadow-xs` was silent. The `hover:bg-accent` rewrite is §5 item 3 — in this theme `accent` is the red.                                                                        |
+| `ghost`: `hover:bg-accent hover:text-accent-foreground`                                  | `hover:bg-accent-wash hover:text-ink`                                           | §5 item 3, both halves. Leaving `text-accent-foreground` would draw paper on the wash.                                                                                                             |
+| `secondary`: `bg-secondary text-secondary-foreground hover:bg-secondary/80`              | `bg-desk text-ink hover:bg-accent-wash`                                         |                                                                                                                                                                                                    |
+| `destructive`: `bg-destructive text-white`                                               | `bg-warn text-on-accent`                                                        | `text-white` is a stock hue. `f-on-accent` on `f-warn` is 5.43:1 light, 6.45:1 dark.                                                                                                               |
+| `link`: `text-primary underline-offset-4`                                                | `text-accent decoration-cta-line underline-offset-4`                            | `f-cta-line` is _the underline on a call to action_ (BUILD-PLAN §2.1). Never as text — §7.                                                                                                         |
+| `dark:border-input dark:bg-input/30 dark:hover:bg-input/50 dark:bg-destructive/60`       | dropped                                                                         | Dead code.                                                                                                                                                                                         |
+| `transition-all`                                                                         | `transition-colors`                                                             | Nothing else changes.                                                                                                                                                                              |
+
+#### `badge.tsx` — `F/Mark`, `F/Mark quiet`, `F/Tag CTA`, the list count — DELETED, see §11.0
+
+| Stock                                                           | Now                                                                                                                              | Note                                                                                                                                                                                                                                                      |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rounded-full`                                                  | `rounded-none`                                                                                                                   | Silent for the `outline` variant's replacement, dropped elsewhere. The design has no pill; only `F/Tag CTA` takes the 2px corner.                                                                                                                         |
+| `px-2 py-0.5`                                                   | `px-2.25 py-1`                                                                                                                   | 9px × 4px — the box `F/Mark` and `F/Mark quiet` share.                                                                                                                                                                                                    |
+| `text-xs font-medium`                                           | `font-mono text-09 leading-normal font-normal tracking-label uppercase`                                                          | Silent. Geist Mono 9px at 1.2px.                                                                                                                                                                                                                          |
+| `transition-[color,box-shadow]`                                 | `transition-colors`                                                                                                              | There is no shadow to transition.                                                                                                                                                                                                                         |
+| focus, `aria-invalid`, `dark:`                                  | as `button.tsx`                                                                                                                  |                                                                                                                                                                                                                                                           |
+| `bg-primary text-primary-foreground`                            | `bg-accent text-on-accent`                                                                                                       | `F/Mark`, the kind badge.                                                                                                                                                                                                                                 |
+| `bg-secondary text-secondary-foreground`                        | `bg-desk text-ink`                                                                                                               | `F/Mark quiet`, the revision badge.                                                                                                                                                                                                                       |
+| `bg-destructive text-white`                                     | `bg-warn text-on-accent`                                                                                                         |                                                                                                                                                                                                                                                           |
+| `outline`: `border-border text-foreground [a&]:hover:bg-accent` | `rounded-chip border-cta-line bg-accent-wash px-3.5 py-2.5 font-serif text-15 leading-normal tracking-flat text-ink normal-case` | `F/Tag CTA`, drawn exactly: 14px × 10px, the wash, a 1px `f-cta-line` rule, the 2px corner and Newsreader 15px. The design's `[outline:1px_solid] [outline-offset:-0.5px]` is a 1px inset rule, which `border` under `box-sizing: border-box` already is. |
+| `[a&]:hover:bg-primary/90` and friends                          | `[a&]:hover:bg-accent-wash`                                                                                                      | Opacity out. `[a&]:` is kept: a static mark must not react to the pointer.                                                                                                                                                                                |
+| —                                                               | **new** `count` variant                                                                                                          | `bg-accent px-1.75 py-0.5 text-10 tracking-flat text-on-accent` — the count beside the word LIST in the site header, `p-[2px_7px]` in the design. C-03.                                                                                                   |
+
+#### `input.tsx` — `F/Field`, `F/Filter`, C-17 — DELETED, see §11.0
+
+| Stock                                                         | Now                                                             | Note                                                                                                                                                                                                                                                                                                         |
+| ------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `h-9 px-3 py-1`                                               | `px-3 py-2.5`                                                   | 12px × 10px, `F/Field > Input`'s box. The design sets no field height.                                                                                                                                                                                                                                       |
+| `rounded-md`                                                  | `rounded-none`                                                  | Silent.                                                                                                                                                                                                                                                                                                      |
+| `bg-transparent`, `dark:bg-input/30`                          | `bg-desk`                                                       | The design's recessed fill. The `dark:` companion is dead code.                                                                                                                                                                                                                                              |
+| `border border-input`                                         | kept                                                            | It resolves to `f-ink-3` here, and that is §5 item 5 — **the one place this map leaves the design file.** The design draws no field boundary at all across 209 elements, and the bare `f-desk` fill is 1.12:1 against the page, which fails WCAG 1.4.11. `f-ink-3` is 5.25:1 / 5.60:1 and invents no colour. |
+| `text-base md:text-sm`                                        | `font-sans text-14 leading-normal tracking-flat`                | Both silent. The design draws one size.                                                                                                                                                                                                                                                                      |
+| `shadow-xs`                                                   | dropped                                                         | Silent, and §4.5 forbids it.                                                                                                                                                                                                                                                                                 |
+| `placeholder:text-muted-foreground`                           | `placeholder:text-ink-3`                                        | Same value, design name. 4.70:1 on `f-desk` — §6.4 names this pair; do not lighten it.                                                                                                                                                                                                                       |
+| `selection:bg-primary selection:text-primary-foreground`      | `selection:bg-accent selection:text-on-accent`                  |                                                                                                                                                                                                                                                                                                              |
+| `file:h-7 file:text-sm file:font-medium file:text-foreground` | `file:font-mono file:text-10 file:leading-normal file:text-ink` | `file:text-sm` was silent.                                                                                                                                                                                                                                                                                   |
+| `disabled:opacity-50`                                         | `disabled:border-hair disabled:text-ink-3`                      | Colour, not opacity.                                                                                                                                                                                                                                                                                         |
+| focus, `aria-invalid`, `dark:`                                | as `button.tsx`                                                 |                                                                                                                                                                                                                                                                                                              |
+
+#### `separator.tsx` — DELETED, see §11.0
+
+| Stock       | Now                                     | Note                                                                                                                                                                                                                           |
+| ----------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `bg-border` | `bg-hair`                               | Same value, design name.                                                                                                                                                                                                       |
+| —           | **new** `variant="quiet"` → `bg-hair-2` | The design has two rules. `f-hair-2` is drawn 169 times as a table row border. §5 item 4 permits exactly this use and forbids the other: it is a rule, never a ground under text, because `f-ink-3` on it is 4.48:1 and fails. |
+
+`"use client"` is required and is not a choice — Radix's `Separator.Root`
+reads context. It holds no state, so it does not count against the eight
+browser components in §9.3, and a Server Component may render it because the
+boundary carries only props (R-CON-02).
+
+#### `tooltip.tsx` — C-07, R-ACC-02, R-ACC-03
+
+**The design draws no tooltip.** Grep the eighteen exports and there is
+nothing. The treatment is therefore derived, and it is derived from the one
+`globals.css` already draws at `.tag-tooltip`, so the two agree while both
+are on the site: an opaque page-ground fill with one strong rule.
+
+| Stock                                                                       | Now                                           | Note                                                                                                                                                                                                                                                                    |
+| --------------------------------------------------------------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bg-foreground text-background`                                             | `border border-ink-3 bg-paper text-ink`       | The bridge's `--border-strong`, in component form. 5.25:1 / 5.60:1 as a boundary, well past 1.4.11's 3:1. The fill must be fully opaque: this floats over body text, and `e2e/classes.spec.ts` asserts an alpha of exactly 1.                                           |
+| `rounded-md`                                                                | `rounded-none`                                | Silent.                                                                                                                                                                                                                                                                 |
+| `text-xs`                                                                   | `font-sans text-13 leading-150 tracking-flat` | Silent.                                                                                                                                                                                                                                                                 |
+| `px-3 py-1.5`                                                               | `px-3 py-2`                                   | 6px is on no scale here; 8px is.                                                                                                                                                                                                                                        |
+| `w-fit`                                                                     | `w-fit max-w-88`                              | 352px — what `.tag-tooltip` already caps at.                                                                                                                                                                                                                            |
+| `TooltipPrimitive.Arrow` with `rounded-[2px] bg-foreground fill-foreground` | **removed**                                   | A rotated filled square works only on a fill with no border, and this tooltip is a ruled block. A square, flat tooltip with a 1px rule is the design's own language.                                                                                                    |
+| `shadow-md`                                                                 | dropped                                       | §4.5: no shadow, no blur, no opacity.                                                                                                                                                                                                                                   |
+| `sideOffset={0}`                                                            | `sideOffset={6}`                              | The rule needs to clear the trigger.                                                                                                                                                                                                                                    |
+| provider                                                                    | `TooltipProvider` nested inside `Tooltip`     | shadcn/ui's install note asks the caller to wrap the application; nesting is what shadcn/ui itself now ships and it keeps `src/app/layout.tsx` free of a provider one component needs. The named export stays for a caller that wants one delay across a group of tags. |
+| animations                                                                  | kept                                          | `tw-animate-css`; R-ACC-09 is handled once in `theme.css`, not per primitive.                                                                                                                                                                                           |
+
+Radix writes `aria-describedby` on the trigger and opens on focus as well as
+hover, which is R-ACC-02, R-ACC-03 and R-CMP-03 — and why R-CMP-04 forbids
+the `title` attribute.
+
+#### `sheet.tsx` — C-02, the 360 drawer, R-NAV-03
+
+The design draws it as the frame `Contents — 360` in
+`design/exports/recipe-360.html`:
+`w-[360px] absolute left-0 top-0 bg-[#FCFAF6] overflow-hidden`.
+
+| Stock                                                                                                                                             | Now                                                                                      | Note                                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `w-3/4 sm:max-w-sm`                                                                                                                               | `w-full`                                                                                 | The drawer is the full width of the 360 screen. A cap would leave a strip of scrim the design does not draw.                                                                                                                |
+| `side = "right"`                                                                                                                                  | `side = "left"`                                                                          | The design opens it from the left.                                                                                                                                                                                          |
+| `bg-background`                                                                                                                                   | `bg-paper text-ink`                                                                      | Design name; and §3.2 — there is no raised ground to put it on.                                                                                                                                                             |
+| `shadow-lg`                                                                                                                                       | dropped                                                                                  | Silent, and §4.5 forbids it.                                                                                                                                                                                                |
+| —                                                                                                                                                 | `rounded-none`                                                                           | Stated rather than assumed.                                                                                                                                                                                                 |
+| `border-l` / `border-r` / `border-t` / `border-b`                                                                                                 | `+ border-hair`                                                                          | Stock leaves the colour to preflight, which is off until M7.                                                                                                                                                                |
+| overlay `bg-black/50`                                                                                                                             | **kept**                                                                                 | The one place `black` survives §4.5's clearing, and the comment in `theme.css` says why: shadcn/ui draws its scrim with it. A full-width drawer hides it, but the layer still catches the dismissing click.                 |
+| close: `rounded-xs opacity-70 hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 data-[state=open]:bg-secondary` + lucide `XIcon` | `size-7 rounded-none font-mono text-18 text-ink hover:bg-accent-wash` + the design's `×` | `rounded-xs` was silent, and opacity is out. The design draws this control as `×` in Geist Mono at 18px. 28px box, above `audit-ui`'s 24 × 24 floor. Pass `showCloseButton={false}` when `F/Site header 360` draws its own. |
+| `SheetHeader`: `flex-col gap-1.5 p-4`                                                                                                             | `flex-row items-center justify-between gap-2 border-b border-hair p-4`                   | The design's drawer header is a 16px box with a 1px `f-hair` rule under it.                                                                                                                                                 |
+| `SheetTitle`: `font-semibold text-foreground`                                                                                                     | `font-serif text-17 leading-normal font-medium tracking-flat text-ink`                   | `Brand > W` is Newsreader 17px at weight 500. Stock set no face and no size at all. Radix requires a title on every dialog — wrap it in `sr-only` rather than omitting it.                                                  |
+| `SheetDescription`: `text-sm text-muted-foreground`                                                                                               | `font-sans text-13 leading-170 tracking-flat text-ink-3`                                 | `text-sm` was silent. The drawer entry's `D` is Geist 13px over 22px; 22 ÷ 13 is 1.69, which is `leading-170` to a tenth of a pixel (§4.3).                                                                                 |
+| content `gap-4`                                                                                                                                   | `gap-0 overflow-y-auto`                                                                  | The drawer's own sections carry their spacing, and nine entries can exceed a 360 × 780 screen.                                                                                                                              |
+
+R-NAV-06 and R-CMP-02 keep the list control **outside** this drawer. Nothing
+in the file enforces that; it is a rule for whoever composes
+`F/Site header 360`.
+
+### 11.4 Reading a size from a token, not writing a length
+
+The design's control padding is not on the thirteen-step gap scale of §4.4:
+`F/Button` is `p-[11px_18px]`, `F/Field` is `p-[10px_12px]`, `F/Mark` is
+`p-[4px_9px]`.
+
+No primitive writes an arbitrary length for these. `--spacing`
+is pinned to 4px (§4.4) and Tailwind's spacing scale accepts a fractional
+multiplier, so `px-4.5` compiles to `calc(var(--spacing) * 4.5)` — 18px read
+from the token. The same trick gives 11px (`2.75`), 10px (`2.5`), 9px
+(`2.25`) and 7px (`1.75`).
+
+This deliberately adds **no** new token. §4.5 requires that any token added
+to `theme.css` be repeated in `src/lib/utils.ts` in the same commit, so a
+padding scale would have been a second file and a second list to keep in
+step, for values that are the design's own off-scale drift rather than a
+declared scale. If the designer later ratifies a control-padding scale, it
+belongs in `theme.css` with the nine provisional values in §8 — and these
+multipliers are then a single find-and-replace.
+
+§8.1 extends the same rule to `src/components/f/`, which shipped a second
+convention — `px-[18px]` beside `px-4.5` for the same 18px on the same
+component — until it was normalised. There is one form now.
+
+Verified against the built stylesheet: every utility the primitives use
+emits a rule, and every one of those rules reads a `var(--…)` from
+`theme.css`. Nothing was dropped silently.

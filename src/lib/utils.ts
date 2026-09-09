@@ -74,9 +74,13 @@ const CONTAINERS = ['col-narrow', 'col-wide'];
 /** `--spacing-*` in theme.css: the three provisional 360 gaps. */
 const SPACINGS = ['list-360', 'brand-360', 'section-360'];
 
+/** `--breakpoint-*` in theme.css. The shell has exactly one, at 1080px. */
+const BREAKPOINTS = ['shell'];
+
 const twMerge = extendTailwindMerge({
   extend: {
     theme: {
+      breakpoint: BREAKPOINTS,
       container: CONTAINERS,
       spacing: SPACINGS,
       radius: RADII,

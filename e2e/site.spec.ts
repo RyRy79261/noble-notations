@@ -124,3 +124,59 @@ test('the sign-in page is reachable and not indexed', async ({ page }) => {
   const robots = page.locator('meta[name="robots"]');
   await expect(robots).toHaveAttribute('content', /noindex/);
 });
+
+test('the connector is reachable on a phone, not only at 1280', async ({
+  page,
+}) => {
+  // C-04 names the connector link as a footer function and §8.1 says
+  // `/connect` is "linked from the footer"; it is deliberately absent from
+  // the sitemap, so the footer link is its only address. The design drops
+  // the middle slot below 1280, which would leave the MCP connector, the
+  // repository and /llms.txt unreachable on every phone and tablet, and the
+  // assertion above cannot see it because Playwright's default viewport is
+  // 1280. G-16 in `page-foot.tsx` records the departure.
+  await page.setViewportSize({ width: 360, height: 780 });
+  await page.goto('/');
+
+  for (const href of ['/connect', '/llms.txt']) {
+    await expect(page.locator(`.site-footer a[href="${href}"]`)).toBeVisible();
+  }
+  await expect(
+    page.locator('.site-footer a[href*="github.com"]'),
+  ).toBeVisible();
+});
+
+test('the 360 drawer hides the rest of the page from a screen reader', async ({
+  page,
+}) => {
+  // Radix hides the background of a modal dialog with `hideOthers`, which
+  // deliberately exempts every `[aria-live]` element AND every ancestor of
+  // one. A live region anywhere inside the shell therefore keeps the whole
+  // shell in the accessibility tree behind the open drawer — measured, with
+  // one recipe collected, as a header link named just "1". Every live region
+  // now sits outside the shell (`src/app/announcer.tsx`), and this asserts
+  // the boundary with a basket that is NOT empty, which is the case that
+  // used to leak.
+  await page.setViewportSize({ width: 360, height: 780 });
+  await page.goto('/');
+  await page.evaluate(() =>
+    window.localStorage.setItem(
+      'nn:basket',
+      JSON.stringify([{ slug: 'baumy-biltong', title: 'Baumy Biltong' }]),
+    ),
+  );
+  await page.reload();
+  await expect(page.locator('.basket-button')).toBeVisible();
+
+  await page.getByRole('button', { name: /open the contents/i }).click();
+  await expect(page.locator('[role=dialog]')).toBeVisible();
+
+  const exposed = await page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>('a[href], button')]
+      .filter((el) => !el.closest('[role=dialog]'))
+      .filter((el) => !el.closest('[aria-hidden="true"]'))
+      .map((el) => `${el.tagName}:${(el.textContent ?? '').trim()}`),
+  );
+
+  expect(exposed).toEqual([]);
+});

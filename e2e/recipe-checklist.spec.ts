@@ -128,7 +128,10 @@ test('a recipe can be added to the basket and built into a list', async ({
 
   // Both recipes end up in the URL, so the result is still shareable.
   await page.waitForURL(/list\?r=.*&r=/);
-  await expect(page.getByText(/2 recipes/i)).toBeVisible();
+  // Scoped to `main`: the assertion is about the page's own lede, and the
+  // document's polite live region (`src/app/announcer.tsx`, a sibling of the
+  // shell) says the same count out loud when the second recipe is added.
+  await expect(page.locator('main').getByText(/2 recipes/i)).toBeVisible();
   await expect(page.locator('.shopping-item').first()).toBeVisible();
 });
 

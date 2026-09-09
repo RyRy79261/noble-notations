@@ -144,6 +144,28 @@
   --container-col-wide: 115px;
 
   /*
+   * THE SHELL'S ONE BREAKPOINT. The design does not draw it: it draws 1280
+   * and it draws 360, and the build has to choose where one becomes the
+   * other.
+   *
+   * The 1280 header's intrinsic minimum is the brand (194.4) plus the nine
+   * navigation items (676.5) plus the list control (56.8) plus two 60px
+   * gutters — 1047.7px. Tailwind's own `lg` is 1024 and overflows that,
+   * which is exactly the UNREACHABLE fault R-ACC-11 exists for; `xl` is
+   * 1280 and is a knife edge, because a classic scrollbar takes the query
+   * below the viewport `pnpm audit:ui` drives at, and every laptop between
+   * 1080 and 1280 would get the phone drawer for no reason. 1080 is the
+   * first width the design's own row fits in.
+   *
+   * It is a token and not a literal so that one edit moves it. `shell:` is
+   * mirrored in `src/lib/utils.ts` with every other name this file adds.
+   * Tailwind's five stock breakpoints are left alone: nothing in the build
+   * uses them, and clearing the namespace would only make a stock name emit
+   * nothing rather than fail.
+   */
+  --breakpoint-shell: 1080px;
+
+  /*
    * Type. The seventeen steps of BUILD-PLAN §2.2. The name is the size in
    * pixels, with a leading zero below ten.
    *
@@ -317,6 +339,98 @@
     --f-caution: #8a5a12;
     --f-cta-line: #b0857a;
   }
+}
+
+/* ── The palette bridge (M3) ──────────────────────────────────────────────
+ *
+ * `globals.css` still styles the twenty screens that M4 to M6 have not
+ * rebuilt. It reads its own `--bg`, `--surface`, `--text`, `--accent` and
+ * twelve more, and those still hold the old purple palette. A header
+ * rebuilt in DOSSIER sitting on a page still painted in purple looks wrong,
+ * and the pairing is not guaranteed to pass R-ACC-01.
+ *
+ * The sixteen lines below redefine every colour property `globals.css`
+ * declares in terms of the DOSSIER tokens. Every old screen adopts the new
+ * colour at once; its layout, its spacing and its shape stay old until its
+ * own milestone rebuilds it. `globals.css` is NOT edited — D-03 deletes it
+ * whole at M7, and this block goes with it.
+ *
+ * THIS BLOCK IS UNLAYERED, AND THAT IS THE WHOLE MECHANISM. `globals.css`
+ * is imported at the top of this file into `layer(legacy)`. Unlayered CSS
+ * beats every layer whatever the order, so these declarations win over both
+ * of globals.css's `:root` blocks — the dark one AND the one inside its
+ * light media query. A media query adds no specificity and changes no
+ * layer, so ONE block is enough for BOTH themes.
+ *
+ * THERE IS NO SECOND BLOCK, AND THERE MUST NOT BE ONE. Both files are dark
+ * first: `globals.css` puts `--bg: #131211` on plain `:root` and `#fbfaff`
+ * in `@media (prefers-color-scheme: light)`, and this file does the same
+ * with `--f-paper` thirty lines above. Every value below is a `var(--f-*)`,
+ * so the bridge inherits that flip instead of repeating it. A bridge
+ * written as two blocks of hex could be written the wrong way round and
+ * invert the whole site. This one cannot be.
+ *
+ * COLOUR ONLY. The six non-colour properties `globals.css` declares —
+ * `--radius`, `--radius-sm`, `--font-sans`, `--font-mono`, `--measure` and
+ * `--page` — are deliberately NOT bridged. See TOKEN-MAP.md §10.4. Colour
+ * is self-completing: it repaints all twenty old screens with no geometric
+ * change at all, so the end-to-end tests and the `pnpm audit:ui` baseline
+ * are untouched. Radius and type are half-jobs that cost real risk.
+ * Flipping `--radius` to 2px squares fifteen corners and leaves eighteen
+ * hard-coded ones rounded, including every pill and the focus ring, so the
+ * page ends up less coherent than before. Flipping the faces reflows every
+ * line on every old screen and silently rescales `--measure: 68ch` by about
+ * 8%, because Geist's `0` is wider than the system stack's. Both are shape,
+ * not colour, and both belong to the milestone that rebuilds each screen.
+ */
+:root {
+  /* Grounds. TOKEN-MAP.md §3.1. `--surface` takes the page ground on
+     purpose: §5 item 2 says a card in this design is a rule, not a fill, so
+     `.card`, `.panel`, `.stat` and `.notice` become fill-less ruled blocks.
+     `--bg-elevated` is dropped outright by §3.2 — the design has no raised
+     ground — and it must stay fully opaque, because globals.css says so at
+     its own `.tag-tooltip` rule and `e2e/classes.spec.ts` asserts it. What
+     used to be its separation is now `--border-strong`, below. */
+  --bg: var(--f-paper);
+  --bg-elevated: var(--f-paper);
+  --surface: var(--f-paper);
+  --surface-2: var(--f-desk);
+
+  /* Rules. `--border-strong` takes `f-ink-3`, as TOKEN-MAP.md §3.2 directs.
+     It is load-bearing here, not cosmetic: with `--bg-elevated` collapsed
+     onto the page ground, this 1px rule is the only thing separating the
+     tag tooltip and the modal from the page behind them, and it is also the
+     timeline's current-revision dot and the border of the 44px scale
+     stepper. `f-hair` would erase all four. `f-ink-3` measures 5.25:1 light
+     and 5.60:1 dark, against 1.61:1 and 1.88:1 today, which clears WCAG
+     1.4.11 for the stepper and the dot as a side effect. */
+  --border: var(--f-hair);
+  --border-strong: var(--f-ink-3);
+
+  /* Text. Three levels, and they stay three levels: TOKEN-MAP.md §5 item 6
+     keeps `f-ink-2` and `f-ink-3` apart on purpose, because `--text-muted`
+     carries the 14px body and collapsing it onto `f-ink-3` would darken a
+     lot of copy for no reason. */
+  --text: var(--f-ink);
+  --text-muted: var(--f-ink-2);
+  --text-faint: var(--f-ink-3);
+
+  /* The accent. `--accent-strong` has no `var()` use left in globals.css
+     and no value in the design (§3.2: the design draws no hover colour). It
+     is bridged anyway, one line, so that no later edit to globals.css can
+     bring the purple back. */
+  --accent: var(--f-accent);
+  --accent-strong: var(--f-accent);
+  --accent-dim: var(--f-accent-wash);
+  --accent-contrast: var(--f-on-accent);
+
+  /* The warning tier. `--warn-border` was a 22%-alpha wash; §3.2 says the
+     design draws a solid rule, so it takes the full `f-warn`. Its one use
+     is `.form-error`, where a solid 1px red rule is strictly better for
+     WCAG 1.4.11 than the ghost it replaces. */
+  --warn: var(--f-warn);
+  --warn-bg: var(--f-warn-wash);
+  --warn-border: var(--f-warn);
 }
 
 /* R-ACC-09: the design MUST obey `prefers-reduced-motion: reduce`.

@@ -214,3 +214,208 @@ leans on demi-glace, and the study page claimed the reverse.
 the index across every recipe gave demi-glace's one mechanism the code M5 on
 `/science` and M1 one click later. A code that means one thing everywhere is
 a column on `notes` — that is D-02, and it is still yours.
+
+---
+
+## D-06 — One file per design component, or one file per family
+
+**Status:** Decided. Change it if you disagree.
+**Date:** 2026-09-09
+**Touches:** R-CMP-16, R-BLD-03, §9.5
+
+### The problem
+
+The M3 brief says "Each F/Name becomes `src/components/f/<name>.tsx`" and
+names 22 components. There are 13 files. R-CMP-16 says a build **MUST** use
+the design's component names, and two exports carried names the design
+never uses — `PrimaryNav` and `NavDrawer`.
+
+### What I chose
+
+**The exported symbol carries the design's name. The file groups a family.**
+
+A name a reader greps for is a symbol, not a path, and the design's own
+families share their measurements: `F/Mark` and `F/Mark quiet` differ by a
+ground, `F/Site header` and `F/Site header 360` by one step of every value.
+Splitting those apart duplicates a constant into two files, where the two
+can drift and no reviewer sees both at once.
+
+Two exports were renamed to the design's words, so the design is greppable
+from the code and back:
+
+| Was          | Now           | The design's name            |
+| ------------ | ------------- | ---------------------------- |
+| `PrimaryNav` | `Navigation`  | `F/Site header > Navigation` |
+| `NavDrawer`  | `Contents360` | the frame `Contents — 360`   |
+
+`Contents360` drops the em dash, which is not an identifier. Nothing else
+about either changed.
+
+### The map from F/ name to file
+
+| F/ name                    | File                  | Export         |
+| -------------------------- | --------------------- | -------------- |
+| F/Skip link                | `f/skip-link.tsx`     | `SkipLink`     |
+| F/Site header              | `f/site-header.tsx`   | `SiteHeader`   |
+| F/Site header 360          | `f/site-header.tsx`   | `SiteHeader`   |
+| F/Site header > Brand      | `f/site-header.tsx`   | `Brand`        |
+| F/Site header > Navigation | `f/nav-drawer.tsx`    | `Navigation`   |
+| Contents — 360             | `f/nav-drawer.tsx`    | `Contents360`  |
+| F/Page head                | `f/page-head.tsx`     | `PageHead`     |
+| F/Page head 360            | `f/page-head.tsx`     | `PageHead`     |
+| F/Page hero                | `f/page-head.tsx`     | `PageHero`     |
+| F/Page foot                | `f/page-foot.tsx`     | `PageFoot`     |
+| F/Breadcrumb               | `f/breadcrumb.tsx`    | `Breadcrumb`   |
+| F/Section label            | `f/section-label.tsx` | `SectionLabel` |
+| F/Section 360              | `f/section-label.tsx` | `Section360`   |
+| F/Mark                     | `f/mark.tsx`          | `Mark`         |
+| F/Mark quiet               | `f/mark.tsx`          | `MarkQuiet`    |
+| F/Tag                      | `f/tag.tsx`           | `Tag`          |
+| F/Tag CTA                  | `f/tag.tsx`           | `TagCTA`       |
+| F/Tag hierarchy            | `f/tag.tsx`           | `TagHierarchy` |
+| F/Button                   | `f/button.tsx`        | `Button`       |
+| F/Field                    | `f/field.tsx`         | `Field`        |
+| F/Filter                   | `f/field.tsx`         | `Filter`       |
+| F/Notice                   | `f/notice.tsx`        | `Notice`       |
+| F/Empty                    | `f/notice.tsx`        | `Empty`        |
+| F/Stat                     | `f/stat.tsx`          | `Stat`         |
+| F/Measure                  | `f/stat.tsx`          | `Measure`      |
+
+M4 adds its fifteen under the same rule.
+
+### To change it
+
+Split each family into its own file and re-export from the family file so
+no caller changes. It is a mechanical move; the constants each family shares
+have to move to a fourth file rather than be copied.
+
+---
+
+## D-07 — The page foot's left slot is a document issue, not a copyright
+
+**Status:** Decided. **Worth your eye.**
+**Date:** 2026-09-09
+**Touches:** C-04, §9.1, R-CMP-16
+
+### The problem
+
+C-04 in §9.1 says the site footer "holds the copyright, the connector link
+and the source link". The design draws no copyright. `grep -o '©'` over all
+eighteen exports returns nothing. What the design draws in that slot is an
+effectivity or provenance statement in mono capitals —
+`EFFECTIVITY: SIXTH REVISION AND ON`, `EVERY RUN, LINKED OR NOT`,
+`COMPILED 08 SEP 2026 · TWENTY-SEVEN INGREDIENTS` — and, on every screen
+with no effectivity of its own (`/connect`, `/connect/done`, `/sign-in`,
+404), the document issue `ISSUE 01 · 08 SEP 2026`.
+
+The build was carrying `© 2026 NOBLE NOTATIONS` into that slot, uppercased,
+on all 22 routes, because the pre-M3 layout said it.
+
+### What I chose
+
+The default is the design's own generic left slot: `site.issue`, which is
+`Issue 01 · 08 Sep 2026`. It is a constant in `src/lib/site.ts` and not a
+computed date, because a document issue changes when the document is
+reissued and not when the clock does. Each screen overrides it with its own
+effectivity as M4 to M6 rebuild it.
+
+The copyright is gone from the user interface. BUILD-PLAN §2 makes the
+design the source of truth for how a screen reads, no R-numbered rule asks
+for a copyright, and no test asserted one.
+
+### To change it
+
+Restore it as a fourth slot, or pass it as `left` from the layout. Do not
+put a © inside the drawn slot: it is set in mono capitals, which is not how
+a copyright notice is written.
+
+---
+
+## D-08 — An explanation on a tag requires a term page
+
+**Status:** Decided.
+**Date:** 2026-09-09
+**Touches:** R-ACC-10, R-CMP-03, C-07
+
+### The problem
+
+`F/Tag` shows its explanation in a Radix tooltip, and Radix never opens a
+tooltip for a coarse pointer: `onPointerMove` returns early for
+`pointerType === 'touch'`, `onPointerDown` closes it and raises a flag, and
+the `onFocus` that follows the tap is suppressed by that flag. R-ACC-10 asks
+for a path that is not hover.
+
+The old build's answer is at `globals.css` line 752, in its own words:
+"Coarse pointers have no hover … Tapping the tag navigates to the term page,
+which shows the same blurb as body text." That answer needs somewhere to
+tap through to. The M3 primitive allowed an explanation on a tag with no
+`href`, which rendered a focusable `<span>` with no role, no destination and
+no route to its own text on a phone.
+
+### What I chose
+
+`TagProps` and `HierarchyTerm` are unions: an `explanation` requires an
+`href`. The unreachable shape is not representable rather than documented.
+C-07 describes the same pairing — "It links to the term page. It shows the
+term explanation" — so nothing the design draws is lost, and the tap-through
+fallback the old build relied on always exists.
+
+### The other option
+
+Render the explanation as visible text under `@media (hover: none)`, or make
+the trigger a toggle button that opens the panel on click. Both add a second
+drawing the design does not have, at a width the design does draw.
+
+### To change it
+
+Relax the union in `src/components/f/tag.tsx` and add a coarse-pointer path
+in the same commit. Do not relax it alone.
+
+---
+
+## D-09 — The bridge carries colour, not the faces or the radius
+
+**Status:** Decided. This is the orchestrator's ruling on M3.
+**Date:** 2026-09-09
+**Touches:** R-CON-12, D-03
+
+### The problem
+
+M3 asked the palette bridge to carry colour, the faces and the radius, so
+that every screen not yet rebuilt would adopt all three at once.
+
+The bridge carries colour only. `design/TOKEN-MAP.md` §10.4 gives three
+reasons. Each one is real:
+
+1. The Tailwind font stacks end in no generic family, so a face that fails
+   to load has nothing to fall back to.
+2. `--measure: 68ch` is the width of a text block. Geist is wider than the
+   system stack, so the measure grows by about 8 per cent. Every old screen
+   would reflow.
+3. Both gates run in the light theme. A reflow in the dark theme would not
+   be caught.
+
+### What I decided
+
+**Accept it.** The bridge carries colour.
+
+A reader now sees two faces on an old screen: Newsreader and Geist in the
+shell, the system stack in the body. A reader also sees two radii: 2px in
+the shell, 12px on an old card.
+
+This is a temporary state and it is cheap to hold. M4 to M6 rebuild every
+one of those screens, and each rebuild takes the design's faces and the
+design's radius with it. Bridging the faces now would reflow 20 screens
+that we are about to delete, and it would risk the audit baseline for no
+lasting gain.
+
+### The cost
+
+The site looks mixed until M6 ends. That is the cost of the whole
+coexistence strategy in D-03, not a new cost.
+
+### To change it
+
+Add the three properties to the bridge block in `src/app/theme.css`, then
+re-run `pnpm audit:ui` at all four widths in both themes and fix what
+reflows.

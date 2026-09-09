@@ -50,15 +50,42 @@ export function ListRecipes({
 
   if (shown.length === 0) return null;
 
+  /*
+   * WCAG 1.4.3, and the one contrast fault M3's palette bridge introduced.
+   *
+   * `globals.css` draws the pending state as `opacity: 0.6` on the whole
+   * section, which composites live text against the page: 4.66:1 before the
+   * bridge, 4.23:1 after it, on links that stay focusable and clickable
+   * throughout, so WCAG's relief for an inactive control does not apply.
+   *
+   * `globals.css` is history and is not edited (D-03). `opacity-100` is a
+   * utility, and `@layer utilities` sits above `@layer legacy`, so it wins
+   * over that rule without touching the file. The pending state is then
+   * drawn the way the old stylesheet draws its other two pending controls —
+   * with a colour. `f-ink-3` is 5.25:1 light and 5.60:1 dark, and it also
+   * clears the remove control's own pre-existing 2.75:1.
+   *
+   * `aria-busy` says the same thing to a screen reader that the tint says
+   * to a sighted reader.
+   */
+  const quiet = pending ? 'text-ink-3' : undefined;
+
   return (
-    <section className="list-recipes" data-pending={pending || undefined}>
+    <section
+      className="list-recipes opacity-100"
+      data-pending={pending || undefined}
+      aria-busy={pending || undefined}
+    >
       <h2 className="visually-hidden">Recipes on this list</h2>
       <ul>
         {shown.map((recipe) => (
           <li key={recipe.slug}>
-            <Link href={`/recipes/${recipe.slug}`}>{recipe.title}</Link>
+            <Link href={`/recipes/${recipe.slug}`} className={quiet}>
+              {recipe.title}
+            </Link>
             <button
               type="button"
+              className={quiet}
               onClick={() => remove(recipe.slug)}
               aria-label={`Remove ${recipe.title} from the list`}
             >

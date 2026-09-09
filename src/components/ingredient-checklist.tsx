@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { formatQuantity } from '@/lib/domain/units';
 import { scaleAmount, useScale } from './scale';
+import { useAnnounce } from '@/lib/announce';
 import { CATEGORY_LABELS, categoryRank } from '@/lib/site';
 import type { IngredientLineView } from '@/lib/queries/read';
 
@@ -154,6 +155,9 @@ export function IngredientChecklist({
   }, [lines, byShop]);
 
   const done = lines.filter((line) => checked.has(line.id)).length;
+  // `ready` is the hydration flag: the ticks restored from storage on
+  // arrival are the baseline, not an announcement.
+  useAnnounce(`${done} of ${lines.length} ingredients ticked`, ready);
 
   return (
     <>
@@ -174,7 +178,9 @@ export function IngredientChecklist({
             As written
           </button>
         </div>
-        <span className="faint" aria-live="polite">
+        {/* Announced through the document's one live region, not from
+            here: see the note in `filterable-groups.tsx`. */}
+        <span className="faint">
           {done} / {lines.length}
         </span>
       </div>

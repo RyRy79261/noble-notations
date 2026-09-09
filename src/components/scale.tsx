@@ -74,7 +74,7 @@ export function ScaleProvider({
   // character at a time, and "0" then "0." are not usable multipliers, so a
   // handler that only commits usable numbers rejected the keystrokes and
   // React snapped the box back — leaving the caret after the old digits so
-  // the next keystroke appended. Measured: select-all then "0.5" produced
+  // the next keystroke appended. Measured: select all, then "0.5", produced
   // 1.5 and 15 kg of beef, the field could not be emptied at all, and a
   // second attempt gave "1.505". A half batch was unreachable by typing.
   const [scale, setScaleValue] = useState(1);

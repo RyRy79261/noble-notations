@@ -2,6 +2,8 @@
 
 import { useMemo, useState, type ReactNode } from 'react';
 
+import { useAnnounce } from '@/lib/announce';
+
 /**
  * A filter box over any view that renders items inside groups.
  *
@@ -102,6 +104,10 @@ export function FilterableGroups({
 
   const shown = visible.reduce((sum, group) => sum + group.items.length, 0);
   const total = groups.reduce((sum, group) => sum + group.items.length, 0);
+  const countText = needle
+    ? `${shown} of ${total} ${countNoun}${total === 1 ? '' : 's'}`
+    : `${total} ${countNoun}${total === 1 ? '' : 's'}`;
+  useAnnounce(countText);
 
   return (
     <>
@@ -118,10 +124,14 @@ export function FilterableGroups({
             aria-describedby="filter-count"
           />
         </label>
-        <p id="filter-count" className="faint" aria-live="polite">
-          {needle
-            ? `${shown} of ${total} ${countNoun}${total === 1 ? '' : 's'}`
-            : `${total} ${countNoun}${total === 1 ? '' : 's'}`}
+        {/* The count is described text, not a live region of its own: a
+            region inside `<main>` keeps the whole shell in the
+            accessibility tree behind the open 360 drawer, because Radix's
+            `hideOthers` exempts one and every ancestor of it. The change is
+            announced through the document's single region instead. See
+            `src/lib/announce.ts`. */}
+        <p id="filter-count" className="faint">
+          {countText}
         </p>
       </div>
 

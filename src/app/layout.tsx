@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { Geist, Geist_Mono, Newsreader } from 'next/font/google';
 import { site } from '@/lib/site';
 // theme.css is the only stylesheet the layout imports. It pulls globals.css
@@ -73,24 +72,11 @@ export const metadata: Metadata = {
   robots: { index: true, follow: true },
 };
 
-import { BasketButton } from '@/components/shopping-basket';
+import { Announcer } from './announcer';
+import { PageFoot } from '@/components/f/page-foot';
+import { SiteHeader } from '@/components/f/site-header';
+import { SkipLink } from '@/components/f/skip-link';
 import { HeaderHeight } from '@/components/header-height';
-
-// The 9 destinations of §8.2, in the order the design draws them. Science
-// is the item M2 adds; the other 8 were already here under older names.
-// The header itself is untouched: M3 rebuilds it as a drawer, which is what
-// R-NAV-01 and R-NAV-03 need at 360px. This array is the whole change.
-const NAV = [
-  { href: '/recipes', label: 'Recipes' },
-  { href: '/science', label: 'Science' },
-  { href: '/cuisines', label: 'Cuisines' },
-  { href: '/classes', label: 'Classes' },
-  { href: '/ingredients', label: 'Ingredients' },
-  { href: '/list', label: 'List' },
-  { href: '/batch-logs', label: 'Batch logs' },
-  { href: '/archive', label: 'Archive' },
-  { href: '/search', label: 'Search' },
-];
 
 export default function RootLayout({
   children,
@@ -101,53 +87,65 @@ export default function RootLayout({
       className={`${newsreader.variable} ${geistSans.variable} ${geistMono.variable}`}
     >
       <body>
-        <div className="shell">
-          <a className="skip-link" href="#main">
-            Skip to content
-          </a>
-          <header className="site-header">
-            <div className="site-header-inner">
-              <Link href="/" className="brand">
-                <span aria-hidden>◆</span> {site.name}
-              </Link>
-              {/* Outside the nav on purpose: the nav scrolls sideways on a
-                  phone, which used to park this off the right edge. */}
-              <BasketButton />
-              <nav className="site-nav" aria-label="Primary">
-                {NAV.map((item) => (
-                  <Link key={item.href} href={item.href}>
-                    {item.label}
-                  </Link>
-                ))}
-              </nav>
-            </div>
-          </header>
+        {/*
+         * C-01, and the design's `F/Skip link`. Its caption in Plate II is
+         * the whole specification: "FIRST CONTROL IN THE PAGE · OFF SCREEN
+         * UNTIL IT TAKES KEYBOARD FOCUS · MOVES FOCUS TO #MAIN". §9.1 puts
+         * it in this file and §9.5 gives it a name, so it is composed here
+         * and drawn there.
+         *
+         * It is the first element in the body and it sits outside the shell,
+         * which clips its own horizontal overflow.
+         */}
+        <SkipLink />
 
-          {/* Anything that must clear the sticky header reads --header-h,
-              because the header's height depends on content, not width. */}
+        {/*
+         * R-ACC-06, and the drawer's modal boundary. The document's one
+         * polite live region is a SIBLING of the shell, never a child of
+         * it: Radix's `hideOthers` exempts every `[aria-live]` element and
+         * every ancestor of one, so a region inside the shell would leave
+         * the whole shell in the accessibility tree behind the open 360
+         * drawer. See `src/lib/announce.ts`.
+         */}
+        <Announcer />
+
+        {/*
+         * `min-h-dvh` and the column keep the foot at the bottom of a short
+         * screen. `overflow-x: clip` is load-bearing and it is `clip` and
+         * not `hidden` on purpose: a tag tooltip is absolutely positioned
+         * and about 350px wide, and even held at `visibility: hidden` it
+         * still occupies layout, so a tag near the right edge used to push
+         * every page carrying tags sideways at every width. `hidden` would
+         * fix that and make this a scroll container, which would break the
+         * sticky header inside it.
+         */}
+        <div className="flex min-h-dvh flex-col overflow-x-clip">
+          <SiteHeader />
+
+          {/* R-NAV-05. Anything that must clear the sticky header reads
+              `--header-h`, because the header's height depends on its
+              content — the list control alone moves it — and not on the
+              width. */}
           <HeaderHeight />
 
-          {/* tabIndex so "Skip to content" actually moves focus. Without it
-              only Chromium's sequential-focus fallback papers over the gap
-              and Safari does nothing at all. */}
-          <main id="main" tabIndex={-1}>
+          {/*
+           * R-ACC-04: `tabIndex` so "Skip to content" actually moves focus.
+           * Without it only Chromium's sequential-focus fallback papers
+           * over the gap and Safari does nothing at all.
+           *
+           * The 60/16 gutter the design gives `Main` is deliberately NOT
+           * here yet. Twenty screens still lay themselves out with the old
+           * `.page` wrapper and its own padding, and adding a second gutter
+           * under them would narrow every one of them for no gain until
+           * M4 to M6 rebuild them.
+           */}
+          <main id="main" tabIndex={-1} className="flex-1">
             {children}
           </main>
 
-          <footer className="site-footer">
-            <div className="site-footer-inner">
-              <span>
-                © {new Date().getFullYear()} {site.name}. Notes on food, kept
-                properly.
-              </span>
-              <span className="row">
-                <Link href="/connect">MCP connector</Link>
-                <a href={site.repository} rel="noreferrer">
-                  Source
-                </a>
-              </span>
-            </div>
-          </footer>
+          {/* C-04. The two outer strings are per-screen copy; each screen
+              passes its own as M4 to M6 rebuild it. */}
+          <PageFoot />
         </div>
       </body>
     </html>
