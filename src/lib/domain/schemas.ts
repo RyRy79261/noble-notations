@@ -172,6 +172,34 @@ export const noteSchema = z.object({
 export type NoteInput = z.infer<typeof noteSchema>;
 
 /**
+ * **`position` is deliberately NOT in this shape, and not in any MCP tool.**
+ *
+ * `notes.position` and `note_sources.position` were added so a note holds a
+ * fixed place in the list it is drawn in — `/science` numbers a study's
+ * mechanisms `M1…Mn` from that order. The obvious next step is to let a
+ * client name the position, and it is the wrong one.
+ *
+ * The order a client can express, it already expresses: `notes` is an array
+ * and `writeNotes` stores it in the order given, so a caller writing four
+ * mechanisms in the order a cook meets them gets exactly that back. A
+ * `position` field on top of that is a second way to say the same thing,
+ * and the two disagree the first time a caller sets one and not the other.
+ *
+ * What a writable position would add is the one thing the model refuses
+ * everywhere else: writing into a list somebody else made. `add_note`
+ * appends to a recipe whose other notes it did not write, and choosing
+ * their slot would renumber a mechanism a reader has already cited, and
+ * change what `M2` means on a page that is already published — an edit of
+ * stored notes dressed as an insert. A note is append-only, its answer to a
+ * wrong claim is a `correction`, and the same rule holds for where it sits:
+ * a new note goes at the end of its subject, at `MAX(position) + 1`.
+ *
+ * To change it, add `position` here, drop it from the assignment in
+ * `writeNotes`, and decide what happens to the notes it pushes down —
+ * which is the design work this note is declining, not the code.
+ */
+
+/**
  * A research note without a source is not research.
  *
  * `research` exists to hold what was learned *around* a dish — an

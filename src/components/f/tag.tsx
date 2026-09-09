@@ -48,6 +48,50 @@ const TAG_PREFIX = cn(
    `pnpm audit:ui` reports the overflow (R-STA-09). */
 const TAG_NAME = 'text-13 font-sans text-ink';
 
+/* ── The `/classes` pill ───────────────────────────────────────────────────
+ *
+ * BUILD-PLAN §4.1 carried this from M4 to M6. F/Tag is correctly bare on the
+ * recipe card, the recipe hero and F/Tag hierarchy — 187 light instances of
+ * a name run with no ground at all. `/classes` is the one screen that draws
+ * it as a pill, 52 times, and the design draws it there and nowhere else:
+ *
+ *   1280  `p-[ 4px_9px_4px_10px ] bg-[ #F3EDE5 ] gap-[ 8px ]`, an 8×8
+ *         `#8E2A1E` square, the name at 13px
+ *         (`classes-cuisines-1280.html:388`)
+ *   360   `p-[ 5px_8px_5px_10px ]`, the same square, the name at 12px
+ *         (`m360-classes-ingredients.html:746`)
+ *
+ * NO OUTLINE, NO RADIUS. It is not F/Tag CTA, which is the OTHER pill on the
+ * classification family — `bg-accent-wash` inside a `f-cta-line` outline with
+ * a 15px Newsreader name and a 2px radius, drawn on home's classification
+ * band. Two grounds, two faces, two shapes; only one of them is this.
+ *
+ * The asymmetric padding is the design's own: the 8px square reads as part
+ * of the left edge, so it gets one more pixel of air in front of it than the
+ * name gets behind. Written as fractional multiples of `--spacing`, never as
+ * an arbitrary pixel length (TOKEN-MAP §8.1).
+ *
+ * WHY THIS IS A PROP AND NOT A `className` THE PAGE PASSES. The square is a
+ * DOM node, not a declaration, so a ground alone cannot draw it. It defaults
+ * to the bare form, so no other screen changes.
+ *
+ * WCAG 2.5.8, and the reason this was carried forward at all: bare, a term
+ * on `/classes` is 17px tall and `pnpm audit:ui` reports it as a small tap
+ * target. With the pill it is 25.6px at 360 and 24.9px at 1280, both over the
+ * 24px minimum.
+ */
+const TAG_PILL = cn(
+  'bg-desk py-1.25 pr-2 pl-2.5',
+  'shell:py-1 shell:pr-2.25 shell:pl-2.5',
+);
+
+/** The 8×8 marker. `aria-hidden`: it is a bullet, not a word. */
+const TAG_PILL_SQUARE = 'block h-2 w-2 shrink-0 bg-accent';
+
+/** The pill steps its name down one notch at 360, where the bare tag does
+ *  not. `m360-classes-ingredients.html:751` draws 12px. */
+const TAG_PILL_NAME = cn('text-12 font-sans text-ink', 'shell:text-13');
+
 /**
  * R-ACC-10 — WHY AN EXPLANATION REQUIRES AN `href`.
  *
@@ -86,6 +130,12 @@ export type TagProps = Omit<HTMLAttributes<HTMLElement>, 'prefix'> & {
    * in the DOM until the designer rules on a treatment for it.
    */
   primary?: boolean;
+  /**
+   * The `/classes` drawing: an `f-desk` ground, an 8×8 accent square and a
+   * 12/13px name. Defaults to the bare tag, which is what every other screen
+   * draws. See `TAG_PILL` above, and BUILD-PLAN §4.1.
+   */
+  pill?: boolean;
 } & (
     | {
         /** The term explanation. Shown on hover and on focus (R-CMP-03). */
@@ -159,21 +209,25 @@ export function Tag({
   explanation,
   explanationLabel,
   primary,
+  pill = false,
   className,
   ...props
 }: TagProps) {
   const body = (
     <>
+      {pill ? <span aria-hidden className={TAG_PILL_SQUARE} /> : null}
       {prefix ? <span className={TAG_PREFIX}>{prefix}</span> : null}
-      <span className={TAG_NAME}>{name}</span>
+      <span className={pill ? TAG_PILL_NAME : TAG_NAME}>{name}</span>
     </>
   );
+
+  const shape = cn(TAG_ROW, pill ? TAG_PILL : undefined);
 
   const term = href ? (
     <Link
       href={href}
       data-primary={primary ? 'true' : undefined}
-      className={cn(TAG_ROW, 'no-underline', FOCUS_RING, className)}
+      className={cn(shape, 'no-underline', FOCUS_RING, className)}
       {...(props as AnchorHTMLAttributes<HTMLAnchorElement>)}
     >
       {body}
@@ -181,7 +235,7 @@ export function Tag({
   ) : (
     <span
       data-primary={primary ? 'true' : undefined}
-      className={cn(TAG_ROW, className)}
+      className={cn(shape, className)}
       {...props}
     >
       {body}

@@ -4,7 +4,6 @@ slug: 'pickled-jalapenos'
 kind: 'recipe'
 revision: 1
 source: 'import'
-created: '2026-09-09T10:43:10.400Z'
 generated: 'true'
 ---
 
@@ -56,10 +55,6 @@ Transcribed from the archive as originally written.
 
 Keeps in the refrigerator for up to 2 months.
 
-### Sugar as a heat dial _(substitution)_
-
-More sugar gives a milder pickle, less keeps it spicier.
-
 ### Variations worth trying _(idea)_
 
 Untested ideas carried over from the original note:
@@ -72,3 +67,7 @@ Untested ideas carried over from the original note:
 - Coconut sugar instead of white sugar
 
 Scale the brine up if you add vegetables — everything has to stay submerged.
+
+### Sugar as a heat dial _(substitution)_
+
+More sugar gives a milder pickle, less keeps it spicier.

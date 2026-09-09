@@ -496,9 +496,9 @@ export function RecipeDetail({
     // cannot disagree (R-CMP-11).
     <ScaleProvider servings={rev.servings}>
       <PageHead
-        left={<span className="uppercase">Recipes · {recipe.title}</span>}
-        leftNarrow={<span className="uppercase">{recipe.title}</span>}
-        right={<span className="uppercase tabular-nums">{headRight}</span>}
+        left={`Recipes · ${recipe.title}`}
+        leftNarrow={recipe.title}
+        right={headRight}
         /* `f-warn` on a superseded revision and `f-ink-3` otherwise. The
            design draws the kicker in the warn red on that screen only
            (`recipe-revision-1280.html:195`), against the `f-ink-3` of the

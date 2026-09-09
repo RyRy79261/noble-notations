@@ -4,7 +4,6 @@ slug: 'demi-glace'
 kind: 'preparation'
 revision: 1
 source: 'import'
-created: '2026-09-09T10:43:10.505Z'
 generated: 'true'
 ---
 
@@ -83,10 +82,6 @@ Transcribed from the archive research note into an executable preparation.
 
 ## Notes
 
-### Time is the actual ingredient _(warning)_
-
-This is a 48–72 hour commitment. Every shortcut in it trades away the thing that makes it worth doing.
-
 ### Why each layer exists _(science)_
 
 The dual bone foundation is doing three separate jobs: marrow for fat and mouthfeel, veal knuckle for gelatin, oxtail for concentrated meatiness. Dropping any one of them is a real loss rather than a simplification. The triple clarification is likewise three different mechanisms — mechanical, protein raft, adsorption — not the same step done three times.
@@ -97,3 +92,31 @@ Conditions: 8+ hours · held under 100 °C · three clarification passes
 - Source: https://chefjeanpierre.com/recipes/sauces/demi-glace-recipe/
 - Source: https://www.thefrenchcookingacademy.com/recipes/home-style-demi-glace
 - Source: https://guide.michelin.com/tw/en/article/dining-in/the-5-mother-sauces-of-french-cuisine
+
+### Maillard browning of the bone surface _(science)_
+
+The first roast is where the colour and most of the roasted flavour of a brown stock are made. The long simmer after it extracts gelatin and does not add either. The bones go in one layer on a rack so that every face meets dry heat rather than steaming against the pan.
+
+Conditions: 232 °C · 45 min · single layer on a rack
+
+### Pyrolization of tomato sugars _(science)_
+
+Tomato paste thinned with red wine vinegar is brushed over the roasted bones and they go back into a cooler oven. At 204 °C the sugars in the paste pyrolise rather than burn, and leave a savoury crust that dissolves into the stock instead of a bitter one that does not.
+
+Conditions: 204 °C · 20 min · after the first roast
+
+### The protein raft _(science)_
+
+The stock is cooled to 4 °C, then ice and lightly beaten egg whites are stirred in and the pot is brought back up to 71 °C slowly. The coagulating albumen forms a raft that traps the fine particulate and carries it to the surface, which is the second of the three clarification passes and the only one that removes what a sieve cannot.
+
+Conditions: 4 °C → 71 °C · four egg whites
+
+### Adsorption filtration _(science)_
+
+The last pass is a colander lined with damp coffee filters over an inch of diatomaceous earth, poured through under gravity alone. Particles far smaller than the pore size are held by surface attraction rather than sieved, which is what takes a clear stock to an optically clear one.
+
+Conditions: gravity · final pass
+
+### Time is the actual ingredient _(warning)_
+
+This is a 48–72 hour commitment. Every shortcut in it trades away the thing that makes it worth doing.

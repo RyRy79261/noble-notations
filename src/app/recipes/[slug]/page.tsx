@@ -61,9 +61,9 @@ export default async function RecipePage({ params }: Params) {
     return (
       <>
         <PageHead
-          left={<span className="uppercase">Recipes · {slug}</span>}
-          leftNarrow={<span className="uppercase">{slug}</span>}
-          right={<span className="uppercase">Unavailable</span>}
+          left={`Recipes · ${slug}`}
+          leftNarrow={slug}
+          right="Unavailable"
         />
         <div className="flex w-full flex-col items-start gap-5 px-4 pt-5.5 pb-12 shell:px-15 shell:pt-8.5 shell:pb-18">
           <h1 className="m-0 text-40 leading-105 font-serif font-medium tracking-display text-ink shell:text-48 shell:leading-105">

@@ -4,7 +4,6 @@ slug: 'baumy-biltong'
 kind: 'recipe'
 revision: 6
 source: 'import'
-created: '2026-09-09T10:43:10.345Z'
 generated: 'true'
 ---
 
@@ -91,10 +90,10 @@ Net weight loss −55% · Rate 4.21% per day
 
 30 × 7 cm steel hooks, 13 g each — €29.97. The 13 g is subtracted from every gross weight to get net.
 
-### Expected yield _(observation)_
-
-About 45% of net weight, so roughly 4.5 kg finished from 10 kg raw, across an estimated 25–30 pieces.
-
 ### Salt: conservative or full +40% _(idea)_
 
 The alternative reading of the batch 5 note gives 193.9 g of salt. Batches 4 and 5 both tasted right at ~13.5–13.85 g/kg, so this revision takes the conservative figure. If the finished batch reads under-seasoned rather than under-covered, that is the number to revisit.
+
+### Expected yield _(observation)_
+
+About 45% of net weight, so roughly 4.5 kg finished from 10 kg raw, across an estimated 25–30 pieces.

@@ -1272,6 +1272,83 @@ const DEMI_GLACE: RecipeSeed = {
           },
         ],
       },
+      /*
+       * THE FOUR MECHANISMS BELOW ARE APPENDED, AND THE ORDER MATTERS.
+       *
+       * The design draws five mechanisms on `/science/demi-glace`
+       * (`design/exports/science-1280.html:1023`) where this seed carried
+       * one, and D-02's "Still open for M6" says why they could not be
+       * written until now: every note ingested with one recipe shares a
+       * transaction timestamp, so the order — and with it the `M1…Mn` codes
+       * — fell to a random uuid. `notes.position` closed that, and the array
+       * order below is now stored verbatim.
+       *
+       * So APPENDING is safe and INSERTING renames every mechanism after the
+       * insertion point. "Why each layer exists" stays first because
+       * `e2e/science.spec.ts` asserts it is M1 on both science screens.
+       *
+       * Each body is transcribed from `content/research/demi-glace.md:21-46`
+       * and each condition is a value that file states. Where the design's
+       * own prose adds a number the archive does not carry, the archive
+       * wins — the same ruling D-12 makes about the mass flow's `24 pieces`.
+       * Two places that happens, both recorded so the next reader is not
+       * chasing a difference:
+       *
+       *   - the design's M1 explains Maillard as "above roughly 140 °C into
+       *     hundreds of new aromatic compounds". The archive says only
+       *     "to develop Maillard reactions"; 140 °C is textbook and it is
+       *     not in this repository's record of this dish.
+       *   - the design's M4 lists `NO STIRRING` as a condition of the raft.
+       *     The archive says "gradually reheat" and nothing about stirring.
+       *
+       * `describe_mechanism` is the way to add a condition to a note that is
+       * already stored. These are new notes, so they carry theirs from the
+       * start.
+       */
+      {
+        kind: 'science',
+        title: 'Maillard browning of the bone surface',
+        /** demi-glace.md:24 — 232 °C for 45 minutes, single layer on a rack. */
+        conditions: ['232 °C', '45 min', 'single layer on a rack'],
+        body:
+          'The first roast is where the colour and most of the roasted flavour of a brown stock ' +
+          'are made. The long simmer after it extracts gelatin and does not add either. The bones ' +
+          'go in one layer on a rack so that every face meets dry heat rather than steaming ' +
+          'against the pan.',
+      },
+      {
+        kind: 'science',
+        title: 'Pyrolization of tomato sugars',
+        /** demi-glace.md:25 — 204 °C for 20 minutes, after the first roast. */
+        conditions: ['204 °C', '20 min', 'after the first roast'],
+        body:
+          'Tomato paste thinned with red wine vinegar is brushed over the roasted bones and they ' +
+          'go back into a cooler oven. At 204 °C the sugars in the paste pyrolise rather than ' +
+          'burn, and leave a savoury crust that dissolves into the stock instead of a bitter one ' +
+          'that does not.',
+      },
+      {
+        kind: 'science',
+        title: 'The protein raft',
+        /** demi-glace.md:40 — 4 °C, four egg whites, back up to 71 °C. */
+        conditions: ['4 °C → 71 °C', 'four egg whites'],
+        body:
+          'The stock is cooled to 4 °C, then ice and lightly beaten egg whites are stirred in and ' +
+          'the pot is brought back up to 71 °C slowly. The coagulating albumen forms a raft that ' +
+          'traps the fine particulate and carries it to the surface, which is the second of the ' +
+          'three clarification passes and the only one that removes what a sieve cannot.',
+      },
+      {
+        kind: 'science',
+        title: 'Adsorption filtration',
+        /** demi-glace.md:46 — the third pass, gravity through a filter bed. */
+        conditions: ['gravity', 'final pass'],
+        body:
+          'The last pass is a colander lined with damp coffee filters over an inch of ' +
+          'diatomaceous earth, poured through under gravity alone. Particles far smaller than the ' +
+          'pore size are held by surface attraction rather than sieved, which is what takes a ' +
+          'clear stock to an optically clear one.',
+      },
       {
         kind: 'warning',
         title: 'Time is the actual ingredient',

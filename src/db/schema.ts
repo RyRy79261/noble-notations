@@ -630,6 +630,47 @@ export const notes = pgTable(
       .notNull()
       .default(sql`ARRAY[]::text[]`),
 
+    /**
+     * Where this note sits among the notes on the same subject. 1-based,
+     * assigned by `writeNotes` as `MAX(position) + 1` for the subject.
+     *
+     * **Why the column exists.** `created_at` defaults to `now()`, and
+     * Postgres holds `now()` fixed for the whole transaction — so every
+     * note written by one `createRecipe` call carries the same timestamp
+     * to the microsecond. Ordering by it alone left the order of a
+     * recipe's notes to the planner, and the codes drawn from that order
+     * with it: `/science` numbers a study's mechanisms `M1…Mn` by position
+     * in this list, and Beef Wellington's four science notes all arrive in
+     * one transaction. The tiebreak that stood here was `asc(notes.id)`, a
+     * random uuid, so the four codes were a fresh shuffle on every ingest.
+     * D-02 records the same fact as the reason `pnpm export` reordered
+     * notes between two loads of one seed.
+     *
+     * **Why it is per subject and not global.** `position` means the same
+     * thing everywhere else in this schema — an ordinal within one parent
+     * (`recipe_ingredients`, `recipe_steps`, `recipe_mass_flow_stages`) —
+     * and a note's parent is its subject. A global sequence would have
+     * been a second meaning for the word, and `ADD COLUMN … bigserial`
+     * assigns its values in heap order, which is the arbitrary order this
+     * column exists to replace.
+     *
+     * **So `created_at` stays the primary sort key and this is its
+     * tiebreak** — `ORDER BY created_at, position, id`. Notes are read in
+     * mixed-subject sets: `getRecipeBySlug` reads the recipe's notes and
+     * the current revision's together, and `getScienceStudy` adds the
+     * steps' and the runs'. Sorting on `position` first would interleave
+     * those groups by ordinal, putting a revision-6 note above a note on
+     * the recipe. `created_at` sequences the groups — one transaction only
+     * ever writes one subject, so it is exact between groups — and this
+     * column sequences within a group, which is the one thing `created_at`
+     * cannot do. `id` stays on the end so the sort is total.
+     *
+     * The `DEFAULT 0` exists so migration `0006` could add the column to a
+     * loaded table without a rewrite. Nothing writes 0: `writeNotes` is
+     * the only insert path for this table and it always names a position.
+     */
+    position: integer('position').notNull().default(0),
+
     // Exactly one of these is set — enforced by the check below.
     recipeId: uuid('recipe_id').references(() => recipes.id, {
       onDelete: 'cascade',
@@ -682,6 +723,20 @@ export const noteSources = pgTable(
     title: text('title'),
     citation: text('citation'),
     accessedAt: date('accessed_at'),
+    /**
+     * Where this citation sits among the citations on one note. 1-based,
+     * assigned by `writeNotes`.
+     *
+     * The same fault as `notes.position`, one level down and just as
+     * visible: every source of a note is written in the note's own
+     * transaction, so they all share `created_at` and the order fell to
+     * `asc(note_sources.id)`. Demi-glace's "Why each layer exists" cites
+     * four works and the Berlin boil's sourcing note cites three, so the
+     * reference list on `/science/[slug]` renumbered `[1]…[4]` between
+     * loads and every `current.md` under content/generated/ reordered its
+     * `- Source:` lines for no reason a reader could act on.
+     */
+    position: integer('position').notNull().default(0),
     createdAt: now(),
   },
   (t) => [index('idx_note_sources_note').on(t.noteId)],

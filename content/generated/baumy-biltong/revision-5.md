@@ -4,7 +4,6 @@ slug: 'baumy-biltong'
 kind: 'recipe'
 revision: 5
 source: 'import'
-created: '2026-09-09T10:43:10.293Z'
 generated: 'true'
 ---
 
@@ -78,14 +77,6 @@ Ran short on Worcestershire, tandoori masala and cayenne, so this batch is a set
 
 30 × 7 cm steel hooks, 13 g each — €29.97. The 13 g is subtracted from every gross weight to get net.
 
-### Weigh before the fridge rest _(observation)_
-
-The meat sits spiced for two nights, which is a dry brine and loses weight. Weighing after that rest understates the drying loss that follows.
-
-### Piment d'Espelette for cayenne _(substitution)_
-
-80 g of Espelette replaced 15 g of cayenne. It is far milder, which is why the quantity is five times higher — not a like-for-like swap.
-
 ### Increase the wash by 30% _(result)_
 
 Coverage was marginal again. Temperature matters as much as volume: once the meat warms, fat and myoglobin mix into the wash and it stops working.
@@ -93,3 +84,11 @@ Coverage was marginal again. Temperature matters as much as volume: once the mea
 ### Increase seasoning volume by 40% _(result)_
 
 A finer grind covers less surface area for the same weight. The dredge needs to be specified by coverage, not only by ratio.
+
+### Weigh before the fridge rest _(observation)_
+
+The meat sits spiced for two nights, which is a dry brine and loses weight. Weighing after that rest understates the drying loss that follows.
+
+### Piment d'Espelette for cayenne _(substitution)_
+
+80 g of Espelette replaced 15 g of cayenne. It is far milder, which is why the quantity is five times higher — not a like-for-like swap.

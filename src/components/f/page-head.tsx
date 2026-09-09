@@ -2,6 +2,8 @@ import type { ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
 
+import { Mark } from './mark';
+
 /* The shell's one breakpoint is `shell:` — `--breakpoint-shell` in
    `theme.css`, at 1080px. `nav-drawer.tsx` says why it must be written out
    as a whole class name at every use. */
@@ -69,8 +71,28 @@ export function PageHead({
   rightNarrow,
   rightTone = 'quiet',
 }: PageHeadProps) {
+  /*
+   * `uppercase` is the band's, not the caller's. All 52 slots across the 26
+   * screens are drawn in capitals without exception, and `F/Page foot`
+   * already sets it on its own three slots — so a screen that passed plain
+   * text got a lower-case kicker beside an upper-case foot, and every M6
+   * screen would otherwise have wrapped both strings in a `<span
+   * className="uppercase">` to say what the component already knows. It is
+   * CSS, so the DOM keeps a string a screen reader can pronounce and a
+   * reader can copy.
+   *
+   * `tabular-nums` is the band's for the same reason (R-CON-06): the right
+   * slot is a count, a revision or a date on all but a handful of screens,
+   * and two of them were setting it on a wrapper `<span>` of their own.
+   *
+   * A CALLER MUST NOT WRAP ITS TEXT IN ITS OWN `<span>`. The left slot is
+   * `min-w-0 truncate`, which clips the SLOT's box; an inner span keeps its
+   * own unclipped box under the right slot, and `pnpm audit:ui` measures
+   * that box as a text overlap (R-ACC-11). Every wrapper the M6 screens
+   * carried is gone for that reason — pass the string.
+   */
   const slot = cn(
-    'text-09 leading-normal font-mono tracking-head-360 whitespace-nowrap text-ink-3',
+    'text-09 leading-normal font-mono tabular-nums tracking-head-360 whitespace-nowrap text-ink-3 uppercase',
     'shell:text-10 shell:tracking-spine',
   );
 
@@ -132,9 +154,57 @@ export interface PageHeroProps {
   title: ReactNode;
   /** The paragraph under it. */
   lede?: ReactNode;
+  /**
+   * `index` is the 48px hero drawn on twenty screens. `display` is the home
+   * masthead and nothing else: the design gives `/` a 72/72 title, a 10px
+   * kicker, a 17/31 lede and 20px of column gap
+   * (`home-recipes-1280.html:207`), where every other screen takes 48/50,
+   * 9px, 16/27 and 12px. The two are identical at 360 — 40/42, 9px, 15/26,
+   * 12px — so `display` only ever changes what happens at `shell:`. Added
+   * by M6 rather than forked, so the twenty screens on `index` are drawn by
+   * the same file and cannot drift from it.
+   */
+  size?: PageHeroSize;
+  /**
+   * The lede's measure, as a `shell:max-w-*` utility.
+   *
+   * THE OPEN HOLE THIS PATCHES, and it is still open. The design overrides
+   * the lede width per screen — 640, 740, 760, 780, 820, 840 and 860 — with
+   * no scale behind any of them, and TOKEN-MAP §3.2 dropped `--measure` on
+   * the grounds that the 1280 frame fixes the width. It does not: a lede
+   * left at the 1160px column width wraps two lines where the drawing wraps
+   * three, which is a different shape and not a different number. Until the
+   * designer rules on one measure or a rule for choosing between seven,
+   * each screen states the width it is drawn at, in units of `--spacing`
+   * (`shell:max-w-195` is the home lede's 780px). Empty is the column, which
+   * is what every screen built before M6 draws.
+   */
+  ledeClassName?: string;
+  /**
+   * The kicker's 360 drawing. `run` is the bare accent mono run the hero
+   * wraps everything in, and it is what every index screen draws. `mark`
+   * is the F/Mark chip the design puts in its place below the shell
+   * breakpoint on the access and science screens
+   * (`m360-access-science.html:1632`) — the chip overrides the ground and
+   * the colour and the plain run draws at `shell:` only.
+   *
+   * It is a prop and not five copies of a local `Kicker` helper, which is
+   * what it was: `/connect`, `/science`, `/science/[slug]`, `/sign-in` and
+   * the 404 each carried a byte-identical five-line component. One of the
+   * two elements is always `display: none`, so a screen reader is never
+   * read the kicker twice — the same construct `PageHead`'s `Slot` uses for
+   * its two wordings.
+   *
+   * A screen whose two drawings differ in WORDING as well as treatment —
+   * `/cuisines/[slug]` draws two chips at 360 and one run at 1280 — still
+   * passes its own node.
+   */
+  kickerForm?: 'run' | 'mark';
   /** Anything the screen adds below the lede. */
   children?: ReactNode;
 }
+
+export type PageHeroSize = 'index' | 'display';
 
 /**
  * `F/Page hero` — the title band of an index screen.
@@ -161,18 +231,50 @@ export interface PageHeroProps {
  * is left at the column width here, and the designer owes M4 either one
  * measure token or a rule for choosing between eight.
  */
-export function PageHero({ kicker, title, lede, children }: PageHeroProps) {
+export function PageHero({
+  kicker,
+  title,
+  lede,
+  size = 'index',
+  ledeClassName,
+  kickerForm = 'run',
+  children,
+}: PageHeroProps) {
+  const display = size === 'display';
+
   return (
-    <div className="flex w-full shrink-0 flex-col items-start gap-3">
+    <div
+      className={cn(
+        'flex w-full shrink-0 flex-col items-start gap-3',
+        display ? 'shell:gap-5' : undefined,
+      )}
+    >
       {kicker !== undefined && (
-        <div className="text-09 leading-normal font-mono tracking-spine uppercase text-accent">
-          {kicker}
+        <div
+          className={cn(
+            'text-09 leading-normal font-mono tracking-spine uppercase text-accent',
+            display ? 'shell:text-10 shell:leading-normal' : undefined,
+          )}
+        >
+          {kickerForm === 'mark' ? (
+            <>
+              <Mark className="shell:hidden">{kicker}</Mark>
+              <span className="hidden shell:inline">{kicker}</span>
+            </>
+          ) : (
+            kicker
+          )}
         </div>
       )}
+      {/* Every size travels with its leading in ONE argument, or
+          tailwind-merge drops the leading with the next size it meets —
+          TOKEN-MAP §4.3. */}
       <h1
         className={cn(
           'm-0 text-40 leading-105 font-serif font-medium tracking-display text-ink',
-          'shell:text-48 shell:leading-105',
+          display
+            ? 'shell:text-72 shell:leading-100'
+            : 'shell:text-48 shell:leading-105',
         )}
       >
         {title}
@@ -181,7 +283,10 @@ export function PageHero({ kicker, title, lede, children }: PageHeroProps) {
         <p
           className={cn(
             'm-0 w-full text-15 leading-170 font-sans tracking-flat text-ink-2',
-            'shell:text-16 shell:leading-170',
+            display
+              ? 'shell:text-17 shell:leading-180'
+              : 'shell:text-16 shell:leading-170',
+            ledeClassName,
           )}
         >
           {lede}

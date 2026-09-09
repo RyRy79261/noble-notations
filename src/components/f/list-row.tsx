@@ -53,6 +53,7 @@ import { cn } from '@/lib/utils';
 
 import { FOCUS_RING } from './button';
 import { TICK_BOX, TICK_TARGET } from './ingredient-row';
+import { MarkQuiet } from './mark';
 
 /* ── F/List mark ───────────────────────────────────────────────────────── */
 
@@ -280,6 +281,19 @@ export type ListRowProps = Omit<HTMLAttributes<HTMLDivElement>, 'onChange'> & {
   onTick?: (ticked: boolean) => void;
   /** The accessible name of the tick box. Defaults to the row's name. */
   label?: string;
+  /**
+   * §10.6's OPTIONAL badge — "each row shows: a tick box, the combined
+   * amount, the name, an OPTIONAL 'optional' badge and the source recipes".
+   *
+   * The design draws no such badge: `optional` appears nowhere in
+   * `list-search-archive-1280.html`, `m360-batch-search-list.html` or
+   * `foundations.html`, because no row on any `/list` frame is optional.
+   * The specification names it, the seed has one (Kombu on demi-glace), and
+   * without it an optional line reads as required — so it is drawn in a
+   * register the design already owns rather than invented: `F/Mark quiet`
+   * in its `faint` tone, in the name row, beside the name it qualifies.
+   */
+  optional?: boolean;
 };
 
 /**
@@ -302,6 +316,7 @@ export function ListRow({
   ticked = false,
   onTick,
   label,
+  optional = false,
   className,
   ...props
 }: ListRowProps) {
@@ -361,6 +376,11 @@ export function ListRow({
           ) : (
             <span className={cn(NAME, quiet)}>{name}</span>
           )}
+          {/* R-CMP-14 again: the flex gap is invisible to `textContent`, so
+              the badge needs a real space before it or the row reads
+              "Komburoptional". */}
+          {optional ? ' ' : null}
+          {optional ? <MarkQuiet tone="faint">Optional</MarkQuiet> : null}
         </span>
 
         {sources.length > 0 ? (

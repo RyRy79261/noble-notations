@@ -89,6 +89,107 @@ export function SectionLabel({
   );
 }
 
+/* ── F/Section head — the fold between the two ─────────────────────────── */
+
+export type SectionHeadProps = Omit<HTMLAttributes<HTMLDivElement>, 'title'> & {
+  /** The roman ordinal. `I`, `II`, `III`. Optional. */
+  ordinal?: ReactNode;
+  /** The section's name, in sentence case. `Butcher`, `Query`, `Biltong`. */
+  title: ReactNode;
+  /** The mono run at the right edge. `SIX INGREDIENTS`. Optional. */
+  meta?: ReactNode;
+  /** The heading level. A section heading is an `h2` unless it is nested. */
+  as?: ElementType;
+};
+
+/**
+ * F/Section label at `shell:` and F/Section 360's head below it — ONE head.
+ *
+ * The two components above are the two drawings; this is the screen that has
+ * to carry both. Every page-level numbered section in M6 does: the design
+ * draws `I  Butcher  ·  THREE INGREDIENTS · ONE COUNTER` at 1280
+ * (`list-search-archive-1280.html:532`) and the very same section as
+ * `I · BUTCHER   THREE INGREDIENTS · ONE COUNTER` at 360
+ * (`m360-batch-search-list.html:5699`). Corroborated on `/search`'s two form
+ * sections, `/archive`'s three groups, the archive note's two columns, and —
+ * per the M6 pattern brief's Rule 2 — on `/ingredients` and `/batch-logs`.
+ *
+ * THREE THINGS CHANGE AND THE WORDS DO NOT.
+ *
+ *   ordinal   40px accent column          folded into the label, `I ·`
+ *   title     26px Newsreader 500, `f-ink` 9px accent mono capitals
+ *   rule      8px above it                7px above it
+ *
+ * ONE DOM SERVES BOTH, and it has to: `SectionLabel` and `Section360` are
+ * two elements, and rendering both would put two `<h2>`s with the same words
+ * in the accessibility tree — `display:none` hides one from a sighted reader
+ * and `hidden` hides it from nobody who is listening. So the heading is a
+ * single element that changes face, size, colour and case at `shell:`.
+ *
+ * The ` ·` after the ordinal is `aria-hidden`: it is the 360 form's
+ * separator, and a screen reader already gets the ordinal and the title as
+ * two runs at every width, exactly as `SectionLabel` gives them.
+ *
+ * A server component.
+ */
+export function SectionHead({
+  ordinal,
+  title,
+  meta,
+  as: Heading = 'h2',
+  className,
+  ...props
+}: SectionHeadProps) {
+  return (
+    <div
+      className={cn(
+        'flex h-fit w-full shrink-0 flex-row items-center gap-3 pb-1.75',
+        'shell:gap-4 shell:pb-2',
+        SECTION_RULE,
+        className,
+      )}
+      {...props}
+    >
+      {ordinal ? (
+        <span
+          className={cn(
+            'shrink-0 text-09 leading-normal font-mono tracking-spine uppercase text-accent',
+            'shell:w-10 shell:text-10 shell:leading-normal',
+          )}
+        >
+          {ordinal}
+          <span aria-hidden="true" className="shell:hidden">
+            {' ·'}
+          </span>
+        </span>
+      ) : null}{' '}
+      {/* R-CMP-14's real space. A flex gap is invisible to `textContent`, so
+          without it the head reads "IButcher" to a screen reader and to a
+          copy-paste. A whitespace-only text run is not rendered as a flex
+          item (CSS Flexbox §4), so nothing drawn moves. */}
+      <Heading
+        className={cn(
+          'm-0 text-09 leading-normal font-mono font-normal tracking-spine uppercase text-accent',
+          'shell:text-26 shell:leading-normal shell:font-serif shell:font-medium shell:tracking-flat shell:normal-case shell:text-ink',
+        )}
+      >
+        {title}
+      </Heading>
+      {meta ? ' ' : null}
+      {meta ? (
+        <span
+          className={cn(
+            'ml-auto text-09 leading-normal font-mono tabular-nums tracking-label uppercase text-ink-3',
+            'shell:tracking-spine',
+          )}
+        >
+          {meta}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 /* ── F/Section 360 ─────────────────────────────────────────────────────── */
 
 export type Section360Props = HTMLAttributes<HTMLDivElement> & {

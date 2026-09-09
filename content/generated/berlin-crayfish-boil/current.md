@@ -4,7 +4,6 @@ slug: 'berlin-crayfish-boil'
 kind: 'recipe'
 revision: 1
 source: 'import'
-created: '2026-09-09T10:43:10.448Z'
 generated: 'true'
 ---
 
@@ -81,14 +80,14 @@ Availability is inconsistent because it depends on catching an invasive species.
 - Source: 25 Teiche, Markthalle IX, Kreuzberg — price quoted at the stall
 - Source: Berliner Anglerverband e.V.
 
-### Local adjustments _(idea)_
+### Season _(observation)_
 
-Berlin palates may want less heat than a Southern boil. Pretzels or sauerkraut alongside work better than they have any right to.
+Crayfish are most abundant in Berlin waters from late spring through early autumn.
 
 ### Harvest responsibly _(warning)_
 
 Removal of the invasive population is encouraged, but buy from licensed sources or fish with a permit — the rules still apply.
 
-### Season _(observation)_
+### Local adjustments _(idea)_
 
-Crayfish are most abundant in Berlin waters from late spring through early autumn.
+Berlin palates may want less heat than a Southern boil. Pretzels or sauerkraut alongside work better than they have any right to.

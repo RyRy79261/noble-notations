@@ -4,7 +4,6 @@ slug: 'baumy-biltong'
 kind: 'recipe'
 revision: 2
 source: 'import'
-created: '2026-09-09T10:43:10.160Z'
 generated: 'true'
 ---
 
@@ -75,10 +74,10 @@ Scaled to 5.98 kg and introduced a wash for the first time — 141 g of mixed vi
 
 30 × 7 cm steel hooks, 13 g each — €29.97. The 13 g is subtracted from every gross weight to get net.
 
-### Garam masala forgotten _(correction)_
-
-It went on immediately before hanging rather than into the dredge. Put it in the spice mix from the start next time.
-
 ### Need 20% more wash _(result)_
 
 141 g of wash did not comfortably cover 5.98 kg. Worcestershire is about 10% vinegar, so it counts toward the acidity budget rather than sitting outside it.
+
+### Garam masala forgotten _(correction)_
+
+It went on immediately before hanging rather than into the dredge. Put it in the spice mix from the start next time.

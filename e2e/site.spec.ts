@@ -106,7 +106,10 @@ test('an experiment shows its recorded observations', async ({ page }) => {
     .getByRole('link', { name: /batch/i })
     .first()
     .click();
-  await expect(page.locator('table').first()).toBeVisible();
+  // `getByRole` and not `locator('table')`: M6 rebuilt the per-piece record
+  // as a `role="table"` flex construction so the row can fold at 360, which
+  // a real `<table>` cannot do without losing its semantics.
+  await expect(page.getByRole('table').first()).toBeVisible();
 
   // Every seeded run names baumy-biltong, so the index links straight at
   // the nested address rather than through the redirect in
@@ -118,7 +121,10 @@ test('an experiment shows its recorded observations', async ({ page }) => {
 test('the sign-in page is reachable and not indexed', async ({ page }) => {
   await page.goto('/sign-in');
   await expect(
-    page.getByRole('heading', { name: /administrator sign-in/i }),
+    // M6 took the title from the design, which writes "Administrator sign
+    // in" without the hyphen. Both spellings match so the assertion is about
+    // the heading being there rather than about one of them.
+    page.getByRole('heading', { name: /administrator sign[- ]in/i }),
   ).toBeVisible();
 
   const robots = page.locator('meta[name="robots"]');

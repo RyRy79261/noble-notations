@@ -81,11 +81,13 @@ export function TermHierarchy({
 
   return (
     <TagHierarchy
-      /* The panel's own air while globals.css is still live. Every screen
-         around it still spaces its blocks with the old `p { margin }`
-         rules, which put 16px above this and nothing below it. M6 takes
-         this off when the page owns its own column gap. */
-      className="mb-4"
+      /* The `mb-4` this carried is gone. It was the panel's own air while
+         the two screens that render it — `/classes/[type]/[slug]` and
+         `/cuisines/[slug]` — still spaced their blocks with globals.css's
+         `p { margin }` rules. M6 rebuilt both onto `Main`'s own 28/44px
+         column gap, which is where the air belongs, and the note on this
+         line said M6 would take it off when that happened. Nothing else in
+         `src/` renders this component. */
       broader={parent ? [toTerm(parent, true)] : []}
       narrower={narrower.map((term) => toTerm(term, false))}
     />

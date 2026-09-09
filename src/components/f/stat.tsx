@@ -51,10 +51,32 @@ const STAT_SIZES = {
 
 export type StatSize = keyof typeof STAT_SIZES;
 
+/**
+ * The same four sizes above the shell breakpoint.
+ *
+ * They are written out rather than built from `STAT_SIZES` because Tailwind
+ * finds a utility by scanning the source for a whole class name; a template
+ * literal would emit nothing at all and fail silently, which is the same
+ * trap `nav-drawer.tsx` records for `shell:` itself.
+ */
+const STAT_SIZES_SHELL = {
+  sm: 'shell:text-15',
+  md: 'shell:text-16',
+  lg: 'shell:text-19',
+  xl: 'shell:text-26',
+} as const satisfies Record<StatSize, string>;
+
 export type StatProps = HTMLAttributes<HTMLDivElement> & {
   label: ReactNode;
   value: ReactNode;
   size?: StatSize;
+  /**
+   * The size below the shell breakpoint, where the design steps the figure
+   * down one notch — 19px becomes 15px on `/classes`, `/ingredients` and
+   * every batch-log ledger. Absent ⇒ `size` is drawn at every width, which
+   * is what every existing caller gets.
+   */
+  sizeNarrow?: StatSize;
   /**
    * The container flexes two ways in the design: `w-fit shrink-0` when the
    * row is packed to the left, and `flex:1 1 0` when the statistics share a
@@ -68,6 +90,7 @@ export function Stat({
   label,
   value,
   size = 'lg',
+  sizeNarrow,
   grow = false,
   className,
   ...props
@@ -87,7 +110,19 @@ export function Stat({
       <span className="text-09 font-mono tracking-spine uppercase text-accent">
         {label}
       </span>
-      <span className={cn(STAT_SIZES[size], 'font-mono tabular-nums text-ink')}>
+      {/* Both steps go in ONE cn() argument. tailwind-merge groups a size
+          with its leading, and a later argument holding a bare size would
+          drop a leading a caller had set — TOKEN-MAP.md §4.3. Neither of
+          these carries one, and keeping them together keeps that true if
+          one ever does. */}
+      <span
+        className={cn(
+          sizeNarrow
+            ? `${STAT_SIZES[sizeNarrow]} ${STAT_SIZES_SHELL[size]}`
+            : STAT_SIZES[size],
+          'font-mono tabular-nums text-ink',
+        )}
+      >
         {value}
       </span>
     </div>
@@ -143,9 +178,20 @@ export function Measure({
       {/* The wrapping form is the second and last place in M3 where the
           leading is not `normal`. Size and leading in ONE argument, or
           tailwind-merge drops the leading — TOKEN-MAP.md §4.3. */}
+      {/* `wrap-anywhere` and not `break-words`: the wrapping form's values
+          are file paths and slugs, and `/`, `_` and `-` are not break
+          opportunities in Chrome. `overflow-wrap: break-word` would not
+          shrink the flex item's min-content either, so the value ran past
+          the panel — 54px past a 360 viewport on `/archive/[...slug]`, into
+          the shell's `overflow-x-clip` where nothing could scroll to it
+          (R-STA-08, R-STA-09). `anywhere` is the one value that both breaks
+          the run and lets the item shrink. It only ever acts on a value
+          that would otherwise overflow. */}
       <span
         className={cn(
-          wrap ? 'flex-1 text-11 leading-150' : 'text-11 whitespace-nowrap',
+          wrap
+            ? 'flex-1 text-11 leading-150 wrap-anywhere'
+            : 'text-11 whitespace-nowrap',
           'font-mono tabular-nums text-ink-2',
         )}
       >

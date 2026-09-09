@@ -14,7 +14,7 @@ import { test, expect } from '@playwright/test';
  * | Recipe                      | kind        | status | science notes |
  * | --------------------------- | ----------- | ------ | ------------- |
  * | `beef-wellington-technique` | research    | active | 4             |
- * | `demi-glace`                | preparation | active | 1             |
+ * | `demi-glace`                | preparation | active | 5             |
  * | `peri-peri-cocktail`        | research    | draft  | 0             |
  * | everything else             | recipe      | active | 0             |
  *
@@ -22,8 +22,15 @@ import { test, expect } from '@playwright/test';
  * a research recipe, and `demi-glace`, which is not one but carries a
  * mechanism and therefore has a `/science/[slug]` address of its own;
  * `peri-peri-cocktail` is a draft and `listScienceIndex` filters drafts out
- * of the card list — five mechanisms drawn from those two recipes, and one
+ * of the card list — nine mechanisms drawn from those two recipes, and one
  * research note, the crayfish one on `berlin-crayfish-boil`.
+ *
+ * Demi-glace carried ONE mechanism until M6 and now carries five. The four
+ * that were added are transcribed from `content/research/demi-glace.md:21-46`
+ * and are APPENDED, so "Why each layer exists" keeps the M1 the test below
+ * asserts. D-02's "Still open for M6" is why they could not be seeded
+ * earlier: without `notes.position` the five would have been ordered by a
+ * random uuid and the codes would have moved on every ingest.
  *
  * **On R-SCR-43.** The requirement is that `/science` shows an empty state
  * when *no recipe anywhere* has a science note. That state cannot be
@@ -136,20 +143,53 @@ test('a mechanism carries the same code on both science screens', async ({
   page,
 }) => {
   // The index numbers mechanisms within their recipe, exactly as the study
-  // page does, so the badge beside "Why each layer exists" reads M1 in both
+  // page does, so the code beside "Why each layer exists" reads M1 in both
   // places. Numbering the index across every recipe made it M5 here and M1
   // one click later.
+  //
+  // WHAT THIS SELECTS, AND WHY IT CHANGED IN M6. It used to read
+  // `.note .badge.num` and take `.first()`, and it passed by DOM order
+  // rather than by meaning: `.badge num` was on the mechanism code AND on
+  // every condition chip beside it, so `.first()` happened to hit the code
+  // and a reordered block would have made the assertion read a temperature.
+  // BUILD-PLAN §4.1 gives M6 that clash. The rebuild puts both screens on
+  // F/Mechanism, where the code is a prop and a condition is a member of an
+  // array, so neither class exists any more. `data-code` is the code as a
+  // property of the block — `data-kind="science"` is the same hook
+  // `src/components/notes.tsx` already carries — and there is now exactly
+  // one thing on the page it can name.
   await page.goto('/science');
   const onIndex = page
-    .locator('.note', { hasText: 'Why each layer exists' })
+    .locator('[data-kind="science"]', { hasText: 'Why each layer exists' })
     .first();
-  await expect(onIndex.locator('.badge.num').first()).toHaveText('M1');
+  await expect(onIndex).toHaveAttribute('data-code', 'M1');
 
   await page.goto('/science/demi-glace');
   const onStudy = page
-    .locator('.note', { hasText: 'Why each layer exists' })
+    .locator('[data-kind="science"]', { hasText: 'Why each layer exists' })
     .first();
-  await expect(onStudy.locator('.badge.num').first()).toHaveText('M1');
+  await expect(onStudy).toHaveAttribute('data-code', 'M1');
+});
+
+test('the conditions on a mechanism are separate values, not a sentence', async ({
+  page,
+}) => {
+  // R-SCR-41, and the other half of what BUILD-PLAN §4.1 gives M6: the
+  // conditions used to draw as bordered pill badges at 11.52px, which is
+  // the M2 stylesheet rather than the design. F/Mechanism draws one 9px
+  // mono run whose values are joined by an `aria-hidden` middle dot with
+  // real spaces each side, so the copied text keeps the dot and the
+  // accessibility tree hears three values with nothing joining them into a
+  // sentence.
+  await page.goto('/science/demi-glace');
+
+  const maillard = page
+    .locator('[data-kind="science"]', {
+      hasText: 'Maillard browning of the bone surface',
+    })
+    .first();
+
+  await expect(maillard).toContainText('232 °C · 45 min · single layer');
 });
 
 test('a study shows where its claims came from', async ({ page }) => {

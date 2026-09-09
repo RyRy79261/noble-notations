@@ -77,7 +77,7 @@ export interface FilterableGroup {
    * rather than supplying a render callback — the client owns the wrapper
    * markup because only the client knows which items survived.
    */
-  layout?: 'row' | 'list' | 'table';
+  layout?: 'row' | 'list' | 'table' | 'rows';
   /** The <thead> for `layout: 'table'`. Columns differ per page. */
   tableHead?: ReactNode;
   /** Class applied to the list wrapper for `layout: 'list'`. */
@@ -86,6 +86,31 @@ export interface FilterableGroup {
 
 function GroupBody({ group }: { group: FilterableGroup }) {
   const nodes = group.items.map((item) => item.node);
+
+  /*
+   * `rows` is `F/Table row`'s own container — `TableGroup` in
+   * `f/table-row.tsx`, written out here rather than imported so this file
+   * keeps holding every wrapper it can render in one place.
+   *
+   * It exists because the `table` layout below and `f/table-row.tsx` are two
+   * different constructions of the same drawing, and `table-row.tsx` says
+   * they must not be nested: "either the whole group is div-roled or the
+   * whole group is a `<table>`". The design's row is a flex layout at 1280
+   * and a two-line block at 360, and `display:flex` on a `<tr>` is exactly
+   * the change that strips a real table of its semantics — so the screens
+   * M6 rebuilds are div-roled and take this, and the `table` layout stays
+   * for the callers that have not been rebuilt yet.
+   *
+   * `role="rowgroup"` is only valid under a `role="table"`, which is what
+   * `tableLabel` below puts on the column that holds every group.
+   */
+  if (group.layout === 'rows') {
+    return (
+      <div role="rowgroup" className="flex w-full flex-col items-start gap-0">
+        {nodes}
+      </div>
+    );
+  }
 
   if (group.layout === 'table') {
     /* R-STA-08: a table that cannot fit scrolls inside its own box, and
@@ -137,11 +162,35 @@ export function FilterableGroups({
   label = 'Filter',
   placeholder = 'Type to filter…',
   countNoun = 'item',
+  head,
+  tableLabel,
 }: {
   groups: FilterableGroup[];
   label?: string;
   placeholder?: string;
   countNoun?: string;
+  /**
+   * One node between the bar and the first group — `F/Table row`'s column
+   * head on `/ingredients`, which the design draws once for the whole index
+   * rather than once per aisle (`ingredients-1280.html:333`).
+   *
+   * It is rendered here rather than by the page because the design puts it
+   * BELOW the filter bar, and the bar belongs to this component. It is
+   * dropped along with the groups when nothing matches: a column head over
+   * `Nothing matches "szechuan"` labels nothing.
+   */
+  head?: ReactNode;
+  /**
+   * Set when the groups are `layout: 'rows'`. It puts `role="table"` and
+   * this accessible name on the column that holds `head` and every group,
+   * which is what makes the `rowgroup`, `row`, `columnheader` and `cell`
+   * roles inside `f/table-row.tsx` legal. `role="table"` with no name is a
+   * table nobody can find in a rotor, so the two arrive together.
+   *
+   * The `<section>` each group sits in has no accessible name of its own and
+   * therefore maps to `generic`, which the ownership relation reads through.
+   */
+  tableLabel?: string;
 }) {
   const [query, setQuery] = useState('');
   const needle = query.trim().toLowerCase();
@@ -167,6 +216,18 @@ export function FilterableGroups({
   const countText = needle
     ? `${shown} of ${total} ${countNoun}${total === 1 ? '' : 's'}`
     : `${total} ${countNoun}${total === 1 ? '' : 's'}`;
+  /*
+   * What the design DRAWS in the bar's right slot is the figure alone —
+   * `30` idle and `6 OF 6` while filtering (`ingredients-1280.html:329`,
+   * `home-recipes-1280.html:1949`), in mono capitals and never a sentence.
+   * What a screen reader needs is the noun with it, or `6 of 30` on its own
+   * describes nothing.
+   *
+   * So the slot carries both: the sentence for the accessibility tree and
+   * for `aria-describedby`, the figure for the eye. `uppercase` is CSS, so
+   * the DOM keeps a string that can be read aloud and copied.
+   */
+  const countFigure = needle ? `${shown} of ${total}` : String(total);
   useAnnounce(countText);
 
   return (
@@ -183,7 +244,14 @@ export function FilterableGroups({
         // Announced politely as the count changes, so a screen-reader
         // user is not left guessing whether anything matched.
         aria-describedby="filter-count"
-        count={<span id="filter-count">{countText}</span>}
+        count={
+          <span id="filter-count">
+            <span className="sr-only">{countText}</span>
+            <span aria-hidden="true" className="uppercase">
+              {countFigure}
+            </span>
+          </span>
+        }
       />
 
       {/* R-ACC-06. The count is described text, not a live region of its
@@ -196,25 +264,60 @@ export function FilterableGroups({
       {visible.length === 0 ? (
         <Empty query={query.trim()} />
       ) : (
-        visible.map((group) => (
-          /* `section` is a SELECTOR and `mt-0` cancels the one declaration
-             globals.css hangs on it. `e2e/filtering.spec.ts` scopes its
-             "the hidden group is really gone" assertion to
-             `section.section`, and `globals.css` keys the shopping list's
-             first heading off it. Both go with globals.css at M7. */
-          <section
-            className={cn(
-              'section',
-              'mt-0 flex w-full flex-col items-start gap-4',
-            )}
-            key={group.key}
-          >
-            {group.heading}
-            {group.intro}
-            <GroupBody group={group} />
-          </section>
-        ))
+        <Body head={head} tableLabel={tableLabel}>
+          {visible.map((group) => (
+            /* `section` is a SELECTOR and `mt-0` cancels the one declaration
+               globals.css hangs on it. `e2e/filtering.spec.ts` scopes its
+               "the hidden group is really gone" assertion to
+               `section.section`, and `globals.css` keys the shopping list's
+               first heading off it. Both go with globals.css at M7. */
+            <section
+              className={cn(
+                'section',
+                'mt-0 flex w-full flex-col items-start gap-4',
+              )}
+              key={group.key}
+            >
+              {group.heading}
+              {group.intro}
+              <GroupBody group={group} />
+            </section>
+          ))}
+        </Body>
       )}
+    </div>
+  );
+}
+
+/**
+ * The groups, and the column head above them when there is one.
+ *
+ * With neither a head nor a table name this is a fragment, so every caller
+ * that predates M6 keeps the exact DOM it had: the groups stay direct
+ * children of the `gap-11` column. With either one it becomes a second
+ * `gap-11` column, which draws the same 44px between the bar, the head and
+ * each group and gives `role="table"` somewhere to live that is not also
+ * wrapping the search box.
+ */
+function Body({
+  head,
+  tableLabel,
+  children,
+}: {
+  head?: ReactNode;
+  tableLabel?: string;
+  children: ReactNode;
+}) {
+  if (head === undefined && tableLabel === undefined) return <>{children}</>;
+
+  return (
+    <div
+      role={tableLabel === undefined ? undefined : 'table'}
+      aria-label={tableLabel}
+      className="flex w-full flex-col items-start gap-11"
+    >
+      {head}
+      {children}
     </div>
   );
 }

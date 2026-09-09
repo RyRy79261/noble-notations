@@ -247,7 +247,18 @@ async function attachTerms<T extends { id: string }>(
         rows.map((r) => r.id),
       ),
     )
-    .orderBy(desc(recipeTerms.isPrimary), asc(taxonomyTerms.label));
+    // The facet and the slug are a tiebreak and nothing else. Two terms can
+    // share a label across facets — `equipment/oven` and `technique/oven`
+    // would — so the pair before them is not unique, and the order of a
+    // recipe's tags, and of the `## Categories` block `pnpm export` writes
+    // out of it, was undefined whenever that happened. `uq_taxonomy_facet_slug`
+    // makes the two of them together unique, so the four columns are total.
+    .orderBy(
+      desc(recipeTerms.isPrimary),
+      asc(taxonomyTerms.label),
+      asc(taxonomyTerms.facet),
+      asc(taxonomyTerms.slug),
+    );
 
   for (const row of termRows) {
     const list = byRecipe.get(row.recipeId) ?? [];
@@ -672,14 +683,22 @@ export async function getRecipeBySlug(
         .where(
           sql`${notes.recipeId} = ${recipe.id} OR ${notes.revisionId} = ${revision.id}`,
         )
-        // `asc(notes.id)` is not decoration. `notes.created_at` defaults to
-        // `now()`, which Postgres holds fixed for a transaction, so every note
-        // ingested with a recipe carries the SAME timestamp and a sort on that
-        // column alone has no defined order. `getScienceStudy` numbers the same
-        // science notes `M1…Mn` over `asc(notes.createdAt), asc(notes.id)`, and
-        // `NoteList` numbers them again on the recipe page — the tiebreak is
-        // what keeps the two codes the same word for the same note.
-        .orderBy(asc(notes.createdAt), asc(notes.id)),
+        // THE NOTE ORDER. `created_at` first, `position` second, `id` last —
+        // the same three columns in the same order in all five reads that
+        // return notes, so a note holds one place in one list wherever it is
+        // drawn.
+        //
+        // `created_at` defaults to `now()`, which Postgres holds fixed for a
+        // transaction, so every note written by one call carries the SAME
+        // timestamp. It sequences the *groups* exactly — one transaction
+        // only ever writes notes against one subject, and this query reads
+        // two of them, the recipe's and the current revision's — and it
+        // cannot sequence within a group at all. `notes.position` does that;
+        // it is a 1-based ordinal within the subject, written by
+        // `writeNotes`. Before it, the tiebreak was `asc(notes.id)`, a random
+        // uuid, so the Wellington's four mechanisms were renumbered on every
+        // ingest. `id` stays on the end so the sort is total.
+        .orderBy(asc(notes.createdAt), asc(notes.position), asc(notes.id)),
       // One flow at most — `uq_mass_flow_revision` — so the head repeats on
       // every stage row and a left join costs one statement instead of two.
       db
@@ -758,6 +777,16 @@ export async function getRecipeBySlug(
             noteSources.noteId,
             noteRows.map((x) => x.id),
           ),
+        )
+        // This read had no ORDER BY at all, so the citations under a note
+        // came back in whatever order the scan produced — visible on the
+        // recipe page and, worse, in `pnpm export`, where a `- Source:`
+        // block reshuffled between two loads of the same seed. Same three
+        // columns as everywhere else; the grouping below preserves them.
+        .orderBy(
+          asc(noteSources.createdAt),
+          asc(noteSources.position),
+          asc(noteSources.id),
         )
     : [];
   const sourcesByNote = new Map<string, NoteView['sources']>();
@@ -926,22 +955,53 @@ export async function getRecipeBySlug(
  * There is no status filter, matching `getRecipeBySlug`: an archived recipe
  * still answers at its own address.
  */
-export async function getRecipeIdentity(
-  slug: string,
-): Promise<{ slug: string; title: string } | null> {
+export async function getRecipeIdentity(slug: string): Promise<{
+  slug: string;
+  title: string;
+  /**
+   * The number of the revision `recipes.current_revision_id` points at.
+   * NOT `MAX(revision_number)`: a backfilled revision carries a later number
+   * and an earlier date, so the highest number is not the current one.
+   * `null` when the recipe has no current revision recorded.
+   *
+   * Added for `src/app/@foot/recipes/[slug]/page.tsx`, whose left slot is
+   * the design's `EFFECTIVITY: SIXTH REVISION AND ON`. A page foot must not
+   * pay for `getRecipeBySlug`, which reads eleven tables.
+   */
+  revisionNumber: number | null;
+} | null> {
   const rows = await db
-    .select({ slug: recipes.slug, title: recipes.title })
+    .select({
+      slug: recipes.slug,
+      title: recipes.title,
+      revisionNumber: recipeRevisions.revisionNumber,
+    })
     .from(recipes)
+    .leftJoin(
+      recipeRevisions,
+      eq(recipeRevisions.id, recipes.currentRevisionId),
+    )
     .where(eq(recipes.slug, slug))
     .limit(1);
-  return rows[0] ?? null;
+
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    slug: row.slug,
+    title: row.title,
+    revisionNumber: row.revisionNumber ?? null,
+  };
 }
 
 export async function listRecipeSlugs(): Promise<string[]> {
   const rows = await db
     .select({ slug: recipes.slug })
     .from(recipes)
-    .where(eq(recipes.status, 'active'));
+    .where(eq(recipes.status, 'active'))
+    // `pnpm export` walks this list and writes content/generated/README.md
+    // from it in order. With no ORDER BY the index reshuffled between two
+    // loads of one seed even when every recipe in it was identical.
+    .orderBy(asc(recipes.slug));
   return rows.map((r) => r.slug);
 }
 
@@ -1189,7 +1249,9 @@ export async function getIngredient(slug: string): Promise<{
       })
       .from(notes)
       .where(eq(notes.ingredientId, row.id))
-      .orderBy(asc(notes.createdAt)),
+      // The note order — see `getRecipeBySlug`. `created_at` alone left
+      // several notes written against one ingredient in planner order.
+      .orderBy(asc(notes.createdAt), asc(notes.position), asc(notes.id)),
   ]);
 
   const terms = await attachTerms(usedIn);
@@ -1248,6 +1310,31 @@ export interface ExperimentView {
 }
 
 /**
+ * One row of a batch-log index.
+ *
+ * It is NOT a thinner `ExperimentView`: the two indexes draw figures that
+ * the detail view computes from `observations`, and a list of six runs must
+ * not read every observation of every one of them to do it. `raw` and
+ * `finished` are the SUMS, made in `experimentWeights` below.
+ */
+export interface ExperimentSummary {
+  slug: string;
+  title: string;
+  summary: string | null;
+  startedAt: string | null;
+  /** `experiments.cost_total`, and the currency it was recorded in. */
+  costTotal: number | null;
+  currency: string | null;
+  /** The revision this run was cooking, when the run named one. */
+  revisionNumber: number | null;
+  /** What went in, summed, in the unit it was recorded in. */
+  raw: { value: number; unit: string } | null;
+  /** What came out. `null` when the run never weighed anything out. */
+  finished: { value: number; unit: string } | null;
+  recipe: { slug: string; title: string } | null;
+}
+
+/**
  * Every recorded run, or one recipe's.
  *
  * `/batch-logs` lists them all and calls this with nothing;
@@ -1262,20 +1349,23 @@ export interface ExperimentView {
  */
 export async function listExperiments(options?: {
   recipeSlug?: string;
-}): Promise<
-  Pick<ExperimentView, 'slug' | 'title' | 'summary' | 'startedAt' | 'recipe'>[]
-> {
+}): Promise<ExperimentSummary[]> {
   const rows = await db
     .select({
+      id: experiments.id,
       slug: experiments.slug,
       title: experiments.title,
       summary: experiments.summary,
       startedAt: experiments.startedAt,
+      costTotal: experiments.costTotal,
+      currency: experiments.currency,
+      revisionNumber: recipeRevisions.revisionNumber,
       recipeSlug: recipes.slug,
       recipeTitle: recipes.title,
     })
     .from(experiments)
     .leftJoin(recipes, eq(recipes.id, experiments.recipeId))
+    .leftJoin(recipeRevisions, eq(recipeRevisions.id, experiments.revisionId))
     .where(
       options?.recipeSlug ? eq(recipes.slug, options.recipeSlug) : undefined,
     )
@@ -1284,13 +1374,130 @@ export async function listExperiments(options?: {
     // and the grid reshuffles between renders.
     .orderBy(desc(experiments.startedAt), asc(experiments.slug));
 
+  const weights = await experimentWeights(rows.map((r) => r.id));
+
   return rows.map((r) => ({
     slug: r.slug,
     title: r.title,
     summary: r.summary,
     startedAt: r.startedAt,
+    costTotal: n(r.costTotal),
+    currency: r.currency,
+    revisionNumber: r.revisionNumber ?? null,
+    raw: weights.get(r.id)?.raw ?? null,
+    finished: weights.get(r.id)?.finished ?? null,
     recipe: r.recipeSlug ? { slug: r.recipeSlug, title: r.recipeTitle! } : null,
   }));
+}
+
+/**
+ * The metric that means "what went in", in the order it is preferred, and
+ * the one that means "what came out".
+ *
+ * `net_weight` first because it is the meat after the hook is subtracted,
+ * which is what every yield in the archive is computed against; the other
+ * two are what a run records when it never weighed a hook. FINISHED is
+ * `final_weight` ONLY — `expected_dried_weight` is net times 0.45 and a
+ * projection has no business being summed into a ledger of measurements.
+ *
+ * `src/app/batch-logs/batch-log-detail.tsx` states the same two lists for
+ * the figures on one run's own page and must not disagree with these.
+ */
+const RAW_METRICS = ['net_weight', 'initial_weight', 'gross_weight'] as const;
+const FINISHED_METRICS = ['final_weight'] as const;
+
+/**
+ * `RAW` and `DRIED` for a page of runs, in ONE query.
+ *
+ * The design draws a `RAW / DRIED / YIELD` panel on every row of both batch
+ * log indexes (`png/QqY5h.png`, `png/u7aBZ.png`) and the meta line under
+ * each summary carries `PER KG FINISHED`, which is the cost over the same
+ * dried figure. Both are sums over `experiment_observations`, so the index
+ * has to read them — one grouped aggregate over the runs already listed,
+ * not a per-row query.
+ *
+ * A SUM ACROSS TWO UNITS IS A NUMBER WITH NO MEANING, so the group is by
+ * unit as well and a metric recorded in two units is dropped rather than
+ * added up. R-STA-05 does the rest: a run that never weighed anything out
+ * has no DRIED and therefore no YIELD, and its panel draws what it has.
+ */
+async function experimentWeights(ids: string[]): Promise<
+  Map<
+    string,
+    {
+      raw: { value: number; unit: string } | null;
+      finished: { value: number; unit: string } | null;
+    }
+  >
+> {
+  const out = new Map<
+    string,
+    {
+      raw: { value: number; unit: string } | null;
+      finished: { value: number; unit: string } | null;
+    }
+  >();
+  if (ids.length === 0) return out;
+
+  const rows = await db
+    .select({
+      experimentId: experimentObservations.experimentId,
+      metric: experimentObservations.metric,
+      unit: experimentObservations.unit,
+      total: sql<string>`sum(${experimentObservations.value})`,
+    })
+    .from(experimentObservations)
+    .where(
+      and(
+        inArray(experimentObservations.experimentId, ids),
+        inArray(experimentObservations.metric, [
+          ...RAW_METRICS,
+          ...FINISHED_METRICS,
+        ]),
+        sql`${experimentObservations.value} is not null`,
+      ),
+    )
+    .groupBy(
+      experimentObservations.experimentId,
+      experimentObservations.metric,
+      experimentObservations.unit,
+    );
+
+  /* metric → the units it was recorded in, per run. Two units means the
+     metric is unusable, not that one of them wins. */
+  const byRun = new Map<
+    string,
+    Map<string, { value: number; unit: string }[]>
+  >();
+  for (const row of rows) {
+    const perMetric = byRun.get(row.experimentId) ?? new Map();
+    const list = perMetric.get(row.metric) ?? [];
+    list.push({ value: n(row.total) ?? 0, unit: row.unit ?? '' });
+    perMetric.set(row.metric, list);
+    byRun.set(row.experimentId, perMetric);
+  }
+
+  const pick = (
+    perMetric: Map<string, { value: number; unit: string }[]>,
+    metrics: readonly string[],
+  ) => {
+    for (const metric of metrics) {
+      const list = perMetric.get(metric);
+      if (!list || list.length === 0) continue;
+      if (list.length > 1) return null;
+      return list[0]!;
+    }
+    return null;
+  };
+
+  for (const id of ids) {
+    const perMetric = byRun.get(id);
+    out.set(id, {
+      raw: perMetric ? pick(perMetric, RAW_METRICS) : null,
+      finished: perMetric ? pick(perMetric, FINISHED_METRICS) : null,
+    });
+  }
+  return out;
 }
 
 export async function getExperiment(
@@ -1355,7 +1562,10 @@ export async function getExperiment(
       })
       .from(notes)
       .where(eq(notes.experimentId, row.id))
-      .orderBy(asc(notes.createdAt)),
+      // The note order — see `getRecipeBySlug`. `logExperiment` writes every
+      // note on a run in one transaction, so this list was the one most
+      // exposed to the tie: batch 2 carries three.
+      .orderBy(asc(notes.createdAt), asc(notes.position), asc(notes.id)),
   ]);
 
   return {
@@ -1590,7 +1800,17 @@ export async function listScienceIndex(): Promise<ScienceIndexView> {
           eq(recipes.status, 'active'),
         ),
       )
-      .orderBy(asc(recipes.title), asc(notes.createdAt), asc(notes.id)),
+      // Recipe first, then the note order — see `getRecipeBySlug`. The
+      // within-recipe half has to be the same three columns `getScienceStudy`
+      // uses, because both screens number a study's mechanisms `M1…Mn` from
+      // this order and a badge that reads M3 on one and M1 on the next names
+      // two different things to a reader.
+      .orderBy(
+        asc(recipes.title),
+        asc(notes.createdAt),
+        asc(notes.position),
+        asc(notes.id),
+      ),
     db
       .select({
         slug: recipes.slug,
@@ -1710,7 +1930,11 @@ export async function getScienceStudy(
     })
     .from(notes)
     .where(noteBelongsToRecipe(recipe.id))
-    .orderBy(asc(notes.createdAt), asc(notes.id));
+    // The note order — see `getRecipeBySlug`. This read spans four subjects
+    // (the recipe, its current revision, its steps and its runs), which is
+    // why `created_at` leads: it is what puts the groups in the order they
+    // were written, and `position` orders inside each one.
+    .orderBy(asc(notes.createdAt), asc(notes.position), asc(notes.id));
 
   const mechanisms: MechanismView[] = noteRows
     .filter((row) => row.kind === 'science')
@@ -1753,7 +1977,16 @@ export async function getScienceStudy(
               citedNotes.map((row) => row.id),
             ),
           )
-          .orderBy(asc(noteSources.createdAt), asc(noteSources.id))
+          // Same three columns as the note order, one level down. Every
+          // source of a note is written in the note's own transaction, so
+          // `created_at` ties across all of them and `position` is what
+          // decides; `[1]…[4]` under a study renumbered between loads
+          // without it.
+          .orderBy(
+            asc(noteSources.createdAt),
+            asc(noteSources.position),
+            asc(noteSources.id),
+          )
       : [],
     // "Applied in" is the recipes that lean on this study, and which edge
     // says so depends on the kind. An *incoming* `references`,

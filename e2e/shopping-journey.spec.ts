@@ -81,9 +81,14 @@ test.describe('shopping on a phone', () => {
       headings.findIndex((h) => /spices/i.test(h)),
     );
 
-    // Every row names the recipe that put it there.
+    // Every row names the recipe that put it there. M6 draws that as
+    // `F/List mark` — an 8px accent square and the recipe's title, linked at
+    // its page — where the old markup had a `.shopping-from` run of text, so
+    // the assertion is now on the link the chip actually is.
     const salt = page.locator('.shopping-item', { hasText: 'Salt' }).first();
-    await expect(salt.locator('.shopping-from')).toContainText(/Biltong|Boil/);
+    await expect(salt.locator('a[href^="/recipes/"]').first()).toContainText(
+      /Biltong|Boil/,
+    );
   });
 
   test('tick all ticks everything, and unticks it again', async ({ page }) => {
@@ -91,13 +96,19 @@ test.describe('shopping on a phone', () => {
     await openList(page);
 
     const total = await page.locator('.shopping-item').count();
-    const counter = page.locator('.checklist-head .faint');
+    // M6 rebuilt the bar as the design's `Tick all`: R-CMP-12 asks for an
+    // INDETERMINATE middle state, and `indeterminate` is a DOM property with
+    // no attribute that React cannot set declaratively — so the control is a
+    // `<button role="checkbox">` carrying `aria-checked="mixed"`, not an
+    // `<input>`, and it is driven by role rather than by `.check()`. The
+    // readout reads "0 of 24 in the trolley", which is the design's wording.
+    const counter = page.locator('.checklist-head');
 
-    await expect(counter).toContainText(`0 / ${total}`);
-    await page.locator('.check-all input').check();
-    await expect(counter).toContainText(`${total} / ${total}`);
-    await page.locator('.check-all input').uncheck();
-    await expect(counter).toContainText(`0 / ${total}`);
+    await expect(counter).toContainText(`0 of ${total} in the trolley`);
+    await page.getByRole('checkbox', { name: /tick everything/i }).click();
+    await expect(counter).toContainText(`${total} of ${total}`);
+    await page.getByRole('checkbox', { name: /untick everything/i }).click();
+    await expect(counter).toContainText(`0 of ${total}`);
   });
 
   test('a section heading stands clear of the row above it', async ({
@@ -297,10 +308,17 @@ test.describe('amounts keep the unit the recipe wrote', () => {
       const UNITS = /\b(g|kg|mg|oz|lb|lbs|ml|l|tsp|tbsp|cups?)\b/g;
       const bad: string[] = [];
       for (const item of document.querySelectorAll('.shopping-item')) {
-        const amount =
-          item.querySelector('.shopping-amount')?.textContent ?? '';
-        const from = item.querySelector('.shopping-from')?.textContent ?? '';
-        const name = item.querySelector('.shopping-what')?.textContent ?? '';
+        // M6 draws the row as `F/List row`, whose three element children are
+        // the tick box, the amount column and the column holding the name,
+        // the source chips and the quoted original lines. The old markup's
+        // `.shopping-amount`, `.shopping-from` and `.shopping-what` hooks
+        // went with it; reading them now would leave every string empty and
+        // this sweep would pass without testing anything.
+        const row = item.firstElementChild;
+        const amount = row?.children[1]?.textContent ?? '';
+        const column = row?.children[2];
+        const from = column?.textContent ?? '';
+        const name = column?.firstElementChild?.textContent ?? '';
         for (const unit of amount.match(UNITS) ?? []) {
           const singular = unit.replace(/s$/, '');
           const written = new RegExp(`\\d\\s*${singular}s?\\b`, 'i');

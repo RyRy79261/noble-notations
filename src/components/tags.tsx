@@ -87,6 +87,15 @@ export type TermTagProps = {
   term: TermView;
   /** Draw the category type ahead of the name, in 9px mono. */
   showFacet?: boolean;
+  /**
+   * The `/classes` drawing — an `f-desk` ground and an 8px accent square.
+   * Forwarded to F/Tag, which owns it; see the `TAG_PILL` note there and
+   * BUILD-PLAN §4.1. It is a prop rather than a `className` because the
+   * square is a DOM node and a ground alone cannot draw it, which is what
+   * the header above anticipated. Defaults to the bare tag, so the recipe
+   * card, the recipe hero and the hierarchy are unchanged.
+   */
+  pill?: boolean;
   className?: string;
 };
 
@@ -104,13 +113,19 @@ export type TermTagProps = {
  * anyway, so the class changes nothing on the page. It goes when M7 deletes
  * globals.css and rewrites the assertion.
  */
-export function TermTag({ term, showFacet = false, className }: TermTagProps) {
+export function TermTag({
+  term,
+  showFacet = false,
+  pill = false,
+  className,
+}: TermTagProps) {
   const facet = CATEGORY_TYPE_LABELS[term.categoryType] ?? term.categoryType;
 
   const shared = {
     name: term.label,
     prefix: showFacet ? facet : undefined,
     primary: term.isPrimary,
+    pill,
     className: cn('tag-wrap', className),
   };
 

@@ -4,7 +4,6 @@ slug: 'baumy-biltong'
 kind: 'recipe'
 revision: 1
 source: 'import'
-created: '2026-09-09T10:43:10.105Z'
 generated: 'true'
 ---
 

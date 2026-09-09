@@ -73,14 +73,61 @@ export const metadata: Metadata = {
 };
 
 import { Announcer } from './announcer';
-import { PageFoot } from '@/components/f/page-foot';
 import { SiteHeader } from '@/components/f/site-header';
 import { SkipLink } from '@/components/f/skip-link';
 import { HeaderHeight } from '@/components/header-height';
 
+/**
+ * THE PAGE FOOT IS A PARALLEL ROUTE, AND THIS IS WHY.
+ *
+ * C-04's outer two strings are per-screen copy — `FROZEN 08 SEP 2026 ·
+ * ELEVEN NOTES` / `NN/ARCHIVE` on the archive, `COMPILED 08 SEP 2026 ·
+ * TWENTY-SEVEN INGREDIENTS` / `NN/LIST` on the list — and several of them
+ * are facts about the data on the screen rather than constants. So the foot
+ * has to be composed per route, and `page-foot.tsx` has said so since M3.
+ *
+ * The three obvious ways to do that are all wrong here:
+ *
+ *   - A page cannot render it. `{children}` is inside `<main>`, and a
+ *     `<footer>` inside `<main>` is not `contentinfo` (HTML-AAM); the
+ *     document would lose its landmark on every rebuilt screen.
+ *   - A route→strings map read in this file needs the pathname, and a
+ *     Server Component has no way to ask for one. `headers()` would work
+ *     only with a proxy matcher widened over the whole site, and
+ *     `src/proxy.ts` documents at length why its scope is deliberately tiny.
+ *   - `usePathname()` needs a client component, and §9.3 fixes the count of
+ *     those at nine.
+ *
+ * A parallel route slot is the one mechanism that is none of those: it
+ * renders as a SIBLING of `<main>`, on the server, per route, with the
+ * route's own `params` and `searchParams` — so `src/app/@foot/archive/…`
+ * can read what it needs to name what the reader is looking at.
+ *
+ * `src/app/@foot/default.tsx` is what a route with no slot of its own gets,
+ * and it is the foot the site drew before M6. Nothing breaks by omission:
+ * a screen that has not been rebuilt keeps the generic issue line, and a
+ * screen that wants its own adds one file under `@foot/` mirroring its
+ * route.
+ *
+ * THE 404 IS THE ONE ROUTE THE SLOT DOES NOT REACH, and the sentence that
+ * stood here — "it is also what the 404 renders" — was measured wrong. On a
+ * production build `/nope` came back with no `.site-footer` in it at all:
+ * a root `not-found.tsx` is rendered through the `children` outlet's
+ * `notFound` boundary and the `foot` outlet resolves to nothing beside it,
+ * so `default.tsx` is never consulted. `foot` is still an outlet ELEMENT at
+ * that point rather than `undefined`, so `foot ?? <PageFoot />` here does
+ * not fire either — it was tried.
+ *
+ * `src/app/not-found.tsx` therefore renders its own `PageFoot`, inside
+ * `<main>`, and says at length what that costs. Whoever owns this mechanism
+ * should decide whether a `global-not-found.tsx` (Next 16) is the right
+ * answer at M7; it would let the 404 compose its own shell and put the foot
+ * back outside the landmark.
+ */
 export default function RootLayout({
   children,
-}: Readonly<{ children: React.ReactNode }>) {
+  foot,
+}: Readonly<{ children: React.ReactNode; foot: React.ReactNode }>) {
   return (
     <html
       lang="en"
@@ -143,9 +190,11 @@ export default function RootLayout({
             {children}
           </main>
 
-          {/* C-04. The two outer strings are per-screen copy; each screen
-              passes its own as M4 to M6 rebuild it. */}
-          <PageFoot />
+          {/* C-04. The two outer strings are per-screen copy, so the foot
+              is composed per route under `src/app/@foot/`. The 404 is the one
+              route this outlet does not reach and it draws its own. See the
+              note above `RootLayout`. */}
+          {foot}
         </div>
       </body>
     </html>

@@ -12,7 +12,13 @@ const VIEWS = [
     // Matches an ingredient present in the seed.
     query: 'coriander',
     absent: 'jalapeno',
-    itemSelector: 'tbody tr',
+    // M6 rebuilt the index onto `F/Table row`, which is a `role="table"`
+    // flex construction and not a `<table>`: the design's row is a flex
+    // layout at 1280 and a two-line block at 360, and `display: flex` on a
+    // `<tr>` is the change that strips a real table of its semantics. The
+    // selector is scoped to the aisle sections so the one column head —
+    // also a `role="row"` — is not counted as an ingredient.
+    itemSelector: 'section.section [role="row"]',
   },
   {
     path: '/classes',

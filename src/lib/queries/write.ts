@@ -294,23 +294,88 @@ async function writeRevisionBody(
   }
 }
 
+type NoteSubject = {
+  recipeId?: string;
+  revisionId?: string;
+  stepId?: string;
+  ingredientId?: string;
+  experimentId?: string;
+};
+
+/**
+ * The next free `notes.position` for one subject.
+ *
+ * A subject is whichever of the five columns is set — the check constraint
+ * `note_has_exactly_one_subject` guarantees there is exactly one — so this
+ * is `MAX(position) + 1` over the notes already hanging off it, and the
+ * first note on a subject gets 1.
+ *
+ * The predicate names the one column that is set rather than testing all
+ * five, so `idx_notes_recipe`, `idx_notes_revision` and
+ * `idx_notes_ingredient` are usable and the lookup stays bounded by the
+ * notes on that one subject.
+ *
+ * **No lock, and no unique index behind it.** Two connectors adding a note
+ * to the same recipe at the same moment can both read the same maximum and
+ * both write it. That is harmless here and locking for it would be worse:
+ * `position` is the *tiebreak* under `created_at`, not the sort key, and
+ * two concurrent transactions have two different `now()` values, so the
+ * pair is still totally ordered and still stable. A unique index would
+ * turn a harmless collision into a refused write on the second author.
+ */
+async function nextNotePosition(tx: Tx, subject: NoteSubject): Promise<number> {
+  const where = subject.recipeId
+    ? eq(notes.recipeId, subject.recipeId)
+    : subject.revisionId
+      ? eq(notes.revisionId, subject.revisionId)
+      : subject.stepId
+        ? eq(notes.stepId, subject.stepId)
+        : subject.ingredientId
+          ? eq(notes.ingredientId, subject.ingredientId)
+          : subject.experimentId
+            ? eq(notes.experimentId, subject.experimentId)
+            : null;
+  // No subject at all is a programming error the check constraint would
+  // catch on insert; there is nothing to count against, so start at 1.
+  if (!where) return 1;
+
+  const [row] = await tx
+    .select({ max: sql<number | null>`MAX(${notes.position})` })
+    .from(notes)
+    .where(where);
+  return (row?.max ?? 0) + 1;
+}
+
 /**
  * Insert notes and their citations against a single subject column.
  * Returns the new note ids in the order given.
+ *
+ * **This is the only insert path for `notes` and `note_sources`**, which is
+ * what lets `position` be assigned in one place. `createRecipe`,
+ * `reviseRecipe`, `backfillRevision`, `addNote` and `logExperiment` all
+ * come through here; nothing else touches either table except
+ * `describeMechanism`, which updates one column on a note that exists.
+ *
+ * The array's own order is the order that gets stored — a caller writing
+ * four mechanisms in the order a cook meets them gets them back that way,
+ * on the recipe page and on both science screens. Before this column the
+ * order came back as whatever the planner returned, because every note in
+ * one call shares `created_at`; see the comment on `notes.position`.
  */
 async function writeNotes(
   tx: Tx,
-  subject: {
-    recipeId?: string;
-    revisionId?: string;
-    stepId?: string;
-    ingredientId?: string;
-    experimentId?: string;
-  },
+  subject: NoteSubject,
   list: NoteInput[] | undefined,
 ): Promise<string[]> {
   const ids: string[] = [];
-  for (const note of list ?? []) {
+  if (!list?.length) return ids;
+
+  // Read once, then count up. One statement per call rather than one per
+  // note, and correct inside the call because nothing else writes to this
+  // subject while the transaction is open.
+  let position = await nextNotePosition(tx, subject);
+
+  for (const note of list) {
     const inserted = await tx
       .insert(notes)
       .values({
@@ -318,6 +383,7 @@ async function writeNotes(
         title: note.title ?? null,
         body: note.body,
         conditions: note.conditions ?? [],
+        position: position++,
         recipeId: subject.recipeId ?? null,
         revisionId: subject.revisionId ?? null,
         stepId: subject.stepId ?? null,
@@ -328,6 +394,11 @@ async function writeNotes(
 
     const noteId = inserted[0]!.id;
     ids.push(noteId);
+    // A note is written once and its citations with it, so the position of
+    // a source is simply its index in the list — there is no earlier
+    // source on this note to count past. 1-based to match the backfill in
+    // migration 0006, which numbers from row_number().
+    let sourcePosition = 1;
     for (const source of note.sources ?? []) {
       await tx.insert(noteSources).values({
         noteId,
@@ -335,6 +406,7 @@ async function writeNotes(
         title: source.title ?? null,
         citation: source.citation ?? null,
         accessedAt: source.accessedAt ?? null,
+        position: sourcePosition++,
       });
     }
   }

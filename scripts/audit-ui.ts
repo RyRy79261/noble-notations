@@ -70,10 +70,12 @@ const ROUTES = [
   '/recipes/baumy-biltong/batch-logs/biltong-batch-3',
   // /science and one study. The seed leaves two recipes in
   // `listScienceIndex().studies`: beef-wellington-technique with four
-  // mechanisms and demi-glace with one. The first is audited because it
-  // draws the longer page, so it is the one that can overflow.
+  // mechanisms and demi-glace with five — M6 seeded the four the design
+  // draws and D-02 had blocked. Demi-glace is now the longer study page,
+  // and it is also the one carrying a conditions run on every block, so it
+  // is the one that can overflow.
   '/science',
-  '/science/beef-wellington-technique',
+  '/science/demi-glace',
   '/cuisines',
   '/cuisines/south-african',
   '/classes',

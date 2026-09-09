@@ -4,7 +4,6 @@ slug: 'beef-wellington-technique'
 kind: 'research'
 revision: 1
 source: 'import'
-created: '2026-09-09T10:43:10.568Z'
 generated: 'true'
 ---
 
@@ -25,21 +24,11 @@ Transcribed from the archive research note.
 
 ## Notes
 
-### Mushroom blend _(observation)_
-
-Cremini for the earthy base, shiitake for umami, dried porcini for concentrated woodland aroma. Rehydrate porcini in warm — not boiling — water for 20–30 minutes, agitate after five to release grit, lift them out rather than pouring, and strain and keep the soaking liquid. They expand three to four times.
-
 ### The octagon sear _(science)_
 
 Treating the tenderloin as eight flat faces plus two ends gives even caramelisation while keeping the interior raw. A cylinder seared with single flips browns unevenly and drives heat further into the centre, which is then overcooked by the bake.
 
 Conditions: 8 faces + 2 ends · raw interior
-
-### Temperature and carryover _(science)_
-
-Start at 220 °C so the butter layers in the pastry expand and set structure before the beef heats, then drop to 190 °C for even penetration. Pull at 52–54 °C: carryover adds about 3 °C during the rest, landing at 54–57 °C for medium-rare.
-
-Conditions: 220 °C then 190 °C · pull 52–54 °C → rests to 54–57 °C
 
 ### Duxelles as a moisture barrier, not a flavour layer _(science)_
 
@@ -53,8 +42,18 @@ Prosciutto works by fat solidifying during the chill into a semi-impermeable lay
 
 Conditions: dry duxelles + sealed wrap
 
+### Temperature and carryover _(science)_
+
+Start at 220 °C so the butter layers in the pastry expand and set structure before the beef heats, then drop to 190 °C for even penetration. Pull at 52–54 °C: carryover adds about 3 °C during the rest, landing at 54–57 °C for medium-rare.
+
+Conditions: 220 °C then 190 °C · pull 52–54 °C → rests to 54–57 °C
+
 ### Vent the pastry _(warning)_
 
 Steam pressure inside a sealed pastry case ruptures it unpredictably. One deliberate vent hole releases it in a controlled way.
 
 - Source: https://www.perplexity.ai/search/this-recipe-doesn-t-mention-ho-lYBPLacCTiOroTjc._KsTA
+
+### Mushroom blend _(observation)_
+
+Cremini for the earthy base, shiitake for umami, dried porcini for concentrated woodland aroma. Rehydrate porcini in warm — not boiling — water for 20–30 minutes, agitate after five to release grit, lift them out rather than pouring, and strain and keep the soaking liquid. They expand three to four times.

@@ -12,6 +12,15 @@
  * lives in ./seed-data.ts, hand-derived from content/ — see the note at the
  * top of that file for why it is not parsed.
  *
+ * **The order of a seed's `notes` array is load-bearing.** `writeNotes`
+ * stores it as `notes.position` (migration 0006), and every screen that
+ * draws notes reads them back in it — including `/science`, which numbers a
+ * study's mechanisms `M1…Mn` by their place in that list. Reordering the
+ * array in seed-data.ts renames a mechanism; adding one in the middle
+ * renames every mechanism after it. Append, unless the rename is the point.
+ * Two loads of an unchanged seed produce the same order, which is what lets
+ * `pnpm export` write byte-identical files.
+ *
  * The third form is what `pnpm build` runs. It is off unless asked for,
  * because a build must not decide on its own to write to the database it is
  * deploying against.
