@@ -921,7 +921,7 @@ were two, and **the unused one was the one that disagreed with the export**:
 | `F/Button`         | no border of any kind             | `bg-accent text-on-accent`          | `border border-accent …` — 2px wider and taller   |
 | `F/Button > Quiet` | a 1px inset **outline** at −0.5px | `outline-1 outline-offset-[-0.5px]` | `border border-hair` — a border, so the box grows |
 | `F/Tag CTA`        | `gap-[12px]`, an inset outline    | `gap-3` + the inset outline         | `gap-1` (4px) never overridden, and a border      |
-| `F/Mark`           | `p-[4px_9px]`, no border          | `px-2.25 py-1`                      | `border border-transparent` — 9/4 inset by 1px    |
+| `F/Mark`           | `p-[ 4px_9px ]`, no border        | `px-2.25 py-1`                      | `border border-transparent` — 9/4 inset by 1px    |
 
 They also contradicted each other on what the design contains: `ui/button`
 shipped `sm`, `lg`, `glyph`, `secondary`, `destructive`, `ghost` and `link`,
@@ -1081,7 +1081,7 @@ the `title` attribute.
 
 The design draws it as the frame `Contents — 360` in
 `design/exports/recipe-360.html`:
-`w-[360px] absolute left-0 top-0 bg-[#FCFAF6] overflow-hidden`.
+`w-[360px] absolute left-0 top-0 bg-[ #FCFAF6 ] overflow-hidden`.
 
 | Stock                                                                                                                                             | Now                                                                                      | Note                                                                                                                                                                                                                        |
 | ------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1106,7 +1106,7 @@ in the file enforces that; it is a rule for whoever composes
 
 The design's control padding is not on the thirteen-step gap scale of §4.4:
 `F/Button` is `p-[11px_18px]`, `F/Field` is `p-[10px_12px]`, `F/Mark` is
-`p-[4px_9px]`.
+`p-[ 4px_9px ]`.
 
 No primitive writes an arbitrary length for these. `--spacing`
 is pinned to 4px (§4.4) and Tailwind's spacing scale accepts a fractional

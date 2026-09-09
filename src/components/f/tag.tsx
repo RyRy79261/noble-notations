@@ -90,15 +90,42 @@ export type TagProps = Omit<HTMLAttributes<HTMLElement>, 'prefix'> & {
     | {
         /** The term explanation. Shown on hover and on focus (R-CMP-03). */
         explanation: string;
+        /**
+         * A micro-label above the explanation in the panel. The facet, in
+         * practice — see `TOOLTIP_LABEL` below for why it is not optional in
+         * spirit even though it is in the type.
+         */
+        explanationLabel?: string;
         /** The term page. Required beside an explanation — see above. */
         href: string;
       }
     | {
         explanation?: undefined;
+        explanationLabel?: undefined;
         /** The term page. A tag without one is drawn on a `<span>`. */
         href?: string;
       }
   );
+
+/**
+ * The panel's own micro-label, and why the facet belongs in it.
+ *
+ * The design draws no tooltip, so its inside is this build's. The old
+ * stylesheet's `.tag-tooltip-facet` set the facet above the blurb on EVERY
+ * described term, whether or not the tag itself showed a prefix — and the
+ * facet is load-bearing here: the same word lives in two facets, air-drying
+ * is a technique AND a preservation method, and `e2e/classes.spec.ts` exists
+ * because those are two different terms with two different blurbs. A tag
+ * drawn bare — every card tag, every narrower term in F/Tag hierarchy, every
+ * tag on `/classes` — has nowhere else to say which one it is.
+ *
+ * It takes the design's mono micro-label, the same 9px `f-ink-3` at 1.2px
+ * the prefix takes, so the panel is set in type the system already has.
+ */
+const TOOLTIP_LABEL = cn(
+  'block text-09 leading-normal font-mono tracking-label uppercase',
+  'text-ink-3',
+);
 
 /**
  * F/Tag — one term.
@@ -130,6 +157,7 @@ export function Tag({
   prefix,
   href,
   explanation,
+  explanationLabel,
   primary,
   className,
   ...props
@@ -165,7 +193,17 @@ export function Tag({
   return (
     <Tooltip>
       <TooltipTrigger asChild>{term}</TooltipTrigger>
-      <TooltipContent>{explanation}</TooltipContent>
+      <TooltipContent>
+        {explanationLabel ? (
+          <>
+            <span className={TOOLTIP_LABEL}>{explanationLabel}</span>
+            {/* A block ends a line on the page but not in `textContent`, so
+                the label and the blurb would be read as one word without
+                this. Same construct as F/Footnote's head. */}{' '}
+          </>
+        ) : null}
+        {explanation}
+      </TooltipContent>
     </Tooltip>
   );
 }
@@ -239,8 +277,8 @@ export function TagCTA({
 /** One term in the hierarchy. It carries the same pairing `TagProps` does:
  *  an explanation only where there is a term page to tap through to. */
 export type HierarchyTerm = { name: string; prefix?: string } & (
-  | { explanation: string; href: string }
-  | { explanation?: undefined; href?: string }
+  | { explanation: string; explanationLabel?: string; href: string }
+  | { explanation?: undefined; explanationLabel?: undefined; href?: string }
 );
 
 export type TagHierarchyProps = HTMLAttributes<HTMLDivElement> & {
@@ -294,7 +332,11 @@ export function TagHierarchy({
               prefix={term.prefix}
               {...(term.explanation === undefined
                 ? { href: term.href }
-                : { href: term.href, explanation: term.explanation })}
+                : {
+                    href: term.href,
+                    explanation: term.explanation,
+                    explanationLabel: term.explanationLabel,
+                  })}
             />
           ))}
         </div>

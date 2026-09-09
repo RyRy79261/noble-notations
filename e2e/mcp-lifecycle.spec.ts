@@ -224,16 +224,18 @@ test.describe('the website serves what the MCP wrote', () => {
     const tag = page.locator('a[href="/classes/equipment/blender"]');
     await expect(tag).toBeVisible();
 
-    const tooltipId = await tag.getAttribute('aria-describedby');
-    expect(tooltipId).toBeTruthy();
+    // Absent until hover, then shown — the whole point of the tooltip. The
+    // panel is mounted only while it is open and `aria-describedby` appears
+    // on the trigger at the same moment; see `classes.spec.ts`.
+    const tooltip = page.getByRole('tooltip');
+    await expect(tooltip).toHaveCount(0);
+    await expect(tag).not.toHaveAttribute('aria-describedby', /.+/);
 
-    const tooltip = page.locator(`#${tooltipId}`);
-    await expect(tooltip).toContainText(/emulsify/i);
-
-    // Hidden until hover, then shown — the whole point of the tooltip.
-    await expect(tooltip).toBeHidden();
     await tag.hover();
+
     await expect(tooltip).toBeVisible();
+    await expect(tooltip).toContainText(/emulsify/i);
+    await expect(tag).toHaveAttribute('aria-describedby', /.+/);
   });
 
   test('renders the optional hero and step images', async ({ page }) => {

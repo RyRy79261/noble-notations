@@ -526,7 +526,14 @@ export async function getRecipeBySlug(
       .where(
         sql`${notes.recipeId} = ${recipe.id} OR ${notes.revisionId} = ${revision.id}`,
       )
-      .orderBy(asc(notes.createdAt)),
+      // `asc(notes.id)` is not decoration. `notes.created_at` defaults to
+      // `now()`, which Postgres holds fixed for a transaction, so every note
+      // ingested with a recipe carries the SAME timestamp and a sort on that
+      // column alone has no defined order. `getScienceStudy` numbers the same
+      // science notes `M1…Mn` over `asc(notes.createdAt), asc(notes.id)`, and
+      // `NoteList` numbers them again on the recipe page — the tiebreak is
+      // what keeps the two codes the same word for the same note.
+      .orderBy(asc(notes.createdAt), asc(notes.id)),
     attachTerms([{ id: recipe.id }]),
   ]);
 

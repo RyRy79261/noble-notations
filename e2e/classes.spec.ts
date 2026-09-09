@@ -30,14 +30,19 @@ test('a seeded tag shows its blurb on hover', async ({ page }) => {
   const tag = page.locator('a[href="/cuisines/south-african"]').first();
   await expect(tag).toBeVisible();
 
-  const tooltipId = await tag.getAttribute('aria-describedby');
-  expect(tooltipId).toBeTruthy();
+  // The panel is mounted only while it is open, and the trigger's
+  // `aria-describedby` appears at the same moment and points at it. That is
+  // the APG contract and it is what R-ACC-03 asks for; a permanently
+  // mounted panel was the old CSS tooltip's shape, not this one's.
+  await expect(page.getByRole('tooltip')).toHaveCount(0);
+  await expect(tag).not.toHaveAttribute('aria-describedby', /.+/);
 
-  const tooltip = page.locator(`#${tooltipId}`);
-  await expect(tooltip).toBeHidden();
   await tag.hover();
+
+  const tooltip = page.getByRole('tooltip');
   await expect(tooltip).toBeVisible();
   await expect(tooltip).toContainText(/Dutch, Malay, British/i);
+  await expect(tag).toHaveAttribute('aria-describedby', /.+/);
 });
 
 test('the blurb is reachable by keyboard, not only by pointer', async ({
@@ -46,12 +51,12 @@ test('the blurb is reachable by keyboard, not only by pointer', async ({
   await page.goto('/recipes/baumy-biltong');
 
   const tag = page.locator('a[href="/cuisines/south-african"]').first();
-  const tooltipId = await tag.getAttribute('aria-describedby');
-  const tooltip = page.locator(`#${tooltipId}`);
+  const tooltip = page.getByRole('tooltip');
 
-  await expect(tooltip).toBeHidden();
+  await expect(tooltip).toHaveCount(0);
   await tag.focus();
   await expect(tooltip).toBeVisible();
+  await expect(tooltip).toContainText(/Dutch, Malay, British/i);
 });
 
 test('the tooltip is actually opaque over the text it covers', async ({
@@ -64,8 +69,7 @@ test('the tooltip is actually opaque over the text it covers', async ({
   await page.goto('/recipes/baumy-biltong');
 
   const tag = page.locator('a[href="/cuisines/south-african"]').first();
-  const tooltipId = await tag.getAttribute('aria-describedby');
-  const tooltip = page.locator(`#${tooltipId}`);
+  const tooltip = page.getByRole('tooltip');
 
   await tag.hover();
   await expect(tooltip).toBeVisible();
@@ -102,15 +106,16 @@ test('a cuisine page shows its blurb and its place in the hierarchy', async ({
   await expect(page.getByText(/dark roux/i).first()).toBeVisible();
 
   // Cajun is seeded under American; the page has to say so, and the link
-  // has to actually go there.
-  await expect(page.getByText('Part of')).toBeVisible();
+  // has to actually go there. `Broader` and `Narrower` are the design's own
+  // words for the two rows of F/Tag hierarchy (`foundations.html:3576`).
+  await expect(page.getByText('Broader')).toBeVisible();
   await expect(page.locator('a[href="/cuisines/american"]')).toBeVisible();
 });
 
 test('a parent cuisine lists its narrower regions', async ({ page }) => {
   await page.goto('/cuisines/american');
 
-  await expect(page.getByText('More specific')).toBeVisible();
+  await expect(page.getByText('Narrower')).toBeVisible();
   await expect(page.locator('a[href="/cuisines/cajun"]')).toBeVisible();
 });
 

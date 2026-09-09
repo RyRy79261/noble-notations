@@ -133,6 +133,14 @@ observations. The biltong batch logs are experiments, not recipes.
   file and will drop columns.
 - Scripts run with `NODE_OPTIONS=--conditions=react-server`, because
   `server-only` otherwise resolves to its throwing client entry outside Next.
+- **A Tailwind class string inside a comment is a class string** — and so is
+  one inside a Markdown file this repository tracks. Tailwind v4 scans raw
+  source text, not JSX attributes, so quoting a value read off the design
+  emits a real utility into the production stylesheet, raw hex included, and
+  R-BLD-02 and R-TKN-04 are then broken by a comment. Put a space inside the
+  brackets when quoting one — `bg-[ #FCFAF6 ]` scans to nothing and still
+  greps — and check with
+  `grep -oE '\\#[0-9A-Fa-f]{6}' .next/static/chunks/*.css` after a build.
 
 ## Local development
 

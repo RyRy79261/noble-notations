@@ -419,3 +419,91 @@ coexistence strategy in D-03, not a new cost.
 Add the three properties to the bridge block in `src/app/theme.css`, then
 re-run `pnpm audit:ui` at all four widths in both themes and fix what
 reflows.
+
+---
+
+## D-10 — The body link is an underline
+
+**Status:** Decided. This is M4's third invented treatment.
+**Date:** 2026-09-09
+**Touches:** C-11, C-12, R-ACC-01, R-BLD-02, §9.2
+
+### The problem
+
+The design draws no in-body link. There are zero underlines and zero links
+inside running prose across the eighteen exports; `grep -E
+'underline|text-decoration'` over all of them returns nothing. C-11 renders
+Markdown and C-12 writes two sentences that both have to name the archive,
+so both need a link treatment and there is none to copy.
+
+Colour alone cannot carry it. `f-accent` measures **1.90:1 against `f-ink`**
+— 8.06 and 15.31 on the paper — well under the 3:1 WCAG 1.4.1 asks of a link
+distinguished from its surrounding text by colour only.
+
+### What I chose
+
+`PROSE_LINK` in `src/components/f/button.tsx`: the accent, plus a 1px
+underline at a 2px offset, plus `FOCUS_RING`. An underline is the only cue
+left that the design has not already spent on something else — the 3px left
+rule is F/Notice and F/Warning, the ground is F/Mark, the box is
+F/Ingredient callout, the square is F/List mark.
+
+`text-cta-line` must never be used for it. TOKEN-MAP §7 measures it at
+3.11:1 at best, against the 4.5:1 R-ACC-01 asks of text.
+
+It lives beside `FOCUS_RING` because it composes it, because both are
+treatments this build invented rather than read, and because a leaf module is
+what a Server Component graph wants: it was in `markdown.tsx`, and importing
+it from there pulled `react-markdown` and `remark-gfm` into the module graph
+of all eighteen routes that can draw C-12's notice.
+
+### The other option
+
+Set a body link in the accent with no underline and accept 1.90:1. That
+fails WCAG 1.4.1 and the design does not ask for it — the design simply has
+no case where the question arises.
+
+### To change it
+
+Change `PROSE_LINK` in `src/components/f/button.tsx`. Both callers —
+`markdown.tsx` and `database-notice.tsx` — read it from there.
+
+---
+
+## D-11 — A card summary is not cut at 160 characters
+
+**Status:** Decided. **Worth your eye.**
+**Date:** 2026-09-09
+**Touches:** C-05, §9.2, R-BLD-03
+
+### The problem
+
+C-05 in §9.2 says the recipe card's summary "is cut at 160 characters". The
+pre-M4 build did that with a `truncate()` helper and an ellipsis.
+
+The design draws the same card with summaries of **181 characters** on
+`/cuisines/[slug]` (`classes-cuisines-1280.html`) and **245** on the same
+card in `dark-screens.html` and `m360-batch-search-list.html`, both set whole
+and wrapping freely. There is no `line-clamp`, no `text-overflow` and no
+ellipsis anywhere in the eighteen exports.
+
+### What I chose
+
+The card draws what it is given. The cut is gone.
+
+BUILD-PLAN's preamble splits the two documents this way: "The functional
+specification says **what** each screen must do. The design file says **how**
+it must look." A cut length is arguably a _what_, which is why this is a
+decision and not a reading — but a 160-character cut would visibly cut two of
+the design's own cards, and the design is the later document.
+
+If the cut is wanted, it belongs on the DATA and not on the card: a summary
+that has to be short should be written short, or trimmed in
+`RecipeSummaryView`, so one length applies wherever the field is shown.
+
+### To change it
+
+Restore `truncate(text, 160)` in `src/components/recipe-card.tsx` and pass
+`summary={truncate(recipe.summary, 160)}`. Do not put it in
+`src/components/f/recipe-card.tsx`: that file is the drawing and holds no
+data rule.

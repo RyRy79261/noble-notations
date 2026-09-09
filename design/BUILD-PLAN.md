@@ -159,6 +159,17 @@ This keeps the site usable and the tests green at each step.
 
 ---
 
+## 4.1 Carried forward
+
+A milestone can leave a named item to a later one. Each item here has an
+owner and a test.
+
+| Item                           | Owner        | Why it waits                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------ | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| The `/classes` tag pill        | M6           | M4 rebuilt `F/Tag` with no padding, which is what the design draws almost everywhere. `/classes` is the exception: the design draws a pill there with `p-[4px_9px_4px_10px]` on `f-desk` and an 8px accent square. Without it a term on that screen is 17px tall, which `pnpm audit:ui` reports as 4 small tap targets. See `design/exports/classes-cuisines-1280.html`. |
+| The note kind wrap             | Closed in M4 | `src/components/f/note.tsx` set `w-full` on the title at every width, which squeezed `NOTE · OBSERVATION` onto two lines above the breakpoint. Now `w-full shell:w-auto`.                                                                                                                                                                                                |
+| The screen reader run-together | Closed in M4 | Four row components put two values next to each other with a flex gap and no character between them, so `textContent` read `29 NOV 2024Biltong Batch 4`. Each now holds a real space. This is the same fault R-CMP-14 records for the step chip.                                                                                                                         |
+
 ## 5. How to run the full tests
 
 This machine has no Postgres, but it has Docker. M2 proved that a scratch
@@ -187,6 +198,24 @@ docker rm -f nn-test
 `e2e/global-setup.ts` drops the `public` and `drizzle` schemas on every run.
 Point it at a scratch database only.
 
+**Check the port before you believe an audit number.** `pnpm audit:ui` drives
+whatever answers on `:3000`. A `next start` another agent left running answers
+too, and it serves the chunk hashes of the build it was started from — which
+made one M4 audit report 180 major faults that were all
+`Refused to apply style … MIME type ('text/plain')` against a build that no
+longer existed. `pnpm start` fails with `EADDRINUSE` in that state and a
+`curl` still succeeds, so the failure is silent unless it is looked for:
+
+```bash
+ss -ltnp | grep ':3000'      # must be empty before `pnpm start`
+pnpm build && pnpm start & SERVER=$!
+pnpm audit:ui
+kill "$SERVER"               # by PID, not `pkill next-server`
+```
+
+Stop the server by PID. `pkill -f next-server` takes a sibling agent's server
+down with it.
+
 **If the port refuses to bind.** This machine sometimes reports
 `address already in use` for a published port that nothing holds. Start the
 container with no `-p` and read its address instead:
@@ -198,7 +227,7 @@ IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}
 export DATABASE_URL=postgresql://postgres:nn@$IP:5432/noble_test
 ```
 
-The baseline after M3 is 140 tests passed, and 0 blockers and 0 major faults
-across 176 page loads. The audit also reports 64 minor faults, unchanged
-since M2: 48 small tap targets on body-copy links and 16 duplicate
-identifiers from `src/components/tags.tsx`, which M4 rebuilds.
+The baseline after M4 is 140 tests passed, and 0 blockers and 0 major faults
+across 176 page loads. The audit also reports 52 minor faults, all of them a
+small tap target. M4 removed the 16 duplicate identifiers and added 4 small
+tap targets on `/classes`; section 4.1 gives that one to M6.

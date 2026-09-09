@@ -57,6 +57,31 @@ export const FOCUS_RING = cn(
 );
 
 /**
+ * The body link, and why it is an underline. D-10 in `design/DECISIONS.md`.
+ *
+ * There are ZERO underlines and zero in-body links in the eighteen exports,
+ * so there is nothing to copy. Colour alone cannot carry it: `f-accent`
+ * measures 1.90:1 against `f-ink` (8.06 against 15.31 on the paper), well
+ * under the 3:1 that WCAG 1.4.1 asks of a link distinguished from its
+ * surrounding text by colour only. An underline is the only cue available
+ * that the design does not already spend on something else.
+ *
+ * `text-cta-line` must never be used here. TOKEN-MAP.md §7 forbids it as
+ * text: it is 3.11:1 at best, against the 4.5:1 R-ACC-01 asks for.
+ *
+ * It lives beside `FOCUS_RING` for the same reason `FOCUS_RING` lives here:
+ * both are treatments this build invented, both compose, and this file is
+ * the leaf every component can reach. It was in `markdown.tsx` until
+ * `database-notice.tsx` wanted it too — and that pulled `react-markdown` and
+ * `remark-gfm` into the server module graph of all eighteen routes that can
+ * draw the notice, for four class names.
+ */
+export const PROSE_LINK = cn(
+  'text-accent underline decoration-1 underline-offset-2',
+  FOCUS_RING,
+);
+
+/**
  * The same ring for a control whose focusable element is a child — the
  * select box, where the chevron shares the frame with the `<select>`.
  * `focus-within` rather than `focus-visible-within`, which no browser has.

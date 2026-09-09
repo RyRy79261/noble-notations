@@ -111,3 +111,58 @@ export const NOTE_KIND_LABELS: Record<string, string> = {
   // stopped the moment the label wanted different wording.
   science: 'Science',
 };
+
+/**
+ * The ordinals the design writes out. `SIXTH REVISION` is the second segment
+ * of F/Recipe card's `Code` (`design/exports/home-recipes-1280.html:439`) and
+ * `Sixth revision` is F/Revision's `Ordinal`
+ * (`design/exports/recipe-revision-1280.html:3368`). One string, two slots —
+ * so one function, here, rather than a copy in each component.
+ *
+ * Twenty is well past any recipe in the repository; the deepest today is six.
+ * Past it the words stop and a numeral with its own suffix takes over:
+ * "twenty-seventh revision" is a worse label than "27th revision" at 9px in a
+ * 130px slot, and the numeral still reads as an ordinal.
+ */
+const REVISION_ORDINALS = [
+  'First',
+  'Second',
+  'Third',
+  'Fourth',
+  'Fifth',
+  'Sixth',
+  'Seventh',
+  'Eighth',
+  'Ninth',
+  'Tenth',
+  'Eleventh',
+  'Twelfth',
+  'Thirteenth',
+  'Fourteenth',
+  'Fifteenth',
+  'Sixteenth',
+  'Seventeenth',
+  'Eighteenth',
+  'Nineteenth',
+  'Twentieth',
+];
+
+/**
+ * `6` → `Sixth revision`; `21` → `21st revision`.
+ *
+ * Returns `undefined` rather than a string for a number that is not a
+ * revision — a non-finite value, or anything below one. R-STA-05: the slot is
+ * then dropped, not filled with `Revision 0`.
+ */
+export function revisionOrdinal(revisionNumber: number): string | undefined {
+  if (!Number.isFinite(revisionNumber) || revisionNumber < 1) return undefined;
+  const n = Math.floor(revisionNumber);
+  const word = REVISION_ORDINALS[n - 1];
+  if (word) return `${word} revision`;
+  const tens = n % 100;
+  const suffix =
+    tens >= 11 && tens <= 13
+      ? 'th'
+      : (['th', 'st', 'nd', 'rd'][n % 10] ?? 'th');
+  return `${n}${suffix} revision`;
+}
