@@ -1,4 +1,33 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#0d0a14"/>
-  <path d="M32 12 48 32 32 52 16 32Z" fill="#a97bff"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Noble Notations">
+  <!--
+    The brand mark of DIRECTION F, as the site header draws it: the paper
+    monogram on the accent ground, with square corners.
+    `design/exports/recipe-1280.html`, the layer named "Mark" — bg #8E2A1E,
+    text #FCFAF6, no radius.
+
+    The letters are paths, not type. A favicon is rendered by the browser
+    with no stylesheet and no webfont, so Geist Mono would fall back to
+    whatever the machine has and the mark would change shape per platform.
+
+    The dark rule mirrors the token swap: in the dark theme `f-accent` is
+    #FF7A6B and `f-on-accent` is #17191B. A browser that caches the icon
+    keeps the light form, which still reads on either tab bar.
+  -->
+  <style>
+    .ground { fill: #8E2A1E }
+    .letter { fill: #FCFAF6 }
+    @media (prefers-color-scheme: dark) {
+      .ground { fill: #FF7A6B }
+      .letter { fill: #17191B }
+    }
+  </style>
+  <rect class="ground" width="64" height="64"/>
+  <g class="letter">
+    <rect x="10" y="19" width="7" height="26"/>
+    <rect x="24" y="19" width="7" height="26"/>
+    <path d="M10 19h7l14 26h-7z"/>
+    <rect x="34" y="19" width="7" height="26"/>
+    <rect x="48" y="19" width="7" height="26"/>
+    <path d="M34 19h7l14 26h-7z"/>
+  </g>
 </svg>
