@@ -43,9 +43,11 @@ export const metadata: Metadata = {
  * THE TOOL LISTS ARE THE REAL ONES. The design draws four read tools and
  * three write tools with invented names — `search_entries`, `add_state`.
  * This list is the one a person reads before approving write access, so it
- * names every tool the scope grants and not a sample: ten and nine, from
- * `src/lib/mcp/tools.ts`. `docs/mcp-connector.md` §Tools and that file are
- * the other two places the set is written down; all three move together.
+ * names every tool the scope grants and not a sample: ten, nine and the one
+ * that is in neither scope, from `src/lib/mcp/tools.ts`.
+ * `docs/mcp-connector.md` §Tools and that file are the other two places the
+ * set is written down; all three move together, and `TOOLS` in
+ * `e2e/mcp-contract.spec.ts` is the line that says so.
  */
 export default function ConnectPage() {
   const endpoint = `${site.url}/api/mcp/mcp`;
@@ -150,6 +152,32 @@ export default function ConnectPage() {
         >
           <ToolList tools={WRITE_TOOLS} prefix="W" scope="Adds" />
         </Section>
+
+        <Section
+          ordinal="IV"
+          title="What an agent may report"
+          meta={`${numberWord(REPORT_TOOLS.length)} tool · both scopes`}
+          narrowMeta="Both scopes"
+        >
+          <ToolList tools={REPORT_TOOLS} prefix="X" scope="Reports" />
+        </Section>
+
+        <Warning title="The report goes to GitHub, and it is public">
+          <code className="[font-size:inherit] font-mono">report_issue</code> is
+          the one tool whose effect lands outside this system. It opens an issue
+          on this project&rsquo;s public GitHub repository, so a fault an agent
+          hits reaches a person instead of ending with the conversation. It is
+          in <strong>both</strong> scopes: a read-only connector can file one,
+          because a read-only agent is exactly the one that meets a read
+          tool&rsquo;s bug. The repository is fixed in the code and no argument
+          names it. The tool removes values that match a known credential
+          pattern, tells the agent how many it removed, and refuses to file more
+          than ten open reports at a time. It is not registered at all unless{' '}
+          <code className="[font-size:inherit] font-mono">
+            GITHUB_ISSUE_TOKEN
+          </code>{' '}
+          is set.
+        </Warning>
 
         {/*
          * The claim used to read "Nothing is ever deleted or edited in
@@ -266,6 +294,21 @@ const WRITE_TOOLS: Tool[] = [
   {
     name: 'log_experiment',
     text: 'A batch that was actually cooked, with its measurements.',
+  },
+];
+
+/**
+ * The twentieth tool, and the only one in neither scope.
+ *
+ * It is listed on its own because neither of the two lists above is true of
+ * it: it needs no scope, and its effect lands outside this system. Reading
+ * it as a write tool would be wrong in the direction that matters — a person
+ * who declines write access would think this one was declined with it.
+ */
+const REPORT_TOOLS: Tool[] = [
+  {
+    name: 'report_issue',
+    text: 'A fault in this connector, filed as an issue on the public GitHub repository of this project.',
   },
 ];
 

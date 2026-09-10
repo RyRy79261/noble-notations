@@ -172,11 +172,30 @@ async function validate(req: NextRequest) {
   };
 }
 
+/**
+ * What the owner is agreeing to, in the words of the screen they click.
+ *
+ * THE THIRD ITEM IS UNCONDITIONAL, AND THAT IS THE POINT. `report_issue`
+ * carries no scope check — deliberately, because a read-only agent is
+ * exactly the one that meets a read tool's bug — so authentication is its
+ * only gate, and the argument for that gate is this screen: every caller
+ * holds a token the owner approved here. The screen therefore has to name
+ * the capability, or the argument is circular and a person approving a
+ * read-only connector is handing over the ability to publish text into a
+ * public repository under this server's credential without being told.
+ *
+ * It is not gated on `GITHUB_ISSUE_TOKEN` either. A deployment that has no
+ * token today can be given one tomorrow, and every token already approved
+ * would gain the capability with no second consent. Naming a power the
+ * connector may not have yet is the safe direction to be wrong in.
+ */
 function scopeDescription(scopes: Scope[]): string {
   const canWrite = scopes.includes(WRITE_SCOPE);
   const items = [
     '<li>Read every recipe, revision, ingredient, note and experiment</li>',
     '<li>Search the repository and browse its taxonomy</li>',
+    "<li>Open an issue on this project's public GitHub repository, to " +
+      'report a fault it hits</li>',
   ];
   if (canWrite) {
     items.push(

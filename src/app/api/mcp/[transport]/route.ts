@@ -15,7 +15,7 @@ import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { NextResponse } from 'next/server';
 import { lookupAccessToken } from '@/lib/mcp/oauth';
 import { registerTools } from '@/lib/mcp/tools';
-import { SERVER_INSTRUCTIONS } from '@/lib/mcp/guide';
+import { serverInstructions } from '@/lib/mcp/guide';
 import { withCors } from '@/lib/mcp/cors';
 
 export const maxDuration = 60;
@@ -30,7 +30,14 @@ const baseHandler = createMcpHandler(
     // Surfaced by clients that read `instructions`, so the revision rule
     // lands before the first tool call rather than after the first mistake.
     // The full guide is behind `get_started`; this is the short version.
-    instructions: SERVER_INSTRUCTIONS,
+    //
+    // The paragraph about `report_issue` is in this text only where that
+    // tool is registered, so the instructions cannot advertise a tool that
+    // `tools/list` does not carry. This object is built when the module
+    // loads rather than per request, which is enough: the environment of a
+    // running instance does not change under it, and a change to
+    // `GITHUB_ISSUE_TOKEN` redeploys.
+    instructions: serverInstructions(),
   },
   {
     basePath: '/api/mcp',

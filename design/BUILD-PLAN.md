@@ -285,10 +285,16 @@ export DATABASE_URL=postgresql://postgres:nn@$IP:5432/noble_test
 | M5.5           | 144              | 0        | 0     | 52    | 176        |
 | M6             | 145              | 0        | 0     | 52    | 176        |
 | M7             | 165              | 0        | 0     | 52    | 176        |
+| `report_issue` | 225              | 0        | 0     | 52    | 176        |
 
 M7 added 20 tests: `e2e/render.spec.ts`, which asserts that 4 conditional
 blocks are drawn on the page and, for 3 of them, that they are absent where
 the requirement says they must be.
+
+The row after it is `report_issue`, which measured 193 before the work and
+225 after: `e2e/mcp-report-issue.spec.ts` is 31 of those, and one is the
+registry line in `e2e/mcp-contract.spec.ts`. The audit columns did not move,
+and the page-load figure did not either — the tool adds no route.
 
 Every minor fault is a control under 24 × 24 pixels. §6.1 carries the one
 shape they share.

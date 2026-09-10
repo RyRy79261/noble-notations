@@ -55,6 +55,17 @@ export const TOKEN_FILE = path.join(
 export interface E2ETokens {
   readWrite: string;
   readOnly: string;
+  /**
+   * A third principal, for the `report_issue` tests that drive the degraded
+   * path (the GitHub list call fails).
+   *
+   * `submitReport` keeps a per-process, per-principal burst counter and
+   * consults it only when the issues list could not be read. Every healthy
+   * filing still increments it, so a degraded-path test sharing a principal
+   * with the healthy ones would eventually be capped by work that has
+   * nothing to do with it. Its own user id keeps the two budgets apart.
+   */
+  degraded: string;
 }
 
 export function tokens(): E2ETokens {
