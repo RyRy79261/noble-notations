@@ -36,6 +36,7 @@ import {
   normaliseUnit,
   unitKind,
 } from '@/lib/domain/units';
+import { ambiguousUseMessage } from '@/lib/domain/schemas';
 import type {
   AddMassFlowInput,
   AddNoteInput,
@@ -144,6 +145,94 @@ async function findIngredientId(tx: Tx, name: string): Promise<string | null> {
   return rows[0]?.id ?? null;
 }
 
+/**
+ * Cross-check a revision's `uses` names against its ingredient lines when
+ * one of the two lists was carried forward.
+ *
+ * `checkStepReferences` in the submission contract enforces the same rule at
+ * the parse boundary, and it can only see what the caller sent. A revision
+ * that replaces one list and inherits the other therefore reaches the write
+ * layer unchecked, in both directions, and this is where the halves meet.
+ *
+ * Which half the caller wrote decides how a name is matched, because it
+ * decides what the name can be trusted to mean.
+ *
+ * `byName` — the caller wrote the steps. The name in `uses` is the caller's
+ * own spelling, so a name that fits exactly one line is not ambiguous,
+ * whatever else it may also resolve to. That is what lets a recipe list one
+ * ingredient twice under two spellings and still be revisable. Only a name
+ * that fits no line falls through to the resolved ingredient, where
+ * "Chinkiang vinegar" and "Black malt vinegar" are one thing.
+ *
+ * `byIngredient` — the caller wrote the lines. `copySteps` returns `uses` as
+ * the canonical ingredient name, so the spelling that said which line the
+ * step meant is already gone. Matching that canonical name against a line
+ * that happens to be written the same way would pick a line by coincidence,
+ * which is the whole defect: a step bound to the 400 g "To serve" line came
+ * back as "Glutinous rice" and landed on the 40 g line. So the count is
+ * taken over resolved ingredients, and a tie is refused rather than guessed.
+ *
+ * `missing` is optional because absence means different things in the two
+ * directions. A caller writing steps against lines it did not send can still
+ * fix a name it got wrong. A caller replacing the lines may have dropped an
+ * ingredient on purpose, and its steps come forward still mentioning it.
+ */
+async function checkCarriedUses(
+  tx: Tx,
+  ingredientLines: IngredientLineInput[],
+  steps: StepInput[],
+  hint: {
+    match: 'byName' | 'byIngredient';
+    missing?: string;
+    ambiguous: string;
+  },
+): Promise<void> {
+  type Match = { line: IngredientLineInput; position: number };
+  const linesByName = new Map<string, Match[]>();
+  const linesById = new Map<string, Match[]>();
+  const push = (map: Map<string, Match[]>, key: string, match: Match) => {
+    const found = map.get(key);
+    if (found) found.push(match);
+    else map.set(key, [match]);
+  };
+  const resolvedIds = await Promise.all(
+    ingredientLines.map((line) => findIngredientId(tx, line.name)),
+  );
+  ingredientLines.forEach((line, position) => {
+    push(linesByName, line.name.trim().toLowerCase(), { line, position });
+    const id = resolvedIds[position];
+    if (id) push(linesById, id, { line, position });
+  });
+
+  for (const [i, step] of steps.entries()) {
+    for (const used of step.uses ?? []) {
+      let matches: Match[] | undefined;
+      if (hint.match === 'byName') {
+        matches = linesByName.get(used.trim().toLowerCase());
+        if (!matches) {
+          const usedId = await findIngredientId(tx, used);
+          matches = usedId ? linesById.get(usedId) : undefined;
+        }
+      } else {
+        const usedId = await findIngredientId(tx, used);
+        matches = usedId ? linesById.get(usedId) : undefined;
+        if (!matches) matches = linesByName.get(used.trim().toLowerCase());
+      }
+      if (!matches) {
+        if (!hint.missing) continue;
+        throw new ConflictError(
+          `Step ${i + 1} uses "${used}", ${hint.missing}`,
+        );
+      }
+      if (matches.length > 1) {
+        throw new ConflictError(
+          `${ambiguousUseMessage(i + 1, used, matches)} ${hint.ambiguous}`,
+        );
+      }
+    }
+  }
+}
+
 /** Find (or create) a taxonomy term within a facet. */
 async function resolveTermId(
   tx: Tx,
@@ -211,12 +300,29 @@ async function writeRevisionBody(
    * arriving from a caller use the written name; steps carried forward from
    * a previous revision come back carrying the canonical one. Keying on only
    * one of them silently drops the link on the other path.
+   *
+   * **Two passes, and the order is the fix.** Indexing each line's two names
+   * together as the lines were written let an earlier line's canonical name
+   * take the key of a later line's *written* name. Two lines of one
+   * ingredient under two spellings — 15 ml "Chinkiang vinegar" for a
+   * dressing and 200 ml "Black malt vinegar" for a braise — put the braise
+   * step's chip on the 15 ml line, silently, because line 1's canonical name
+   * claimed "black malt vinegar" before line 2 reached it. A written name is
+   * the name the caller chose for that line and nothing else may take it, so
+   * every written name is claimed first and canonical names then fill only
+   * the keys still free.
+   *
+   * What stays first-wins is two lines that a step can name only by one
+   * shared canonical name. That tie carries no information to break it with;
+   * `checkStepReferences` and `checkCarriedUses` refuse it wherever the
+   * caller sent the list it belongs to.
    */
   const lineIdByName = new Map<string, string>();
   const indexLine = (name: string, id: string) => {
     const key = name.trim().toLowerCase();
     if (key && !lineIdByName.has(key)) lineIdByName.set(key, id);
   };
+  const written: { name: string; canonical: string; id: string }[] = [];
 
   for (const [index, line] of ingredientLines.entries()) {
     const { id: ingredientId, canonicalName } = await resolveIngredient(
@@ -252,9 +358,15 @@ async function writeRevisionBody(
       })
       .returning({ id: recipeIngredients.id });
 
-    indexLine(line.name, inserted[0]!.id);
-    indexLine(canonicalName, inserted[0]!.id);
+    written.push({
+      name: line.name,
+      canonical: canonicalName,
+      id: inserted[0]!.id,
+    });
   }
+
+  for (const line of written) indexLine(line.name, line.id);
+  for (const line of written) indexLine(line.canonical, line.id);
 
   for (const [index, step] of steps.entries()) {
     const techniqueTermId = step.technique
@@ -793,36 +905,39 @@ export async function reviseRecipe(
     const stepList =
       input.steps ?? (previous ? await copySteps(tx, previous.id) : []);
 
-    // A steps-only revision was not cross-checked by Zod (it had no
-    // ingredient list to check against), so validate here where the
-    // carried-forward lines are in hand.
+    // A revision that replaces one list and carries the other forward was
+    // not cross-checked by Zod, which only ever sees what the caller sent.
+    // Both directions are checked here, where the carried-forward half is in
+    // hand. A revision that sends neither list is left alone on purpose — it
+    // copies steps and lines forward together, so refusing it would strand a
+    // recipe that already holds two lines of one name and let nobody revise
+    // it at all.
     if (input.steps && !input.ingredients) {
-      // Compare by resolved ingredient identity rather than by spelling. The
-      // carried-forward lines carry canonical names while the caller writes
-      // whatever they call it, and "Chinkiang vinegar" and "Black malt
-      // vinegar" are the same ingredient.
-      const knownNames = new Set(
-        ingredientLines.map((l) => l.name.trim().toLowerCase()),
-      );
-      const knownIds = new Set(
-        (
-          await Promise.all(
-            ingredientLines.map((l) => findIngredientId(tx, l.name)),
-          )
-        ).filter((id): id is string => id !== null),
-      );
-
-      for (const [i, step] of stepList.entries()) {
-        for (const used of step.uses ?? []) {
-          if (knownNames.has(used.trim().toLowerCase())) continue;
-          const usedId = await findIngredientId(tx, used);
-          if (usedId && knownIds.has(usedId)) continue;
-          throw new ConflictError(
-            `Step ${i + 1} uses "${used}", which is not in this recipe's ` +
-              'ingredient list. Send `ingredients` alongside `steps` to change both.',
-          );
-        }
-      }
+      // The caller wrote the steps against lines it did not send, so a name
+      // that names nothing is a mistake it can still correct here.
+      await checkCarriedUses(tx, ingredientLines, stepList, {
+        match: 'byName',
+        missing:
+          "which is not in this recipe's ingredient list. Send " +
+          '`ingredients` alongside `steps` to change both.',
+        ambiguous:
+          'Send `ingredients` alongside `steps` to give a line the new ' +
+          'spelling.',
+      });
+    } else if (input.ingredients && !input.steps) {
+      // The mirror case, and the one the milestone's own defect survived in.
+      // The caller replaced the lines and the steps came forward carrying
+      // canonical names, so a step that named the 400 g line lands on the
+      // 40 g one the moment two lines answer to that name. Only ambiguity is
+      // refused: a line the caller deliberately dropped leaves its step
+      // reference unresolvable, and `writeRevisionBody` drops that link the
+      // way it always has.
+      await checkCarriedUses(tx, ingredientLines, stepList, {
+        match: 'byIngredient',
+        ambiguous:
+          'Send `steps` alongside `ingredients` to say which line each ' +
+          'step means.',
+      });
     }
 
     await writeRevisionBody(tx, revisionId, ingredientLines, stepList);
@@ -1340,7 +1455,10 @@ export async function upsertCategory(
 ): Promise<{ categoryType: CategoryType; slug: string; created: boolean }> {
   return withTransaction(async (tx) => {
     const slug = input.slug ? slugify(input.slug) : slugify(input.label);
-    if (!slug) throw new Error('Term label does not produce a usable slug.');
+    // Unreachable: `slugify` falls back to 'untitled' rather than returning
+    // an empty string. Kept as a guard, worded the way a reader would read
+    // it if it ever did fire.
+    if (!slug) throw new Error('Tag label does not produce a usable slug.');
 
     let parentId: string | null | undefined;
     if (input.parentSlug !== undefined) {
@@ -1348,8 +1466,16 @@ export async function upsertCategory(
         parentId = null;
       } else {
         const parentSlug = slugify(input.parentSlug);
+        // ConflictError, not a bare Error: `runTool` in src/lib/mcp/tools.ts
+        // returns only the four classes it trusts verbatim and reports every
+        // other throw as "An internal error occurred". A caller told that
+        // cannot tell a bad argument from a broken server, so the two
+        // refusals below name themselves.
         if (parentSlug === slug) {
-          throw new Error('A term cannot be its own parent.');
+          throw new ConflictError(
+            'A tag cannot be its own parent. Pass parentSlug: null to clear ' +
+              'the parent, or name a different tag.',
+          );
         }
         // Scoped to the same facet on purpose: a cuisine parented to a
         // technique would make the hierarchy meaningless, and silently
@@ -1365,8 +1491,10 @@ export async function upsertCategory(
           )
           .limit(1);
         if (!parent[0]) {
-          throw new Error(
-            `No tag "${parentSlug}" in the "${input.categoryType}" category to use as parent.`,
+          throw new NotFoundError(
+            `No tag "${parentSlug}" in the "${input.categoryType}" category ` +
+              'to use as parent. Pass parentSlug: null to clear the parent ' +
+              'instead.',
           );
         }
         parentId = parent[0].id;
@@ -1410,6 +1538,17 @@ export async function upsertCategory(
   });
 }
 
+/**
+ * Give a canonical ingredient its names, category, density and aliases.
+ *
+ * Creates the ingredient when the slug is free, so this is also how one is
+ * authored ahead of any recipe using it — and how a stub `resolveIngredient`
+ * auto-created gets enriched. Every optional field is written only when it is
+ * supplied, the same rule `upsertCategory` follows: sending a name alone will
+ * not blank a description, a density or a list of aliases that is already
+ * there. Pass an explicit `null` to clear one. `aliases` replaces the stored
+ * list when it is sent, `substitutes` only ever adds.
+ */
 export async function upsertIngredient(
   input: UpsertIngredientInput,
 ): Promise<{ slug: string; created: boolean }> {
@@ -1420,6 +1559,32 @@ export async function upsertIngredient(
       .from(ingredients)
       .where(eq(ingredients.slug, slug))
       .limit(1);
+
+    // The same invariant, on the field that names the row.
+    //
+    // The alias guard below stated it — "two ingredients cannot answer to
+    // the same name" — and checked every field except `name`. So
+    // `upsert_ingredient {name: 'silverside'}` against a beef silverside
+    // that carries "silverside" as an alias made a second canonical row and
+    // took the name over: `resolveIngredient` matches by slug before it
+    // matches by alias, so every later line naming silverside bound to the
+    // new empty stub. Nothing in this repository deletes a row, so the split
+    // list is permanent.
+    const nameOwnerId = await findIngredientId(tx, input.name);
+    if (nameOwnerId && nameOwnerId !== existing[0]?.id) {
+      const owner = await tx
+        .select({ slug: ingredients.slug, name: ingredients.name })
+        .from(ingredients)
+        .where(eq(ingredients.id, nameOwnerId))
+        .limit(1);
+      throw new ConflictError(
+        `The name "${input.name}" already resolves to "${owner[0]?.name}" ` +
+          `(${owner[0]?.slug}). Two ingredients cannot answer to the same ` +
+          'name: a recipe line naming it would bind to one of them without ' +
+          `saying which. Send slug: "${owner[0]?.slug}" to change that ` +
+          'ingredient, or pick a name that no ingredient answers to.',
+      );
+    }
 
     // An alias that already resolves elsewhere must not be taken quietly.
     //
@@ -1449,15 +1614,27 @@ export async function upsertIngredient(
       );
     }
 
+    // Only the keys the caller actually sent. `??` fallbacks here would make
+    // an omission indistinguishable from an explicit clear, and this object
+    // is handed whole to `.set()` — so leaving `description` out of a call
+    // that only fixes a name would erase the description. On the INSERT
+    // branch an absent key falls to the column default, which is what gives
+    // a new row `category = 'other'` and `aliases = '{}'`.
     const values = {
       slug,
       name: input.name,
-      plural: input.plural ?? null,
-      category: input.category ?? 'other',
-      description: input.description ?? null,
-      densityGPerMl: num(input.densityGPerMl),
-      defaultUnit: normaliseUnit(input.defaultUnit),
-      aliases: input.aliases ?? [],
+      ...(input.plural !== undefined ? { plural: input.plural ?? null } : {}),
+      ...(input.category !== undefined ? { category: input.category } : {}),
+      ...(input.description !== undefined
+        ? { description: input.description ?? null }
+        : {}),
+      ...(input.densityGPerMl !== undefined
+        ? { densityGPerMl: num(input.densityGPerMl) }
+        : {}),
+      ...(input.defaultUnit !== undefined
+        ? { defaultUnit: normaliseUnit(input.defaultUnit) }
+        : {}),
+      ...(input.aliases !== undefined ? { aliases: input.aliases } : {}),
       updatedAt: new Date(),
     };
 
@@ -1510,9 +1687,30 @@ export async function logExperiment(
         taken.map((e) => e.slug),
       );
 
-    let recipeId: string | null = null;
-    let revisionId: string | null = null;
-    if (input.recipeSlug) {
+    // Read the stored run first. The revision the run already points at is
+    // part of what carries forward, so it has to be in hand before the
+    // recipe is resolved.
+    const existing = await tx
+      .select({
+        id: experiments.id,
+        recipeId: experiments.recipeId,
+        revisionId: experiments.revisionId,
+      })
+      .from(experiments)
+      .where(eq(experiments.slug, slug))
+      .limit(1);
+
+    // `undefined` until a recipe slug is resolved, so the update below can
+    // tell "the caller named no recipe" from "the caller named this one".
+    let recipeId: string | null | undefined;
+    let revisionId: string | null | undefined;
+    if (input.recipeSlug === null) {
+      // An explicit null unlinks the run. Omission carries the link forward,
+      // so without this a run linked to the wrong recipe could never be
+      // corrected to "belongs to no recipe".
+      recipeId = null;
+      revisionId = null;
+    } else if (input.recipeSlug) {
       const found = await tx
         .select({
           id: recipes.id,
@@ -1524,7 +1722,6 @@ export async function logExperiment(
       if (!found[0])
         throw new NotFoundError(`No recipe "${input.recipeSlug}".`);
       recipeId = found[0].id;
-      revisionId = found[0].currentRevisionId;
 
       if (input.revisionNumber != null) {
         const rev = await tx
@@ -1543,29 +1740,55 @@ export async function logExperiment(
           );
         }
         revisionId = rev[0].id;
+      } else if (
+        existing[0] &&
+        existing[0].recipeId === recipeId &&
+        existing[0].revisionId
+      ) {
+        // An experiment is a record of one revision, so a re-log that names
+        // the same recipe again must not move the run onto whatever version
+        // is current now. Only a new `revisionNumber`, or a move to a
+        // different recipe, re-points it.
+        revisionId = existing[0].revisionId;
+      } else {
+        revisionId = found[0].currentRevisionId;
       }
     }
 
+    // Same rule as `upsertIngredient`: only the keys the caller sent, because
+    // re-logging one slug updates the stored run rather than appending a
+    // second one. Adding an observation to a finished batch must not blank
+    // its cost, its dates or the recipe it belongs to. `currency` carries
+    // forward too; the column default supplies 'EUR' on a first insert.
+    // `revisionId` travels with `recipeId` because the two are one fact: a
+    // run records one version of one recipe.
     const values = {
       slug,
-      recipeId,
-      revisionId,
+      ...(recipeId !== undefined
+        ? { recipeId, revisionId: revisionId ?? null }
+        : {}),
       title: input.title,
-      summary: input.summary ?? null,
-      startedAt: input.startedAt ?? null,
-      completedAt: input.completedAt ?? null,
-      scaleFactor: num(input.scaleFactor),
-      outcome: input.outcome ?? null,
-      costTotal: num(input.costTotal),
-      currency: input.currency ?? 'EUR',
+      ...(input.summary !== undefined
+        ? { summary: input.summary ?? null }
+        : {}),
+      ...(input.startedAt !== undefined
+        ? { startedAt: input.startedAt ?? null }
+        : {}),
+      ...(input.completedAt !== undefined
+        ? { completedAt: input.completedAt ?? null }
+        : {}),
+      ...(input.scaleFactor !== undefined
+        ? { scaleFactor: num(input.scaleFactor) }
+        : {}),
+      ...(input.outcome !== undefined
+        ? { outcome: input.outcome ?? null }
+        : {}),
+      ...(input.costTotal !== undefined
+        ? { costTotal: num(input.costTotal) }
+        : {}),
+      ...(input.currency !== undefined ? { currency: input.currency } : {}),
       updatedAt: new Date(),
     };
-
-    const existing = await tx
-      .select({ id: experiments.id })
-      .from(experiments)
-      .where(eq(experiments.slug, slug))
-      .limit(1);
 
     const row = existing[0]
       ? await tx
@@ -1579,15 +1802,29 @@ export async function logExperiment(
           .returning({ id: experiments.id });
     const experimentId = row[0]!.id;
 
-    // Re-logging an experiment replaces its measurements rather than
-    // appending duplicates — the labels ("A1", "piece 3") are stable
-    // identities within a run, not a time series.
-    await tx
-      .delete(experimentObservations)
-      .where(eq(experimentObservations.experimentId, experimentId));
-    await tx
-      .delete(experimentItems)
-      .where(eq(experimentItems.experimentId, experimentId));
+    /**
+     * Re-logging an experiment replaces its measurements rather than
+     * appending duplicates — the labels ("A1", "piece 3") are stable
+     * identities within a run, not a time series.
+     *
+     * Replace, but only when a list was sent. The delete used to be
+     * unconditional, so a re-log correcting the title alone destroyed every
+     * item and every observation of the run — silently, and with no revision
+     * history to recover from. The measurements are the whole value of a
+     * batch log. Both lists move together because an observation names an
+     * item by label: replacing the observations while keeping stale items,
+     * or the reverse, would leave the two halves describing different runs.
+     */
+    const replaceMeasurements =
+      input.items !== undefined || input.observations !== undefined;
+    if (replaceMeasurements) {
+      await tx
+        .delete(experimentObservations)
+        .where(eq(experimentObservations.experimentId, experimentId));
+      await tx
+        .delete(experimentItems)
+        .where(eq(experimentItems.experimentId, experimentId));
+    }
 
     const itemIdByLabel = new Map<string, string>();
     for (const [index, item] of (input.items ?? []).entries()) {
@@ -1636,6 +1873,27 @@ export async function logExperiment(
     }
 
     await writeNotes(tx, { experimentId }, input.notes);
+
+    // The counts describe what the run holds now, not what this call sent.
+    // A call that sends no list leaves the stored measurements alone, and
+    // reporting 0 for them would read as "they are gone".
+    if (!replaceMeasurements) {
+      const stored = await tx
+        .select({
+          items: sql<number>`(SELECT count(*) FROM ${experimentItems}
+             WHERE ${experimentItems.experimentId} = ${experimentId})`,
+          observations: sql<number>`(SELECT count(*) FROM ${experimentObservations}
+             WHERE ${experimentObservations.experimentId} = ${experimentId})`,
+        })
+        .from(experiments)
+        .where(eq(experiments.id, experimentId))
+        .limit(1);
+      return {
+        slug,
+        itemCount: Number(stored[0]?.items ?? 0),
+        observationCount: Number(stored[0]?.observations ?? 0),
+      };
+    }
 
     return { slug, itemCount: itemIdByLabel.size, observationCount };
   });
