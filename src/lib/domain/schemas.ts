@@ -280,8 +280,21 @@ export const ingredientLineSchema = z.object({
   /** Upper bound when the amount was written as a range ("4–5 chipotle"). */
   quantityMax: z.number().finite().nonnegative().nullish(),
   unit: unitField.nullish(),
-  /** Sub-list heading this line belongs under: "Wash", "Dredge". */
-  component: z.string().max(120).nullish(),
+  /**
+   * Sub-list heading this line belongs under: "Wash", "Dredge".
+   *
+   * Described on the wire because `uses` now tells a caller to write it, and
+   * a caller that never sets one cannot use that form at all. A field the
+   * advertised remedy depends on cannot be the one field with no sentence.
+   */
+  component: z
+    .string()
+    .max(120)
+    .nullish()
+    .describe(
+      'The heading this line sits under: "Khao khua", "To serve". A step ' +
+        'can write it in front of the name in `uses` to point at this line.',
+    ),
   preparation: z
     .string()
     .max(200)
@@ -306,17 +319,25 @@ export const stepSchema = z.object({
   technique: z.string().max(120).nullish(),
   /**
    * Names of ingredient lines this step consumes. Each must match the `name`
-   * of a line in `ingredients` — validated below, because a step pointing at
-   * an ingredient the recipe does not have is always a mistake.
+   * of a line in `ingredients`, or that line's `component` and name written
+   * together as "To serve: Glutinous rice" — validated below, because a step
+   * pointing at an ingredient the recipe does not have is always a mistake.
+   *
+   * 322 characters, not 200. A `component` is `max(120)`, a `name` is
+   * `max(200)`, and the separator costs a colon and an optional space: a
+   * legal qualified reference is therefore 322 characters long, and the old
+   * bound cut it into a refusal that named the wrong problem. Raising a
+   * bound refuses nothing that parses today.
    */
   uses: z
-    .array(z.string().max(200))
+    .array(z.string().max(322))
     .max(50)
     .optional()
     .describe(
       'Names of ingredient lines this step uses. Each name must fit exactly ' +
-        'one line in `ingredients`. A name that fits two lines is refused, ' +
-        'because a step points at one line.',
+        'one line in `ingredients`. Two lines can share a name. To pick ' +
+        'one, write the line\'s `component`, a colon, then the name: "To ' +
+        'serve: Glutinous rice". The tool refuses a name that fits two lines.',
     ),
   /**
    * Optional picture of what this stage should look like. Images are
@@ -606,6 +627,57 @@ export const recipeBodyShape = {
 };
 
 /**
+ * Split a `uses` reference that names a component: "To serve: Glutinous
+ * rice" → `{ component: 'To serve', name: 'Glutinous rice' }`. Null when the
+ * string is a bare name, which is the fast path and the common one.
+ *
+ * **The split is on the LAST colon**, and the data says why. The left half
+ * is free-text prose an agent writes as a heading; the right half is an
+ * ingredient name drawn from a curated list of nouns. No ingredient name and
+ * no alias in the archive holds a colon, while the prose archive already
+ * holds hand-written headings that end in one — "For the boil:". So
+ * "Day 1: Cure: Salt" under a component "Day 1: Cure" is a payload to
+ * expect, and an ingredient literally named "Salt: kosher" is not. Trying
+ * every split point instead would replace one guess with a worse ambiguity:
+ * two splits that both resolve have no sentence that could refuse them.
+ *
+ * The space after the colon is optional and both halves are trimmed.
+ * Requiring the space would turn a one-character typo into a refusal for
+ * nothing, and trimming is what makes a component that itself ends in a
+ * colon writable with no escape: "For the boil:: Water" splits into
+ * "For the boil:" and "Water".
+ *
+ * Pure, and it stays here rather than in the write layer because the
+ * spelling of a `uses` string is part of the submission contract. Both
+ * halves of the system have to agree on the split or a name that parses
+ * would fail to bind.
+ */
+export function splitQualifiedUse(
+  used: string,
+): { component: string; name: string } | null {
+  const trimmed = used.trim();
+  const colon = trimmed.lastIndexOf(':');
+  if (colon < 0) return null;
+  const component = trimmed.slice(0, colon).trim();
+  const name = trimmed.slice(colon + 1).trim();
+  // ":Salt" and "To serve:" name no pair. They are bare names, and they fail
+  // the ordinary way rather than through a message about components.
+  if (!component || !name) return null;
+  return { component, name };
+}
+
+/**
+ * Map key for one qualified reference, matched case-insensitively on both
+ * halves exactly as the bare index is.
+ *
+ * NUL and not a colon as the joiner, because a component may contain a colon
+ * and two different pairs must never collide on one key.
+ */
+export function qualifiedUseKey(component: string, name: string): string {
+  return `${component.trim().toLowerCase()}\u0000${name.trim().toLowerCase()}`;
+}
+
+/**
  * Name one ingredient line the way a reader would point at it on the page.
  *
  * The component heading is what actually separates two lines of the same
@@ -645,8 +717,22 @@ export function ambiguousUseMessage(
   used: string,
   matches: { line: IngredientLineInput; position: number }[],
 ): string {
-  const named = matches
-    .map(({ line, position }) => describeLine(line, position))
+  // Two lines under one heading with one amount describe identically, and
+  // that pair is exactly the one a component cannot separate — so the
+  // caller has to be able to tell them apart in the sentence at least. Only
+  // a repeated description takes a position; "Khao khua (40 g)" and
+  // "To serve (400 g)" are left where they were.
+  const described = matches.map(({ line, position }) =>
+    describeLine(line, position),
+  );
+  const howMany = new Map<string, number>();
+  for (const text of described) howMany.set(text, (howMany.get(text) ?? 0) + 1);
+  const named = described
+    .map((text, index) =>
+      (howMany.get(text) ?? 0) > 1
+        ? `${text} (line ${matches[index]!.position + 1})`
+        : text,
+    )
     .join(', ');
   // The example is built from a heading this recipe already uses, so the
   // caller is shown a name that fits its own dish rather than a generic one.
@@ -661,8 +747,23 @@ export function ambiguousUseMessage(
   // nothing, and no write path in this repository can delete either. The
   // alias keeps one ingredient and still gives the line a name of its own.
   const heading = matches[matches.length - 1]!.line.component?.trim();
+  // The alias example is built from the bare name, never from a qualified
+  // reference. A carried `uses` reaches this message already spelling a
+  // component the caller has just renamed, and "To serve: Glutinous rice,
+  // at the table" is not an alias anyone should register — an alias is a
+  // second name for the ingredient, and a heading is not part of one.
+  //
+  // Unless the whole string IS a line's name. An ingredient may be called
+  // "Chilli: bird's eye", and cutting it at its own colon would offer an
+  // alias of a name that no line here carries.
+  const wroteBare = matches.some(
+    ({ line }) => line.name.trim().toLowerCase() === used.trim().toLowerCase(),
+  );
+  const bare = wroteBare
+    ? used.trim()
+    : (splitQualifiedUse(used)?.name ?? used.trim());
   const spelling = heading
-    ? `, such as "${used.trim()}, ${heading.toLowerCase()}"`
+    ? `, such as "${bare}, ${heading.toLowerCase()}"`
     : '';
   // "lines of that ingredient" and not "lines with that name", because the
   // two write-layer callers count lines by resolved ingredient. Two lines
@@ -670,14 +771,113 @@ export function ambiguousUseMessage(
   // carries, and a caller cannot act on a sentence that describes no line it
   // can see. Every line counted here is a line of one ingredient on all
   // three paths, so this wording is true on all three.
+  // A line is separable by its heading only when it has one AND no other
+  // candidate shares it. Offering a spelling that resolves to two lines
+  // would be a second refusal dressed as a remedy, so this filter is the
+  // whole of what makes the paragraph safe to print. Two lines under one
+  // heading produce no spelling at all and fall through to the alias route,
+  // which is the only thing that separates them.
+  //
+  // `line.name` and not `used`: a line's written name is claimed in the
+  // first pass of the qualified index at every site, so it is the one
+  // spelling guaranteed to resolve there. `used` may be an alias, which is
+  // claimed only in the second pass and may already be taken.
+  //
+  // A name that itself holds a colon is dropped for the same reason. The
+  // split takes the LAST colon, so "Dressing: Chilli: bird's eye" reads as
+  // the component "Dressing: Chilli" and reaches no line at all. There is no
+  // qualified spelling of such a line, and the alias route is what serves it.
+  const separable = matches.filter(({ line }) => {
+    const heading = line.component?.trim().toLowerCase();
+    if (!heading) return false;
+    if (line.name.includes(':')) return false;
+    return (
+      matches.filter(
+        (other) => other.line.component?.trim().toLowerCase() === heading,
+      ).length === 1
+    );
+  });
+  const spellings = separable
+    .map(({ line }) => `"${line.component!.trim()}: ${line.name.trim()}"`)
+    .join(' or ');
+  // The component route leads because it is the cheaper of the two: one
+  // call, no invented name, and no second write to the ingredient list.
+  //
+  // And it says when it does not reach every line. The paragraph is an
+  // imperative and it comes first, so a caller that means a line with no
+  // heading would otherwise follow it, write the one spelling on offer and
+  // bind the step to the other line — the laab-ped defect, written back by
+  // the message that exists to prevent it.
+  const shortfall =
+    separable.length < matches.length
+      ? ' This does not give a spelling for every line. A line with no ' +
+        'spelling needs the second way.'
+      : '';
+  const byComponent = spellings
+    ? "\n\nPut the line's `component` in front of the name. Write " +
+      `${spellings}. A colon separates the two. This needs one call and no ` +
+      `new name.${shortfall}`
+    : '';
   return (
     `Step ${stepNumber} uses "${used}". The ingredient list has ` +
     `${matches.length} lines of that ingredient: ${named}. A step must point ` +
-    `to one line. Give one line a second spelling${spelling}. Call ` +
-    'upsert_ingredient first and put that spelling in `aliases`, so both ' +
-    'lines stay one ingredient. Then write the line and its `uses` with the ' +
-    'new spelling. A spelling that is not an alias makes a second ' +
-    'ingredient, and a shopping list stops adding the two amounts together.'
+    `to one line.${byComponent}\n\n` +
+    `${byComponent ? 'Or give' : 'Give'} one line a second ` +
+    `spelling${spelling}. Call upsert_ingredient first and put that ` +
+    'spelling in `aliases`, so both lines stay one ingredient. Then write ' +
+    'the line and its `uses` with the new spelling. A spelling that is not ' +
+    'an alias makes a second ingredient, and a shopping list stops adding ' +
+    'the two amounts together.'
+  );
+}
+
+/**
+ * Say that a `uses` reference names a component no line carries.
+ *
+ * A qualifier is information the caller volunteered, so falling back to the
+ * bare tail would bind the step to a line the caller did not name — in
+ * exactly the class of recipe where the wrong line costs a real number.
+ * Either the heading is wrong or the caller's model of the recipe is, and
+ * both are worth one round trip.
+ *
+ * The message names both halves separately, because the caller cannot see
+ * which one it got wrong from a sentence that quotes only the whole string.
+ * Listing the components it could have written turns the refusal into the
+ * answer.
+ *
+ * Exported for the same reason `ambiguousUseMessage` is: the parse boundary
+ * and the write layer enforce one rule and must say one thing.
+ */
+export function qualifierMessage(
+  stepNumber: number,
+  used: string,
+  qualifier: { component: string; name: string },
+  lines: IngredientLineInput[],
+): string {
+  const seen = new Set<string>();
+  const components: string[] = [];
+  for (const line of lines) {
+    const heading = line.component?.trim();
+    if (!heading || seen.has(heading.toLowerCase())) continue;
+    seen.add(heading.toLowerCase());
+    components.push(heading);
+  }
+  // The closing sentence follows the list, because a list with no components
+  // makes one half of the two-option sentence impossible: "No line in this
+  // list has a component. Write a component this list has" told a caller to
+  // do the one thing the sentence before it had ruled out. That is the
+  // commonest recipe shape in the archive, and the message it gets is the
+  // one an ordinary typo produces when the name holds a colon.
+  const known =
+    components.length === 0
+      ? 'No line in this list has a component. Write the name with no ' +
+        'component.'
+      : `The components in this list are: ${components.join(', ')}. Write a ` +
+        'component this list has, or write the name with no component.';
+  return (
+    `Step ${stepNumber} uses "${used}". This reads as a component and a ` +
+    `name. No line has the component "${qualifier.component}" with the ` +
+    `name "${qualifier.name}". ${known}`
   );
 }
 
@@ -697,12 +897,23 @@ export function ambiguousUseMessage(
  * 40 g line and the 400 g line was reachable from no step at all. The page
  * then told a cook to soak 40 g of rice for the table.
  *
- * The write layer cannot break that tie. The two lines differ only in a
- * component heading, and `uses` has no way to spell one. So the tie is
- * refused here instead of guessed at, and the message names the components
- * so the caller can see the two things it is choosing between. Giving one
- * line an alias of the same ingredient is the way through; a `uses` that
- * names a component is the larger change this deliberately does not make.
+ * There are now two ways through that tie, and the message names both. A
+ * step may write the line's heading in front of the name — "To serve:
+ * Glutinous rice" — which is one call and invents nothing. Or one line may
+ * be given a second spelling registered as an alias, which is the only way
+ * through when two lines share a heading as well as a name.
+ *
+ * The qualified form is legal ALWAYS, not only when the bare name is
+ * ambiguous. Making the legal spelling of a step depend on how many lines
+ * another part of the payload holds would mean that adding a rice line
+ * retroactively broke every step already written, and that deleting one
+ * broke every qualified step — a revision that only drops a line would have
+ * to rewrite steps it did not otherwise change. It costs nothing to allow:
+ * the bare name is tried first and returns before the string is scanned for
+ * a colon. A qualified name that would also have resolved bare is accepted
+ * in silence, because `WriteResult` has no warning channel and a line on
+ * every explicit write would dilute `needsDescription`, which is the one
+ * field the guide tells an agent to read.
  *
  * Two lines written under two spellings of one ingredient are NOT this
  * case, and are not refused. They name themselves apart, so the caller has
@@ -713,29 +924,82 @@ function checkStepReferences(
   value: { ingredients?: IngredientLineInput[]; steps?: StepInput[] },
   ctx: z.RefinementCtx,
 ) {
-  const linesByName = new Map<
-    string,
-    { line: IngredientLineInput; position: number }[]
-  >();
+  type Match = { line: IngredientLineInput; position: number };
+  const linesByName = new Map<string, Match[]>();
+  // A separate map and a separate key space. Merging the two would let a
+  // qualified reference be shadowed by a line whose written name happens to
+  // equal it, which is the one way this feature could move an existing
+  // binding. Nothing is indexed here for a line with no heading: there is
+  // no spelling for "the line with no component", and the alias route is
+  // what covers that line when its name is shared.
+  const linesByQualified = new Map<string, Match[]>();
+  const push = (map: Map<string, Match[]>, key: string, match: Match) => {
+    const found = map.get(key);
+    if (found) found.push(match);
+    else map.set(key, [match]);
+  };
   (value.ingredients ?? []).forEach((line, position) => {
-    const key = line.name.trim().toLowerCase();
-    const found = linesByName.get(key);
-    if (found) found.push({ line, position });
-    else linesByName.set(key, [{ line, position }]);
+    push(linesByName, line.name.trim().toLowerCase(), { line, position });
+    const heading = line.component?.trim();
+    if (heading)
+      push(linesByQualified, qualifiedUseKey(heading, line.name), {
+        line,
+        position,
+      });
   });
 
   (value.steps ?? []).forEach((step, stepIndex) => {
     (step.uses ?? []).forEach((used, usedIndex) => {
-      const matches = linesByName.get(used.trim().toLowerCase()) ?? [];
-      if (matches.length === 1) return;
+      // Bare first, and it returns before the string is scanned for a
+      // colon. That is what guarantees structurally — not by testing — that
+      // every name resolving today resolves to the same line, including a
+      // written name that itself contains a colon.
+      const bare = linesByName.get(used.trim().toLowerCase()) ?? [];
+      if (bare.length === 1) return;
+      // And an EMPTY bare result is the only one that falls through. Two
+      // lines answering to the string as written is a real ambiguity, and
+      // `writeRevisionBody` takes any bare hit as authoritative: approving
+      // such a string here through the qualified index would validate it
+      // against one line and write it against another, which is a wrong
+      // amount rather than a missing one. It costs nothing to refuse,
+      // because the qualified form of a name that fits two lines bare is a
+      // longer string that fits none of them bare.
+      const qualifier = bare.length === 0 ? splitQualifiedUse(used) : null;
+      const qualified = qualifier
+        ? (linesByQualified.get(
+            qualifiedUseKey(qualifier.component, qualifier.name),
+          ) ?? [])
+        : [];
+      if (qualified.length === 1) return;
+      // What the caller wrote decides which sentence it gets back. A bare
+      // name that fits nothing is the ordinary typo and keeps the ordinary
+      // words. A qualified name that fits nothing is a wrong heading, and
+      // saying "not in the ingredient list" would send the caller to look
+      // at the wrong half of its own string. Two matches under one heading
+      // is an ambiguity the qualifier carries no further information to
+      // break, so it gets the ambiguity message — whose filter drops the
+      // component paragraph on its own, since both lines share a heading.
+      //
+      // `qualifier` is null whenever the bare lookup found more than one,
+      // so `matches` is those lines and the ambiguity message names them.
+      // A name holding a colon is refused as the ambiguity it is, and not
+      // as a component nobody wrote.
+      const matches = qualifier ? qualified : bare;
       ctx.addIssue({
         code: 'custom',
         path: ['steps', stepIndex, 'uses', usedIndex],
         message:
-          matches.length === 0
-            ? `Step ${stepIndex + 1} uses "${used}", which is not in the ` +
-              'ingredient list. Add it to `ingredients` or remove it from `uses`.'
-            : ambiguousUseMessage(stepIndex + 1, used, matches),
+          matches.length > 1
+            ? ambiguousUseMessage(stepIndex + 1, used, matches)
+            : qualifier
+              ? qualifierMessage(
+                  stepIndex + 1,
+                  used,
+                  qualifier,
+                  value.ingredients ?? [],
+                )
+              : `Step ${stepIndex + 1} uses "${used}", which is not in the ` +
+                'ingredient list. Add it to `ingredients` or remove it from `uses`.',
       });
     });
   });

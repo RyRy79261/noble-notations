@@ -24,6 +24,22 @@ const RUN_SLUG = 'mcp-contract-relog-run';
 const TAG_SLUG = 'mcp-contract-laab-tags';
 const NAME_SLUG = 'mcp-contract-silverside';
 const ORDER_SLUG = 'mcp-contract-laab-ordered';
+const ALIAS_HEAD_SLUG = 'mcp-contract-laab-alias-heading';
+const QUALIFIED_SLUG = 'mcp-contract-laab-qualified';
+const LIST_SLUG = 'mcp-contract-laab-for-the-shop';
+const SPACING_SLUG = 'mcp-contract-laab-spacing';
+const TWO_ROUTES_SLUG = 'mcp-contract-laab-two-routes';
+const ONE_HEADING_SLUG = 'mcp-contract-laab-one-heading';
+const WRONG_HEADING_SLUG = 'mcp-contract-laab-wrong-heading';
+const NO_HEADING_SLUG = 'mcp-contract-laab-no-heading';
+const TYPO_SLUG = 'mcp-contract-laab-typo';
+const CARRY_SLUG = 'mcp-contract-laab-carried-heading';
+const DROP_SLUG = 'mcp-contract-laab-one-line-left';
+const HINT_SLUG = 'mcp-contract-laab-hint';
+const COLON_SLUG = 'mcp-contract-poached-chicken';
+const COLON_AMBIG_SLUG = 'mcp-contract-chilli-twice';
+const SHADOW_SLUG = 'mcp-contract-two-salts';
+const LONG_SLUG = 'mcp-contract-long-cure';
 
 /**
  * The second spelling of one ingredient, the remedy the ambiguity refusal
@@ -369,11 +385,19 @@ test.describe('MCP contract', () => {
    * call shape `revise_recipe`'s own description recommends, and it survived
    * the guard on the mirror path because that one only fires on a
    * steps-only revision.
+   *
+   * The revision here drops the heading off the 400 g line, and that is
+   * what makes it still a tie. `copySteps` now carries the heading forward
+   * in front of the name, so a caller that keeps its headings keeps its
+   * bindings and this call would be accepted — which is the test above.
+   * A caller that leaves the headings off has taken away the one thing that
+   * separated the two lines, and gets this refusal instead of a binding
+   * nobody asked for.
    */
-  test('a carried step that fits two lines is refused on an ingredients-only revision', async () => {
+  test('a carried step that fits two lines is refused when no heading separates them', async () => {
     const mcp = rw();
 
-    const lines = (riceToServe: string) => [
+    const lines = (riceToServe: string, heading: string | undefined) => [
       {
         name: 'Glutinous rice',
         quantity: 45,
@@ -384,7 +408,7 @@ test.describe('MCP contract', () => {
         name: riceToServe,
         quantity: 400,
         unit: 'g',
-        component: 'To serve',
+        component: heading,
       },
       { name: 'Duck breast', quantity: 500, unit: 'g' },
     ];
@@ -393,11 +417,24 @@ test.describe('MCP contract', () => {
       mcp.call('revise_recipe', {
         slug: AMBIG_SLUG,
         rationale: 'A little more rice in the powder.',
-        ingredients: lines(ALIAS_SPELLING),
+        ingredients: lines(ALIAS_SPELLING, undefined),
       }),
     );
-    expect(message).toMatch(/Khao khua \(45 g\).*To serve \(400 g\)/s);
+    // A line with no heading is named by its amount, which is the only
+    // handle it has left.
+    expect(message).toMatch(
+      /2 lines of that ingredient: Khao khua \(45 g\), 400 g\./,
+    );
     expect(message).toMatch(/must point to one line/);
+    // And only the line that still has a heading is offered a component
+    // spelling. The other one is what the alias paragraph is for.
+    expect(message).toMatch(/Write "Khao khua: Glutinous rice"\./);
+    // The paragraph that offers it must say so. It is an imperative and it
+    // comes first, so a caller that means the 400 g line would otherwise
+    // follow it, write the one spelling on offer and bind its step to the
+    // 40 g line — the laab-ped defect, written back by the message that
+    // exists to stop it.
+    expect(message).toMatch(/This does not give a spelling for every line\./);
     // The way out on this path is the other list, not a rename: the caller
     // holds the lines already and only the steps are missing.
     expect(message).toMatch(/Send `steps` alongside `ingredients`/);
@@ -415,7 +452,7 @@ test.describe('MCP contract', () => {
     await mcp.call('revise_recipe', {
       slug: AMBIG_SLUG,
       rationale: 'A little more rice in the powder.',
-      ingredients: lines(ALIAS_SPELLING),
+      ingredients: lines(ALIAS_SPELLING, 'To serve'),
       steps: [
         {
           instruction: 'Glutinous rice for the table into cold water.',
@@ -657,6 +694,1010 @@ test.describe('MCP contract', () => {
     expect(rice.map((line) => line.quantity).sort((a, b) => a! - b!)).toEqual([
       40, 400,
     ]);
+  });
+
+  /**
+   * The second way out of the tie, and the cheap one.
+   *
+   * #9 turned "one name, two lines" into a refusal, which stopped a wrong
+   * number reaching a cook. It left exactly one way through: give one line
+   * a second spelling, and register that spelling on the ingredient in a
+   * call of its own before the recipe may be written. That works. It costs
+   * two calls and an invented name.
+   *
+   * A step can instead name the heading its line sits under. Both lines
+   * here carry the SAME name, which is the shape the alias route cannot
+   * express without changing one of them, and it is the shape the deployed
+   * recipe has: laab-ped lists 40 g of glutinous rice for the toasted
+   * powder and 400 g to serve.
+   *
+   * The assertion is on the line id and not on the amount beside the chip.
+   * A chip reading "40 g" against the table rice is wrong in a way a reader
+   * can see. A chip bound to the wrong row is wrong in a way only the id
+   * shows, and that binding is the whole of what this branch changes.
+   */
+  test('a step that names a component binds to that line', async () => {
+    const mcp = rw();
+
+    await mcp.call<WriteResult>('create_recipe', {
+      title: 'Laab ped, the rice named by its heading',
+      slug: QUALIFIED_SLUG,
+      kind: 'recipe',
+      rationale: 'One ingredient on two lines, and a step for each of them.',
+      ingredients: [
+        {
+          name: 'Glutinous rice',
+          quantity: 40,
+          unit: 'g',
+          component: 'Khao khua',
+        },
+        {
+          name: 'Glutinous rice',
+          quantity: 400,
+          unit: 'g',
+          component: 'To serve',
+        },
+        { name: 'Duck breast', quantity: 500, unit: 'g' },
+      ],
+      steps: [
+        {
+          instruction: 'Dry-toast the rice for the powder.',
+          uses: ['Khao khua: Glutinous rice'],
+        },
+        {
+          instruction: 'Glutinous rice for the table into cold water.',
+          uses: ['To serve: Glutinous rice'],
+        },
+        // A bare name over a line that carries no heading. It is looked up
+        // before the string is ever scanned for a colon, so it resolves the
+        // way it always has.
+        {
+          instruction: 'Sear the duck breast skin-side down.',
+          uses: ['Duck breast'],
+        },
+      ],
+    });
+
+    const recipe = await mcp.call<StepRecipeResult>('get_recipe', {
+      slug: QUALIFIED_SLUG,
+    });
+    const powder = recipe.ingredients.find(
+      (line) => line.component === 'Khao khua',
+    )!;
+    const toServe = recipe.ingredients.find(
+      (line) => line.component === 'To serve',
+    )!;
+    const duck = recipe.ingredients.find((line) => line.component === null)!;
+    // The two numbers the ids have to keep apart.
+    expect(powder.quantity).toBe(40);
+    expect(toServe.quantity).toBe(400);
+
+    expect(
+      recipe.steps.map((step) => [
+        step.instruction,
+        step.uses.map((u) => u.recipeIngredientId),
+      ]),
+    ).toEqual([
+      ['Dry-toast the rice for the powder.', [powder.id]],
+      ['Glutinous rice for the table into cold water.', [toServe.id]],
+      ['Sear the duck breast skin-side down.', [duck.id]],
+    ]);
+  });
+
+  /**
+   * The reason the component route exists at all, rather than the alias one
+   * being made cheaper.
+   *
+   * A second spelling that is not registered as an alias mints a second
+   * canonical ingredient, and `build_shopping_list` then reports 40 g and
+   * 400 g as two rows that can never sum — the defect the refusal's last
+   * sentence warns about, and one no write path in this repository can undo.
+   * Naming the heading renames nothing: the two lines stay one ingredient,
+   * so the list still adds them.
+   *
+   * The step chips are right in both worlds. The shopping list is right in
+   * only one, so this is the assertion that says the branch met its point
+   * and not merely its API.
+   *
+   * The recipe is written here rather than read off the one above, so that
+   * this assertion fails in this test when the component route stops
+   * working. A test that only read a recipe another test wrote would be
+   * skipped behind that test's failure and prove nothing.
+   */
+  test('a component reference leaves the shopping list one row', async () => {
+    const mcp = rw();
+
+    await mcp.call('create_recipe', {
+      title: 'Laab ped, written for the shop',
+      slug: LIST_SLUG,
+      kind: 'recipe',
+      rationale: 'Two rice lines, and a list that has to add them.',
+      ingredients: [
+        {
+          name: 'Glutinous rice',
+          quantity: 40,
+          unit: 'g',
+          component: 'Khao khua',
+        },
+        {
+          name: 'Glutinous rice',
+          quantity: 400,
+          unit: 'g',
+          component: 'To serve',
+        },
+      ],
+      steps: [
+        {
+          instruction: 'Dry-toast the rice for the powder.',
+          uses: ['Khao khua: Glutinous rice'],
+        },
+        {
+          instruction: 'Steam the rice for the table.',
+          uses: ['To serve: Glutinous rice'],
+        },
+      ],
+    });
+
+    const list = await mcp.call<ShoppingResult>('build_shopping_list', {
+      slugs: [LIST_SLUG],
+    });
+    const rice = list.groups
+      .flatMap((group) => group.entries)
+      .filter((entry) => /rice/i.test(entry.name));
+
+    // One row, one canonical ingredient, and 40 g plus 400 g added.
+    expect(rice).toHaveLength(1);
+    expect(rice[0]!.slug).toBe('glutinous-rice');
+    expect(rice[0]!.amounts).toEqual(['440 g']);
+  });
+
+  /**
+   * The separator is the colon alone, and both halves are matched the way
+   * the bare index matches them: trimmed and lowercased.
+   *
+   * Requiring ": " exactly would turn a one-character slip into a refused
+   * write and buy nothing, because the split is on the last colon and the
+   * space adds no information. And a model that has just read "To serve"
+   * off a page writes it back in whatever case the page used.
+   */
+  test('a component reference ignores case and spacing', async () => {
+    const mcp = rw();
+
+    await mcp.call('create_recipe', {
+      title: 'Laab ped, the heading written three ways',
+      slug: SPACING_SLUG,
+      kind: 'recipe',
+      rationale: 'Three spellings of one heading, all meaning one line.',
+      ingredients: [
+        {
+          name: 'Glutinous rice',
+          quantity: 40,
+          unit: 'g',
+          component: 'Khao khua',
+        },
+        {
+          name: 'Glutinous rice',
+          quantity: 400,
+          unit: 'g',
+          component: 'To serve',
+        },
+      ],
+      steps: [
+        {
+          instruction: 'Rinse the rice for the table.',
+          uses: ['to serve:glutinous rice'],
+        },
+        {
+          instruction: 'Soak the rice for the table.',
+          uses: ['To serve : Glutinous rice'],
+        },
+        {
+          instruction: 'Drain the rice for the table.',
+          uses: ['  TO SERVE:   GLUTINOUS RICE  '],
+        },
+      ],
+    });
+
+    const recipe = await mcp.call<StepRecipeResult>('get_recipe', {
+      slug: SPACING_SLUG,
+    });
+    const toServe = recipe.ingredients.find(
+      (line) => line.component === 'To serve',
+    )!;
+    expect(toServe.quantity).toBe(400);
+    expect(
+      recipe.steps.map((step) => step.uses.map((u) => u.recipeIngredientId)),
+    ).toEqual([[toServe.id], [toServe.id], [toServe.id]]);
+  });
+
+  /**
+   * The regression guard for every recipe in the archive.
+   *
+   * A bare name is looked up first at all three sites and returns before
+   * the string is scanned for a colon, so nothing that binds today can
+   * move. The sharp edge is a written name that itself holds a colon: it
+   * binds bare, and it is never split into a heading that some other line
+   * happens to carry. That is why bare-first is a rule and not a
+   * performance choice — 42 ingredient names and 49 alias spellings in the
+   * archive hold no colon, but nothing stops the next one.
+   *
+   * The last step proves the other half of the split rule. The name is what
+   * follows the LAST colon, so a heading that ends in one — the frozen
+   * prose archive is full of "For the boil:" — stays writable with no
+   * escape character.
+   */
+  test('a bare name that fits one line still binds, colon or not', async () => {
+    const mcp = rw();
+
+    await mcp.call('create_recipe', {
+      title: 'Poached chicken with a chilli dressing',
+      slug: COLON_SLUG,
+      kind: 'recipe',
+      rationale: 'A written name that holds a colon, beside the split.',
+      ingredients: [
+        // This name holds a colon, and "Chilli" is the heading over the
+        // line below it. Split the string first and the reference lands on
+        // the wrong line, with the wrong number.
+        {
+          name: "Chilli: bird's eye",
+          quantity: 6,
+          unit: 'g',
+          component: 'Dressing',
+        },
+        {
+          name: "Bird's eye",
+          quantity: 2,
+          unit: 'g',
+          component: 'Chilli',
+        },
+        { name: 'Water', quantity: 2, unit: 'l', component: 'For the boil:' },
+      ],
+      steps: [
+        {
+          instruction: 'Pound the dressing chilli to a paste.',
+          uses: ["Chilli: bird's eye"],
+        },
+        {
+          instruction: 'Slice the garnish chilli into rings.',
+          uses: ["Bird's eye"],
+        },
+        // Both halves are trimmed, so a heading that ends in a colon needs
+        // no escape: the last colon is the separator and the one before it
+        // belongs to the heading.
+        {
+          instruction: 'Bring the water to a boil.',
+          uses: ['For the boil:: Water'],
+        },
+      ],
+    });
+
+    const recipe = await mcp.call<StepRecipeResult>('get_recipe', {
+      slug: COLON_SLUG,
+    });
+    const byComponent = Object.fromEntries(
+      recipe.ingredients.map((line) => [line.component, line]),
+    );
+    expect(byComponent['Dressing']!.quantity).toBe(6);
+    expect(byComponent['Chilli']!.quantity).toBe(2);
+
+    expect(
+      recipe.steps.map((step) => step.uses.map((u) => u.recipeIngredientId)),
+    ).toEqual([
+      [byComponent['Dressing']!.id],
+      [byComponent['Chilli']!.id],
+      [byComponent['For the boil:']!.id],
+    ]);
+  });
+
+  /**
+   * The refusal has two ways out to name now, and it must name only the
+   * ones that work.
+   *
+   * The component route leads, because it is one call against the alias
+   * route's two and it invents no name. The alias route stays, because it
+   * is the only thing that separates two lines sharing a heading as well as
+   * a name — and a message that offered a component spelling for that pair
+   * would be a second refusal dressed as a remedy.
+   */
+  test('the ambiguity refusal names both ways out, and only the ones that work', async () => {
+    const mcp = rw();
+
+    const separable = await refusal(
+      mcp.call('create_recipe', {
+        title: 'Laab ped, refused with two ways out',
+        slug: TWO_ROUTES_SLUG,
+        kind: 'recipe',
+        rationale: 'A bare name over two lines, so the message can be read.',
+        ingredients: [
+          {
+            name: 'Glutinous rice',
+            quantity: 40,
+            unit: 'g',
+            component: 'Khao khua',
+          },
+          {
+            name: 'Glutinous rice',
+            quantity: 400,
+            unit: 'g',
+            component: 'To serve',
+          },
+        ],
+        steps: [{ instruction: 'Rinse the rice.', uses: ['Glutinous rice'] }],
+      }),
+    );
+
+    expect(separable).toMatch(/Khao khua \(40 g\).*To serve \(400 g\)/s);
+    expect(separable).toMatch(/must point to one line/);
+    // Route one. Both spellings are offered, because either line may be the
+    // one the caller meant and the message cannot know which.
+    expect(separable).toMatch(/Put the line's `component` in front of the/);
+    expect(separable).toMatch(
+      /"Khao khua: Glutinous rice" or "To serve: Glutinous rice"/,
+    );
+    expect(separable).toMatch(/A colon separates the two/);
+    // Route two, kept whole and kept second.
+    expect(separable).toMatch(/Or give one line a second spelling/);
+    expect(separable).toMatch(/upsert_ingredient/);
+    expect(separable).toMatch(/aliases/);
+
+    // Nothing was written.
+    await expect(
+      mcp.call('get_recipe', { slug: TWO_ROUTES_SLUG }),
+    ).rejects.toThrow(/No recipe/i);
+
+    // One name, one heading, twice. A component carries nothing that tells
+    // these two apart, so the paragraph that offers one must not be printed.
+    const inseparable = await refusal(
+      mcp.call('create_recipe', {
+        title: 'Laab ped, both lines under one heading',
+        slug: ONE_HEADING_SLUG,
+        kind: 'recipe',
+        rationale: 'Two lines that no heading can separate.',
+        ingredients: [
+          {
+            name: 'Glutinous rice',
+            quantity: 40,
+            unit: 'g',
+            component: 'Khao khua',
+          },
+          {
+            name: 'Glutinous rice',
+            quantity: 40,
+            unit: 'g',
+            component: 'Khao khua',
+          },
+        ],
+        steps: [{ instruction: 'Rinse the rice.', uses: ['Glutinous rice'] }],
+      }),
+    );
+
+    expect(inseparable).not.toMatch(/`component` in front of the/);
+    expect(inseparable).not.toMatch(/A colon separates the two/);
+    // The alias route stands alone here, and it opens the sentence rather
+    // than following one that is not there.
+    expect(inseparable).toMatch(/Give one line a second spelling/);
+    expect(inseparable).toMatch(/upsert_ingredient/);
+    expect(inseparable).toMatch(/aliases/);
+    // And the two lines are still told apart in the sentence. One heading
+    // and one amount describe them identically, so each takes its position
+    // in the list — otherwise the message names one line twice.
+    expect(inseparable).toMatch(
+      /Khao khua \(40 g\) \(line 1\), Khao khua \(40 g\) \(line 2\)/,
+    );
+  });
+
+  /**
+   * A heading the list cannot answer is refused, not quietly dropped.
+   *
+   * Falling back to the bare name would bind the step to a line the caller
+   * did not name, in exactly the class of recipe where the wrong line costs
+   * a real number. That is the defect #9 exists to stop. The heading is
+   * information the caller volunteered; if it is wrong then either the
+   * heading or the caller's model of the dish is wrong, and both are worth
+   * one round trip.
+   *
+   * The message names the two halves separately, because a caller cannot
+   * see which half it got wrong from a sentence that quotes the whole
+   * string — and "not in the ingredient list" would send it to check the
+   * name, which is the half that is right.
+   */
+  test('a component no line carries is refused, and the message names it', async () => {
+    const mcp = rw();
+
+    const wrongHeading = await refusal(
+      mcp.call('create_recipe', {
+        title: 'Laab ped, a heading this list does not have',
+        slug: WRONG_HEADING_SLUG,
+        kind: 'recipe',
+        rationale: 'The heading is wrong. Both lines are right.',
+        ingredients: [
+          {
+            name: 'Glutinous rice',
+            quantity: 40,
+            unit: 'g',
+            component: 'Khao khua',
+          },
+          {
+            name: 'Glutinous rice',
+            quantity: 400,
+            unit: 'g',
+            component: 'To serve',
+          },
+        ],
+        steps: [
+          {
+            instruction: 'Rinse the rice.',
+            uses: ['To table: Glutinous rice'],
+          },
+        ],
+      }),
+    );
+
+    expect(wrongHeading).toMatch(/Step 1 uses "To table: Glutinous rice"/);
+    expect(wrongHeading).toMatch(/This reads as a component and a name/);
+    expect(wrongHeading).toMatch(
+      /No line has the component "To table" with the name "Glutinous rice"/,
+    );
+    // The answer, and not only the complaint: the headings it could have
+    // written are in the sentence.
+    expect(wrongHeading).toMatch(
+      /The components in this list are: Khao khua, To serve/,
+    );
+    expect(wrongHeading).toMatch(
+      /Write a component this list has, or write the name with no component/,
+    );
+    expect(wrongHeading).not.toMatch(/internal error/i);
+
+    // Nothing was written.
+    await expect(
+      mcp.call('get_recipe', { slug: WRONG_HEADING_SLUG }),
+    ).rejects.toThrow(/No recipe/i);
+
+    // A list with no headings at all says so, rather than listing nothing
+    // and leaving the caller to read an empty sentence.
+    const noHeadings = await refusal(
+      mcp.call('create_recipe', {
+        title: 'Laab ped, a list with no headings',
+        slug: NO_HEADING_SLUG,
+        kind: 'recipe',
+        rationale: 'No line here carries a component.',
+        ingredients: [{ name: 'Duck breast', quantity: 500, unit: 'g' }],
+        steps: [
+          {
+            instruction: 'Sear the duck breast skin-side down.',
+            uses: ['To serve: Duck breast'],
+          },
+        ],
+      }),
+    );
+    // And the advice that follows fits the list it was given. "Write a
+    // component this list has" contradicted the sentence before it, on the
+    // commonest recipe shape there is.
+    expect(noHeadings).toMatch(
+      /No line in this list has a component\. Write the name with no component\./,
+    );
+    expect(noHeadings).not.toMatch(/Write a component this list has/);
+
+    // And an ordinary typo keeps the ordinary words, byte for byte. A
+    // caller that misspelt a name must not be sent hunting for a heading it
+    // never wrote.
+    const typo = await refusal(
+      mcp.call('create_recipe', {
+        title: 'Laab ped, a misspelt name',
+        slug: TYPO_SLUG,
+        kind: 'recipe',
+        rationale: 'A name that is in no list at all.',
+        ingredients: [{ name: 'Duck breast', quantity: 500, unit: 'g' }],
+        steps: [{ instruction: 'Bruise the leaf.', uses: ['Pandan leaf'] }],
+      }),
+    );
+    expect(typo).toMatch(
+      /uses "Pandan leaf", which is not in the ingredient list\. Add it to `ingredients` or remove it from `uses`\./,
+    );
+    expect(typo).not.toMatch(/reads as a component/);
+  });
+
+  /**
+   * A kept step has to survive the revision that replaces the lines under
+   * it, or the component route works once and dies.
+   *
+   * `revise_recipe` with `ingredients` and no `steps` copies the steps
+   * forward, and a step's `uses` comes back out of storage as the canonical
+   * ingredient name: the spelling that said which line it meant is not a
+   * column. So `copySteps` writes the heading back in front of the name
+   * whenever two lines of that revision answer to it, and a caller that
+   * keeps its headings keeps its bindings. Without that half, the first
+   * ingredients-only revision would send the caller back to re-typing every
+   * step by hand — which is the heavy path this branch removes.
+   *
+   * The second half is what keeps it honest. A caller that renames the
+   * heading has taken the pointer away, and the carried reference falls
+   * back to the bare name and meets #9's refusal. It does not invent a
+   * binding out of the half it can still read.
+   */
+  test('a carried component reference survives an ingredients-only revision', async () => {
+    const mcp = rw();
+
+    const lines = (heading: string, powder: number) => [
+      {
+        name: 'Glutinous rice',
+        quantity: powder,
+        unit: 'g',
+        component: 'Khao khua',
+      },
+      {
+        name: 'Glutinous rice',
+        quantity: 400,
+        unit: 'g',
+        component: heading,
+      },
+      { name: 'Duck breast', quantity: 500, unit: 'g' },
+    ];
+
+    await mcp.call('create_recipe', {
+      title: 'Laab ped, revised without its steps',
+      slug: CARRY_SLUG,
+      kind: 'recipe',
+      rationale: 'The lines will be replaced. The step must keep its line.',
+      ingredients: lines('To serve', 40),
+      steps: [
+        {
+          instruction: 'Glutinous rice for the table into cold water.',
+          uses: ['To serve: Glutinous rice'],
+        },
+      ],
+    });
+
+    // The headings are kept, so the carried reference still fits. This is
+    // the call that is refused without `copySteps` carrying the heading.
+    await mcp.call('revise_recipe', {
+      slug: CARRY_SLUG,
+      rationale: 'A little more rice in the powder.',
+      ingredients: lines('To serve', 45),
+    });
+
+    const kept = await mcp.call<StepRecipeResult>('get_recipe', {
+      slug: CARRY_SLUG,
+    });
+    expect(
+      kept.ingredients.find((line) => line.component === 'Khao khua')!.quantity,
+    ).toBe(45);
+    const toServe = kept.ingredients.find(
+      (line) => line.component === 'To serve',
+    )!;
+    expect(toServe.quantity).toBe(400);
+    expect(kept.steps[0]!.uses.map((u) => u.recipeIngredientId)).toEqual([
+      toServe.id,
+    ]);
+
+    // Rename the heading and the pointer is gone. The reference degrades to
+    // the bare name, which fits both lines, and is refused rather than
+    // bound to whichever comes first.
+    const renamed = await refusal(
+      mcp.call('revise_recipe', {
+        slug: CARRY_SLUG,
+        rationale: 'The table rice gets a new heading.',
+        ingredients: lines('At the table', 45),
+      }),
+    );
+    expect(renamed).toMatch(/Khao khua \(45 g\).*At the table \(400 g\)/s);
+    expect(renamed).toMatch(/must point to one line/);
+    // The way out names the heading the caller has just written, not the
+    // one it dropped.
+    expect(renamed).toMatch(
+      /"Khao khua: Glutinous rice" or "At the table: Glutinous rice"/,
+    );
+    expect(renamed).toMatch(/Send `steps` alongside `ingredients`/);
+    // The alias example is built from the bare name. A carried reference
+    // arrives here already spelling a heading, and "To serve: Glutinous
+    // rice, at the table" is not a spelling anyone should register as a
+    // second name for an ingredient.
+    expect(renamed).toMatch(/such as "Glutinous rice, at the table"/);
+    expect(renamed).not.toMatch(/internal error/i);
+
+    // Nothing was written. The heading and the binding are where they were.
+    const refused = await mcp.call<StepRecipeResult>('get_recipe', {
+      slug: CARRY_SLUG,
+    });
+    const still = refused.ingredients.find(
+      (line) => line.component === 'To serve',
+    )!;
+    expect(still.quantity).toBe(400);
+    expect(refused.steps[0]!.uses.map((u) => u.recipeIngredientId)).toEqual([
+      still.id,
+    ]);
+  });
+
+  /**
+   * The line the review found untested, and it is load bearing.
+   *
+   * A qualified key is pushed twice for one line: once under the name the
+   * caller WROTE, and once under the ingredient's CANONICAL name. The second
+   * push is what this covers.
+   *
+   * The shape is a line written under an alias. `create_recipe` indexes a
+   * qualified key by the written name, so the step names the alias and
+   * binds. An ingredients-only revision then carries that step forward
+   * through `copySteps`, which returns the CANONICAL name — so the carried
+   * reference arrives spelling a name this line was never written under.
+   * Only the second push makes it resolve.
+   *
+   * Drop that one line and this call is refused with "must point to one
+   * line", because the carried reference falls back to its bare tail and the
+   * bare tail fits both lines. Every other contract test stays green.
+   */
+  test('a carried reference resolves a line written under an alias', async () => {
+    const mcp = rw();
+
+    // One ingredient, two spellings. This is the whole point: the two lines
+    // stay one ingredient, so a shopping list still adds their amounts.
+    await mcp.call('upsert_ingredient', {
+      name: 'Glutinous rice',
+      slug: 'glutinous-rice',
+      category: 'grain',
+      aliases: ['Sticky rice'],
+    });
+
+    const lines = (powder: number) => [
+      {
+        name: 'Glutinous rice',
+        quantity: powder,
+        unit: 'g',
+        component: 'Khao khua',
+      },
+      // Written under the alias, not the canonical name.
+      {
+        name: 'Sticky rice',
+        quantity: 400,
+        unit: 'g',
+        component: 'To serve',
+      },
+    ];
+
+    await mcp.call('create_recipe', {
+      title: 'Laab ped, one line written under an alias',
+      slug: ALIAS_HEAD_SLUG,
+      kind: 'recipe',
+      rationale: 'The table rice is written under the name it is sold as.',
+      ingredients: lines(40),
+      steps: [
+        {
+          instruction: 'The rice for the table into cold water.',
+          // The written spelling. This is what `create_recipe` indexes.
+          uses: ['To serve: Sticky rice'],
+        },
+      ],
+    });
+
+    const made = await mcp.call<StepRecipeResult>('get_recipe', {
+      slug: ALIAS_HEAD_SLUG,
+    });
+    const served = made.ingredients.find(
+      (line) => line.component === 'To serve',
+    )!;
+    expect(served.quantity).toBe(400);
+    expect(made.steps[0]!.uses.map((u) => u.recipeIngredientId)).toEqual([
+      served.id,
+    ]);
+
+    // The revision sends no steps. `copySteps` carries the reference
+    // forward under the CANONICAL name, which this line was never written
+    // under. It must still resolve, and to the same line.
+    await mcp.call('revise_recipe', {
+      slug: ALIAS_HEAD_SLUG,
+      rationale: 'A little more rice in the powder.',
+      ingredients: lines(45),
+    });
+
+    const revised = await mcp.call<StepRecipeResult>('get_recipe', {
+      slug: ALIAS_HEAD_SLUG,
+    });
+    // The powder line moved, which is how we know the revision landed.
+    expect(
+      revised.ingredients.find((line) => line.component === 'Khao khua')!
+        .quantity,
+    ).toBe(45);
+    const stillServed = revised.ingredients.find(
+      (line) => line.component === 'To serve',
+    )!;
+    expect(stillServed.quantity).toBe(400);
+    // The step kept an ingredient, and it kept the right one.
+    expect(revised.steps[0]!.uses.map((u) => u.recipeIngredientId)).toEqual([
+      stillServed.id,
+    ]);
+  });
+
+  /**
+   * The mirror of the test above, and the hole it left open.
+   *
+   * That one keeps both lines. This one leaves ONE of the two, which is
+   * where the two layers disagreed. `checkCarriedUses` resolves the carried
+   * "Khao khua: Glutinous rice" by its bare tail, finds the one surviving
+   * line and lets the revision through. `writeRevisionBody` looked up the
+   * heading, missed, and wrote no link at all. The call was accepted,
+   * `unresolvedLinks` came back empty, `message` said nothing, and a step
+   * that had an ingredient before the revision had none after it.
+   *
+   * It reaches recipes that never write a qualified `uses` at all.
+   * `copySteps` puts the heading in front of a carried name whenever two
+   * lines of the PREVIOUS revision answer to one canonical name — which is
+   * exactly what #9's alias route produces — so a caller that has never
+   * typed a colon meets this on its next ingredients-only revision.
+   *
+   * The assertion is on the id, because a lost link is invisible in every
+   * other field of the result.
+   */
+  test('an ingredients-only revision that leaves one line keeps the step', async () => {
+    const mcp = rw();
+
+    await mcp.call('create_recipe', {
+      title: 'Laab ped, revised down to one rice line',
+      slug: DROP_SLUG,
+      kind: 'recipe',
+      rationale: 'Two rice lines, and one step for each of them.',
+      ingredients: [
+        {
+          name: 'Glutinous rice',
+          quantity: 40,
+          unit: 'g',
+          component: 'Khao khua',
+        },
+        {
+          name: 'Glutinous rice',
+          quantity: 400,
+          unit: 'g',
+          component: 'To serve',
+        },
+        { name: 'Duck breast', quantity: 500, unit: 'g' },
+      ],
+      steps: [
+        {
+          instruction: 'Dry-toast the rice for the powder.',
+          uses: ['Khao khua: Glutinous rice'],
+        },
+        {
+          instruction: 'Glutinous rice for the table into cold water.',
+          uses: ['To serve: Glutinous rice'],
+        },
+      ],
+    });
+
+    // One rice line is left, under a heading that neither carried reference
+    // names. Both of them degrade to the bare name, which now fits exactly
+    // one line, so both steps keep an ingredient.
+    await mcp.call('revise_recipe', {
+      slug: DROP_SLUG,
+      rationale:
+        'The powder is bought ready-made. Only the table rice is left.',
+      ingredients: [
+        {
+          name: 'Glutinous rice',
+          quantity: 400,
+          unit: 'g',
+          component: 'At the table',
+        },
+        { name: 'Duck breast', quantity: 500, unit: 'g' },
+      ],
+    });
+
+    const revised = await mcp.call<StepRecipeResult>('get_recipe', {
+      slug: DROP_SLUG,
+    });
+    const rice = revised.ingredients.find(
+      (line) => line.component === 'At the table',
+    )!;
+    expect(rice.quantity).toBe(400);
+    expect(
+      revised.steps.map((step) => step.uses.map((u) => u.recipeIngredientId)),
+    ).toEqual([[rice.id], [rice.id]]);
+  });
+
+  /**
+   * An ambiguous bare name is refused as the ambiguity it is, colon or not.
+   *
+   * The bare lookup settles a reference before the string is scanned for a
+   * colon, and the ambiguous answer settles it too. `writeRevisionBody`
+   * takes any bare hit as authoritative and keeps the first of two, so a
+   * string approved through the qualified index would be validated against
+   * one line and written against another — a wrong amount rather than a
+   * missing one.
+   *
+   * The refusal also has to be the one that carries a remedy. An ingredient
+   * name may hold a colon, and the split takes the LAST one, so no
+   * qualified spelling reaches such a line: "Dressing: Chilli: bird's eye"
+   * reads as the component "Dressing: Chilli". The alias route is the only
+   * way out of that pair, and only the ambiguity message names it.
+   */
+  test('an ambiguous bare name is refused as an ambiguity, colon or not', async () => {
+    const mcp = rw();
+
+    const colon = await refusal(
+      mcp.call('create_recipe', {
+        title: 'A dressing and a garnish from one chilli',
+        slug: COLON_AMBIG_SLUG,
+        kind: 'recipe',
+        rationale: 'One name that holds a colon, written on two lines.',
+        ingredients: [
+          {
+            name: "Chilli: bird's eye",
+            quantity: 6,
+            unit: 'g',
+            component: 'Dressing',
+          },
+          {
+            name: "Chilli: bird's eye",
+            quantity: 2,
+            unit: 'g',
+            component: 'Garnish',
+          },
+        ],
+        steps: [
+          {
+            instruction: 'Pound the chilli to a paste.',
+            uses: ["Chilli: bird's eye"],
+          },
+        ],
+      }),
+    );
+    expect(colon).toMatch(
+      /2 lines of that ingredient: Dressing \(6 g\), Garnish \(2 g\)/,
+    );
+    expect(colon).toMatch(/must point to one line/);
+    // The route that works is named. The one that cannot work is not
+    // offered, because no component spelling of this name resolves.
+    expect(colon).toMatch(/Give one line a second spelling/);
+    expect(colon).toMatch(/upsert_ingredient/);
+    expect(colon).toMatch(/aliases/);
+    expect(colon).not.toMatch(/`component` in front of the/);
+    expect(colon).not.toMatch(/reads as a component/);
+    // And the alias it suggests is built from the whole written name, not
+    // from the half after the colon.
+    expect(colon).toMatch(/such as "Chilli: bird's eye, garnish"/);
+
+    // The shape where the two ladders disagreed. The bare name fits two
+    // lines, and a third line carries the component and the name that
+    // splitting it would produce. Reading the qualified index here approved
+    // the 5 g line while the writer bound the step to the first 10 g one.
+    const shadowed = await refusal(
+      mcp.call('create_recipe', {
+        title: 'A cure with two salts',
+        slug: SHADOW_SLUG,
+        kind: 'recipe',
+        rationale: 'A name with a colon, twice, beside a line that mimics it.',
+        ingredients: [
+          { name: 'Salt: kosher', quantity: 10, unit: 'g' },
+          { name: 'Salt: kosher', quantity: 20, unit: 'g' },
+          { name: 'kosher', quantity: 5, unit: 'g', component: 'Salt' },
+        ],
+        steps: [{ instruction: 'Mix the cure.', uses: ['Salt: kosher'] }],
+      }),
+    );
+    expect(shadowed).toMatch(/2 lines of that ingredient: 10 g, 20 g/);
+    expect(shadowed).toMatch(/must point to one line/);
+    expect(shadowed).not.toMatch(/reads as a component/);
+
+    // Neither call wrote anything.
+    await expect(
+      mcp.call('get_recipe', { slug: COLON_AMBIG_SLUG }),
+    ).rejects.toThrow(/No recipe/i);
+    await expect(mcp.call('get_recipe', { slug: SHADOW_SLUG })).rejects.toThrow(
+      /No recipe/i,
+    );
+  });
+
+  /**
+   * A refusal on a steps-only revision has to say what to send next.
+   *
+   * The caller here holds the steps and not the lines, so "write a
+   * component this list has" names a list it did not send and cannot change
+   * in this call. Its real intent may be to give a line that heading, and
+   * the only way to do that is to send `ingredients` too. Every other
+   * refusal on this path carries that direction; the qualifier one dropped
+   * it.
+   */
+  test('a steps-only revision is told it may send the lines as well', async () => {
+    const mcp = rw();
+
+    await mcp.call('create_recipe', {
+      title: 'Laab ped, revised by its steps alone',
+      slug: HINT_SLUG,
+      kind: 'recipe',
+      rationale: 'The lines first. A step names a heading in the next call.',
+      ingredients: [
+        {
+          name: 'Glutinous rice',
+          quantity: 40,
+          unit: 'g',
+          component: 'Khao khua',
+        },
+        {
+          name: 'Glutinous rice',
+          quantity: 400,
+          unit: 'g',
+          component: 'To serve',
+        },
+      ],
+      steps: [{ instruction: 'Dry-toast the rice for the powder.' }],
+    });
+
+    const message = await refusal(
+      mcp.call('revise_recipe', {
+        slug: HINT_SLUG,
+        rationale: 'The table rice gets a step.',
+        steps: [
+          {
+            instruction: 'Glutinous rice for the table into cold water.',
+            uses: ['At the table: Glutinous rice'],
+          },
+        ],
+      }),
+    );
+    expect(message).toMatch(
+      /No line has the component "At the table" with the name "Glutinous rice"/,
+    );
+    expect(message).toMatch(
+      /The components in this list are: Khao khua, To serve/,
+    );
+    expect(message).toMatch(
+      /Send `ingredients` alongside `steps` to give a line that component\./,
+    );
+    expect(message).not.toMatch(/internal error/i);
+  });
+
+  /**
+   * The bound that would have truncated the feature in silence.
+   *
+   * A `component` is 120 characters and a `name` is 200, so the longest
+   * reference a caller may legally write is 322 — and `uses` items were
+   * bounded at 200. A caller with long headings would have met "expected
+   * string to have <=200 characters" on a payload where every field it sent
+   * was legal, and nothing in that sentence names the real problem.
+   */
+  test('a component reference may be as long as its two halves allow', async () => {
+    const mcp = rw();
+
+    const component = 'Day one, the long cure'.padEnd(120, 'x');
+    const name = 'Coarse sea salt from the long shore'.padEnd(200, 'x');
+    const reference = `${component}: ${name}`;
+    expect(reference.length).toBe(322);
+
+    await mcp.call('create_recipe', {
+      title: 'A cure with a very long heading',
+      slug: LONG_SLUG,
+      kind: 'recipe',
+      rationale: 'The longest reference the contract allows.',
+      ingredients: [{ name, quantity: 300, unit: 'g', component }],
+      steps: [
+        { instruction: 'Rub the cure over the meat.', uses: [reference] },
+      ],
+    });
+
+    const recipe = await mcp.call<StepRecipeResult>('get_recipe', {
+      slug: LONG_SLUG,
+    });
+    expect(recipe.steps[0]!.uses.map((u) => u.recipeIngredientId)).toEqual([
+      recipe.ingredients[0]!.id,
+    ]);
+
+    // One character more. The extra character is a space, which the split
+    // trims away before it matches anything, so the bound is the only thing
+    // refusing this.
+    const tooLong = await refusal(
+      mcp.call('create_recipe', {
+        title: 'A cure with a heading one character too long',
+        slug: `${LONG_SLUG}-refused`,
+        kind: 'recipe',
+        rationale: 'One character past the bound.',
+        ingredients: [{ name, quantity: 300, unit: 'g', component }],
+        steps: [
+          {
+            instruction: 'Rub the cure over the meat.',
+            uses: [`${component}:  ${name}`],
+          },
+        ],
+      }),
+    );
+    expect(tooLong).toMatch(/322 characters/);
   });
 
   /**
@@ -1633,6 +2674,25 @@ test.describe('MCP contract', () => {
       };
       expect(steps.items?.properties?.uses?.description).toMatch(
         /exactly one line/,
+      );
+      // And the way out of "two lines share a name", which is the one thing
+      // a caller cannot work out from the shape. The field says the whole
+      // rule — write the `component`, a colon, then the name — and the
+      // tool's own text repeats it, because a model reads the tool before
+      // it reads a field.
+      expect(steps.items?.properties?.uses?.description).toMatch(/`component`/);
+      expect(steps.items?.properties?.uses?.description).toMatch(
+        /"To serve: Glutinous rice"/,
+      );
+      expect(find(tool).description).toMatch(/"To serve: Glutinous rice"/);
+      // And the field that remedy stands on. A caller that never sets a
+      // `component` cannot write a qualified name at all, so the field the
+      // whole route depends on cannot be the one with no sentence.
+      const lines = properties(tool).ingredients as unknown as {
+        items?: { properties?: Record<string, { description?: string }> };
+      };
+      expect(lines.items?.properties?.component?.description).toMatch(
+        /heading this line sits under/,
       );
     }
     expect(find('create_recipe').description).toMatch(/exactly one line/);

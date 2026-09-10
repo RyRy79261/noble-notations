@@ -36,7 +36,12 @@ import {
   normaliseUnit,
   unitKind,
 } from '@/lib/domain/units';
-import { ambiguousUseMessage } from '@/lib/domain/schemas';
+import {
+  ambiguousUseMessage,
+  qualifiedUseKey,
+  qualifierMessage,
+  splitQualifiedUse,
+} from '@/lib/domain/schemas';
 import type {
   AddMassFlowInput,
   AddNoteInput,
@@ -127,11 +132,19 @@ async function resolveIngredientId(tx: Tx, name: string): Promise<string> {
 /**
  * Look up an ingredient without creating one. Validation paths need this:
  * creating a row as a side effect of checking a reference would be wrong.
+ *
+ * The canonical name comes back beside the id because a qualified reference
+ * is keyed on a name, not on an id: a line written under an alias has to be
+ * reachable as "To serve: <alias>" and as "To serve: <canonical>", and only
+ * the second of those survives a round trip through storage.
  */
-async function findIngredientId(tx: Tx, name: string): Promise<string | null> {
+async function findIngredient(
+  tx: Tx,
+  name: string,
+): Promise<{ id: string; name: string } | null> {
   const trimmed = name.trim();
   const rows = await tx
-    .select({ id: ingredients.id })
+    .select({ id: ingredients.id, name: ingredients.name })
     .from(ingredients)
     .where(
       sql`${ingredients.slug} = ${slugify(trimmed)}
@@ -142,7 +155,11 @@ async function findIngredientId(tx: Tx, name: string): Promise<string | null> {
           )`,
     )
     .limit(1);
-  return rows[0]?.id ?? null;
+  return rows[0] ?? null;
+}
+
+async function findIngredientId(tx: Tx, name: string): Promise<string | null> {
+  return (await findIngredient(tx, name))?.id ?? null;
 }
 
 /**
@@ -176,6 +193,21 @@ async function findIngredientId(tx: Tx, name: string): Promise<string | null> {
  * directions. A caller writing steps against lines it did not send can still
  * fix a name it got wrong. A caller replacing the lines may have dropped an
  * ingredient on purpose, and its steps come forward still mentioning it.
+ *
+ * A `uses` string that names a component — "To serve: Glutinous rice" — is
+ * tried only after the bare ladder above has failed to settle on one line,
+ * and it splits the two directions again, on the same question of who wrote
+ * the string. On `byName` the caller wrote it, so a heading no line carries
+ * is refused and named: the qualifier is information the caller volunteered
+ * and binding the step to some other line would be the defect this exists
+ * to stop. On `byIngredient` the string came out of `copySteps`, so a
+ * heading that no longer matches — the caller renamed it in the same call —
+ * degrades to the bare tail and meets exactly today's decision. `hint.missing`
+ * is what tells the two apart, because it is set on precisely the direction
+ * where the caller wrote the steps. `hint.qualifier` then says how to get out
+ * of that refusal, the way `hint.ambiguous` does for a tie: a caller sending
+ * steps alone cannot give a line a heading it does not have without sending
+ * the lines too, and the message has to say so.
  */
 async function checkCarriedUses(
   tx: Tx,
@@ -185,38 +217,87 @@ async function checkCarriedUses(
     match: 'byName' | 'byIngredient';
     missing?: string;
     ambiguous: string;
+    qualifier?: string;
   },
 ): Promise<void> {
   type Match = { line: IngredientLineInput; position: number };
   const linesByName = new Map<string, Match[]>();
   const linesById = new Map<string, Match[]>();
+  const linesByQualified = new Map<string, Match[]>();
   const push = (map: Map<string, Match[]>, key: string, match: Match) => {
     const found = map.get(key);
     if (found) found.push(match);
     else map.set(key, [match]);
   };
-  const resolvedIds = await Promise.all(
-    ingredientLines.map((line) => findIngredientId(tx, line.name)),
+  // One line may reach a qualified key by two names — the one it was written
+  // under and the canonical one — and when those spell the same thing the
+  // key must still hold one entry. A second entry for the same line would
+  // count as a second line and refuse a reference that names exactly one.
+  const pushQualified = (key: string, match: Match) => {
+    const found = linesByQualified.get(key);
+    if (!found) {
+      linesByQualified.set(key, [match]);
+      return;
+    }
+    if (found.some((other) => other.position === match.position)) return;
+    found.push(match);
+  };
+  const resolved = await Promise.all(
+    ingredientLines.map((line) => findIngredient(tx, line.name)),
   );
   ingredientLines.forEach((line, position) => {
     push(linesByName, line.name.trim().toLowerCase(), { line, position });
-    const id = resolvedIds[position];
-    if (id) push(linesById, id, { line, position });
+    const found = resolved[position];
+    if (found) push(linesById, found.id, { line, position });
+    const heading = line.component?.trim();
+    if (!heading) return;
+    pushQualified(qualifiedUseKey(heading, line.name), { line, position });
+    if (found)
+      pushQualified(qualifiedUseKey(heading, found.name), { line, position });
   });
+
+  // The bare ladder, unchanged in both directions. It is a closure because a
+  // carried qualified name whose heading no longer matches has to be run
+  // through it a second time, on its bare tail.
+  const matchBare = async (name: string): Promise<Match[] | undefined> => {
+    if (hint.match === 'byName') {
+      const byWritten = linesByName.get(name.trim().toLowerCase());
+      if (byWritten) return byWritten;
+      const id = await findIngredientId(tx, name);
+      return id ? linesById.get(id) : undefined;
+    }
+    const id = await findIngredientId(tx, name);
+    const byIngredient = id ? linesById.get(id) : undefined;
+    return byIngredient ?? linesByName.get(name.trim().toLowerCase());
+  };
 
   for (const [i, step] of steps.entries()) {
     for (const used of step.uses ?? []) {
-      let matches: Match[] | undefined;
-      if (hint.match === 'byName') {
-        matches = linesByName.get(used.trim().toLowerCase());
-        if (!matches) {
-          const usedId = await findIngredientId(tx, used);
-          matches = usedId ? linesById.get(usedId) : undefined;
+      // Bare first, and it settles the reference before the string is
+      // scanned for a colon, so nothing that resolves today moves.
+      //
+      // A bare name that fits TWO lines settles it as well, and only the
+      // empty result falls through. `writeRevisionBody` resolves any bare
+      // hit as authoritative and takes the first of them, so a string this
+      // check approved through the qualified index would be written against
+      // a different line — the contract naming one amount and the page
+      // showing another. Two lines answering to the string as written is
+      // the ambiguity ecf9390 refuses, and it stays refused.
+      let matches = await matchBare(used);
+      if (!matches) {
+        const qualifier = splitQualifiedUse(used);
+        if (qualifier) {
+          const byComponent = linesByQualified.get(
+            qualifiedUseKey(qualifier.component, qualifier.name),
+          );
+          if (byComponent) matches = byComponent;
+          else if (hint.missing)
+            throw new ConflictError(
+              `${qualifierMessage(i + 1, used, qualifier, ingredientLines)}` +
+                (hint.qualifier ? ` ${hint.qualifier}` : ''),
+            );
+          else matches = (await matchBare(qualifier.name)) ?? matches;
         }
-      } else {
-        const usedId = await findIngredientId(tx, used);
-        matches = usedId ? linesById.get(usedId) : undefined;
-        if (!matches) matches = linesByName.get(used.trim().toLowerCase());
       }
       if (!matches) {
         if (!hint.missing) continue;
@@ -316,13 +397,40 @@ async function writeRevisionBody(
    * shared canonical name. That tie carries no information to break it with;
    * `checkStepReferences` and `checkCarriedUses` refuse it wherever the
    * caller sent the list it belongs to.
+   *
+   * **A second index, keyed on the line's heading and its name together**,
+   * is what gives a step a way to say which of two lines it means:
+   * `uses: ["To serve: Glutinous rice"]`. It is a separate map with a
+   * separate key space on purpose. Merging it into `lineIdByName` would let
+   * a qualified reference be shadowed by a line whose written name happens
+   * to equal it, and would let the two first-wins passes of one map
+   * interfere with the other's. It runs the same two passes in the same
+   * order and for the same reason, so a line written under an alias is
+   * reachable as "To serve: <alias>" and, only if still free, as
+   * "To serve: <canonical>".
    */
   const lineIdByName = new Map<string, string>();
   const indexLine = (name: string, id: string) => {
     const key = name.trim().toLowerCase();
     if (key && !lineIdByName.has(key)) lineIdByName.set(key, id);
   };
-  const written: { name: string; canonical: string; id: string }[] = [];
+  const lineIdByQualified = new Map<string, string>();
+  const indexQualified = (
+    component: string | null,
+    name: string,
+    id: string,
+  ) => {
+    const heading = component?.trim();
+    if (!heading || !name.trim()) return;
+    const key = qualifiedUseKey(heading, name);
+    if (!lineIdByQualified.has(key)) lineIdByQualified.set(key, id);
+  };
+  const written: {
+    name: string;
+    canonical: string;
+    component: string | null;
+    id: string;
+  }[] = [];
 
   for (const [index, line] of ingredientLines.entries()) {
     const { id: ingredientId, canonicalName } = await resolveIngredient(
@@ -361,12 +469,17 @@ async function writeRevisionBody(
     written.push({
       name: line.name,
       canonical: canonicalName,
+      component: line.component ?? null,
       id: inserted[0]!.id,
     });
   }
 
   for (const line of written) indexLine(line.name, line.id);
   for (const line of written) indexLine(line.canonical, line.id);
+  for (const line of written)
+    indexQualified(line.component, line.name, line.id);
+  for (const line of written)
+    indexQualified(line.component, line.canonical, line.id);
 
   for (const [index, step] of steps.entries()) {
     const techniqueTermId = step.technique
@@ -393,7 +506,34 @@ async function writeRevisionBody(
 
     const stepId = inserted[0]!.id;
     for (const used of step.uses ?? []) {
-      const lineId = lineIdByName.get(used.trim().toLowerCase());
+      // Bare first. A name that resolves today resolves to the same line
+      // after this, and a written name that itself contains a colon is
+      // never split, because the split is only reached once the bare
+      // lookup has come back empty.
+      let lineId = lineIdByName.get(used.trim().toLowerCase());
+      if (!lineId) {
+        const qualifier = splitQualifiedUse(used);
+        if (qualifier) {
+          lineId = lineIdByQualified.get(
+            qualifiedUseKey(qualifier.component, qualifier.name),
+          );
+          // The same degrade `checkCarriedUses` performs, and it has to be
+          // here or the two layers disagree. A carried reference arrives
+          // qualified whenever the PREVIOUS revision had two lines of one
+          // name; an ingredients-only revision that leaves one of them —
+          // dropping the other line, or renaming its heading — makes the
+          // qualified key miss. The cross-check falls back to the bare tail,
+          // finds exactly one line and lets the write through. Without the
+          // same fallback here the step is written with no ingredient at
+          // all: accepted, silent, and a link that ecf9390 kept.
+          //
+          // It cannot pick the wrong line. Every path that reaches it has
+          // already proved the tail matches exactly one — Zod on create and
+          // backfill, `checkCarriedUses` on both revise directions — so
+          // `lineIdByName`'s first-wins has one candidate to be first among.
+          lineId ??= lineIdByName.get(qualifier.name.trim().toLowerCase());
+        }
+      }
       // Unresolvable references are rejected by the Zod schema before we get
       // here; skipping is a belt-and-braces guard for the revise path, where
       // steps can be replaced against carried-forward ingredients.
@@ -923,6 +1063,9 @@ export async function reviseRecipe(
         ambiguous:
           'Send `ingredients` alongside `steps` to give a line the new ' +
           'spelling.',
+        qualifier:
+          'Send `ingredients` alongside `steps` to give a line that ' +
+          'component.',
       });
     } else if (input.ingredients && !input.steps) {
       // The mirror case, and the one the milestone's own defect survived in.
@@ -1167,6 +1310,7 @@ async function copySteps(tx: Tx, revisionId: string): Promise<StepInput[]> {
     .select({
       stepId: recipeStepIngredients.stepId,
       name: sql<string>`COALESCE(${ingredients.name}, ${recipeIngredients.rawText})`,
+      component: recipeIngredients.component,
     })
     .from(recipeStepIngredients)
     .innerJoin(
@@ -1181,10 +1325,48 @@ async function copySteps(tx: Tx, revisionId: string): Promise<StepInput[]> {
       ),
     );
 
+  /**
+   * How many lines of this revision answer to each name.
+   *
+   * A step's `uses` comes back out of storage as the canonical ingredient
+   * name, and the spelling that said which line the step meant is not a
+   * column. When two lines answer to that one name, the heading is the only
+   * thing left that separates them, so it is written in front — and the
+   * revision that replaces the lines and lets the steps come forward then
+   * still binds each step to the line it had. Without this the qualified
+   * form would work on `create_recipe` and die on the first ingredients-only
+   * revision, which is the heavy path it exists to remove.
+   *
+   * The count is over every line in the revision, not only the referenced
+   * ones, because the cross-check downstream counts the same way: a name
+   * carried by two lines is ambiguous there even if one of them is named by
+   * no step.
+   *
+   * Conditional, and that is what makes it safe. Every revision with no
+   * duplicate name — the whole archive — comes back byte-identical to
+   * before. And a caller who renames a heading in the same call finds the
+   * carried qualifier missing, falls back to the bare name and gets exactly
+   * today's behaviour, so no path that works today becomes a refusal.
+   */
+  const lineNames = await tx
+    .select({
+      name: sql<string>`COALESCE(${ingredients.name}, ${recipeIngredients.rawText})`,
+    })
+    .from(recipeIngredients)
+    .leftJoin(ingredients, eq(ingredients.id, recipeIngredients.ingredientId))
+    .where(eq(recipeIngredients.revisionId, revisionId));
+  const linesPerName = new Map<string, number>();
+  for (const row of lineNames) {
+    const key = row.name.trim().toLowerCase();
+    linesPerName.set(key, (linesPerName.get(key) ?? 0) + 1);
+  }
+
   const usesByStep = new Map<string, string[]>();
   for (const row of usesRows) {
     const list = usesByStep.get(row.stepId) ?? [];
-    list.push(row.name);
+    const heading = row.component?.trim();
+    const shared = (linesPerName.get(row.name.trim().toLowerCase()) ?? 0) > 1;
+    list.push(heading && shared ? `${heading}: ${row.name}` : row.name);
     usesByStep.set(row.stepId, list);
   }
 

@@ -477,14 +477,19 @@ export function registerTools(server: McpServer): void {
         'this repository is that a recipe improves across revisions rather ' +
         'than being re-derived each time. Creating a duplicate loses the ' +
         'history that makes the original useful.\n\n' +
-        'Everything except the title is optional. A step may name ingredients ' +
-        'in `uses`. Each name must fit exactly one line in `ingredients`. The ' +
-        'tool refuses a name that fits two lines, because a step points at ' +
-        'one line and the tool must not choose for you. The refusal names ' +
-        'both lines and says how to tell them apart. Set `kind` to ' +
-        '"preparation" for a component another recipe pulls in (a spice ' +
+        'Everything except the title is optional. Set `kind` to ' +
+        '"preparation" for a part another recipe pulls in (a spice ' +
         'dredge, a demi-glace), "process" for a technique with no fixed ' +
         'yield, or "research" for a sourced write-up with no steps of its own.\n\n' +
+        'A step may name ingredients in `uses`. Each name must fit exactly ' +
+        'one line in `ingredients`. One recipe can list one ingredient on ' +
+        'two lines: rice for a powder and rice for the table. To point at ' +
+        'one of them, write the `component` of that line, then a colon, ' +
+        'then the name: "To serve: Glutinous rice". You can write a name ' +
+        'this way at any time. You must write it this way when two lines ' +
+        'share a name. The tool refuses a bare name that fits two lines, ' +
+        'because it must not choose the line for you. The refusal names ' +
+        'both lines and says how to tell them apart.\n\n' +
         'Send `massFlow` only for a dish that loses or gains weight. The ' +
         'figure shows what the food weighs at each stage. Most dishes do ' +
         'not need it.\n\n' +
@@ -529,10 +534,18 @@ export function registerTools(server: McpServer): void {
         '`categories` object removes every tag. Call get_recipe first. Then ' +
         'send back each tag that you want to keep.\n\n' +
         'A step names ingredients in `uses`, and each name must fit exactly ' +
-        'one line. Send `steps` alongside `ingredients` whenever you change ' +
-        'a line that a step names. A revision that sends `ingredients` alone ' +
-        'keeps the stored steps, and the tool refuses it if a carried step ' +
-        'then fits two lines.\n\n' +
+        'one line. To point at one of two lines of the same ingredient, ' +
+        'write the `component` of that line, then a colon, then the name: ' +
+        '"To serve: Glutinous rice". Send `steps` alongside `ingredients` ' +
+        'whenever you change a line that a step names. A revision that ' +
+        'sends `ingredients` alone keeps the stored steps. A kept step ' +
+        'carries the component in front of the name when two lines share ' +
+        'that name, so give the new lines the same components. If you ' +
+        'rename a component, the kept step no longer points at that line by ' +
+        'its heading. The tool then reads the name alone. It keeps the step ' +
+        'on the one line that answers to the name. It refuses the revision ' +
+        'when two lines answer to the name. Send `steps` again with the new ' +
+        'components.\n\n' +
         '`rationale` is required and should say what changed and why, in the ' +
         'terms that will matter next time: "coriander to a coarse grind, the ' +
         'fine grind disappeared into the dredge", not "updated ingredients".\n\n' +
@@ -579,7 +592,10 @@ export function registerTools(server: McpServer): void {
         'old version had any. Unlike revise_recipe nothing carries forward, ' +
         'because carrying a later version backwards would invent a history ' +
         'that never happened. Send what that version actually was; leave out ' +
-        'what you do not know.\n\n' +
+        'what you do not know. A name in `uses` must fit exactly one line, ' +
+        'as in create_recipe. To point at one of two lines of the same ' +
+        'ingredient, write the `component` of that line, then a colon, then ' +
+        'the name: "To serve: Glutinous rice".\n\n' +
         '`rationale` should say what this version was and how you know — ' +
         '"the batch-two dredge, from the photo of the notebook page" — since ' +
         'a version recorded years late is only worth having with its source.\n\n' +
