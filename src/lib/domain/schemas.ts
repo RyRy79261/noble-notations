@@ -1418,3 +1418,150 @@ export const searchRecipesShape = {
 
 export const searchRecipesSchema = z.object(searchRecipesShape);
 export type SearchRecipesInput = z.infer<typeof searchRecipesSchema>;
+
+// ─────────────────────────────────────────────────────────────────────────
+// Reporting a fault in the connector
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * The four kinds a report can be.
+ *
+ * `bug`, `unclear-docs` and `idea` is the obvious set, and it is missing the
+ * one that matters. Two of the six claims in the incident that created this
+ * tool called things missing that had been fixed weeks earlier. That failure
+ * has its own shape: the agent wanted to do something and did not find it.
+ * It is not a bug — the server behaved as built. It is not `unclear-docs` —
+ * the guide may be silent rather than wrong. It is not `idea` — the agent
+ * wanted a capability that exists. Choosing between those three needs the
+ * answer the agent does not have, so it guesses, and the guess is the error.
+ *
+ * `missing-capability` lets an agent state what it knows and leaves the
+ * classification to a person who can check.
+ *
+ * Hyphenated lower case, so a value maps straight to a label with no
+ * translation table.
+ */
+export const REPORT_KINDS = [
+  'bug',
+  'unclear-docs',
+  'missing-capability',
+  'idea',
+] as const;
+export type ReportKind = (typeof REPORT_KINDS)[number];
+
+/**
+ * `title`, `body` and `kind` are always required. `toolName`, `payload` and
+ * `response` are required only for a bug — and that rule is why the
+ * shape/schema split is load-bearing here rather than ceremonial. JSON
+ * Schema cannot express it, so it lives in the assembled schema and is
+ * stated again in the advertised text.
+ *
+ * Demanding evidence from every report would be wrong: two of the four kinds
+ * have no tool call in them at all, and forcing `toolName: "none"` teaches
+ * an agent that the field is decoration. Demanding it from none reproduces
+ * the report that started this.
+ */
+export const reportIssueShape = {
+  title: z
+    .string()
+    .min(8)
+    .max(120)
+    .describe(
+      'One short line that names the fault. This is the key the tool uses ' +
+        'to find a report that is already filed. Write the same title for ' +
+        'the same fault. Name the tool and what went wrong: "get_recipe ' +
+        'returns 500 for a slug that exists". Do not write "bug" or "it ' +
+        'does not work".',
+    ),
+
+  body: z
+    .string()
+    .min(20)
+    .max(4000)
+    .describe(
+      'What happened, and what you expected. Write what you saw. Do not ' +
+        'write what you remember. Say the step you took before the fault. ' +
+        'Say what a correct answer would have been. Plain text or Markdown.',
+    ),
+
+  kind: z
+    .enum(REPORT_KINDS)
+    .describe(
+      'bug: the server did the wrong thing. unclear-docs: a tool ' +
+        'description or the guide said too little, or said something ' +
+        'untrue. missing-capability: you wanted to do something and found ' +
+        'no tool for it. Use this when you do not know if the tool exists. ' +
+        'idea: a change you suggest.\n\n' +
+        'A report of kind "bug" MUST carry toolName, payload and response. ' +
+        'The tool refuses a bug report without all three. The other kinds ' +
+        'do not need them.',
+    ),
+
+  toolName: z
+    .string()
+    .min(1)
+    .max(64)
+    .optional()
+    .describe(
+      'The tool that misbehaved, exactly as tools/list names it: ' +
+        '"search_recipes", "revise_recipe". Write "tools/list", ' +
+        '"initialize" or "transport" when the fault was not inside a tool. ' +
+        'Required for a bug.',
+    ),
+
+  payload: z
+    .string()
+    .min(1)
+    .max(8000)
+    .optional()
+    .describe(
+      'The arguments you sent, copied exactly. Send the JSON you put on ' +
+        'the wire, not a description of it. Copy it now, while you have ' +
+        'it. Required for a bug. The tool removes values that match a known ' +
+        'credential pattern before it files the report. It cannot find ' +
+        'every credential.',
+    ),
+
+  response: z
+    .string()
+    .min(1)
+    .max(8000)
+    .optional()
+    .describe(
+      'What came back, copied exactly. Send the whole text of the result ' +
+        'or the error. If nothing came back, write the status line or the ' +
+        'message your client showed. Required for a bug.',
+    ),
+};
+
+/**
+ * There is deliberately no `repo`, `owner` or `repository` field. The
+ * repository is hardcoded in `src/lib/github/config.ts`, and `z.object`
+ * strips an unknown key, so an argument naming one reaches nothing.
+ *
+ * There is no `severity` either — an agent's severity is a memory — and no
+ * `stepsToReproduce` or `expected`, both of which are `body`. Splitting them
+ * out invites two half-filled fields.
+ */
+export const reportIssueSchema = z
+  .object(reportIssueShape)
+  .superRefine((value, ctx) => {
+    if (value.kind !== 'bug') return;
+    for (const field of ['toolName', 'payload', 'response'] as const) {
+      if (!value[field]?.trim()) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [field],
+          message:
+            `A report of kind "bug" must carry ${field}. Three fields ` +
+            'settle a bug report: the tool that was called, the payload ' +
+            'that was sent, and the response that came back. Send all ' +
+            'three, copied exactly. If you do not have them, file the ' +
+            'report with the kind "unclear-docs", "missing-capability" or ' +
+            '"idea" instead.',
+        });
+      }
+    }
+  });
+export type ReportIssueArgs = z.input<typeof reportIssueSchema>;
+export type ReportIssueInput = z.infer<typeof reportIssueSchema>;

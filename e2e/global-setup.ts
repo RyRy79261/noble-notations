@@ -53,9 +53,10 @@ async function globalSetup(): Promise<void> {
   // write, and one read-only, because "a read token is refused a write
   // tool" is the assertion that proves scopes are enforced per call rather
   // than only at authorization.
-  const mint = (scope?: string) => {
+  const mint = (scope?: string, user?: string) => {
     const args = ['mcp:token', '--name', 'e2e'];
     if (scope) args.push('--scope', scope);
+    if (user) args.push('--user', user);
     const out = execFileSync('pnpm', args, {
       encoding: 'utf8',
       env: process.env,
@@ -73,6 +74,10 @@ async function globalSetup(): Promise<void> {
       {
         readWrite: mint(),
         readOnly: mint('noble-notations:read'),
+        // A third principal. `report_issue` keeps a per-process burst
+        // counter keyed by user id, so the degraded-path tests get their own
+        // budget rather than spending the one the healthy filings use.
+        degraded: mint(undefined, 'e2e-degraded'),
       },
       null,
       2,

@@ -228,6 +228,15 @@ required for the MCP connector's consent screen (Vercel injects the first,
 you set the other two); `MCP_PUBLIC_URL` should be set in production (see
 the `VERCEL_URL` gotcha in `docs/mcp-connector.md`).
 
+`GITHUB_ISSUE_TOKEN` turns `report_issue` on. It must be a **fine-grained**
+token on `RyRy79261/noble-notations` only, with **Issues: read and write**
+and **Metadata: read**, and nothing else — never a classic `repo` token,
+which would let this endpoint read private code and push. Without the
+variable the tool is not registered at all and the guide stops naming it.
+Five labels must exist before the first report (`agent-report`,
+`report:bug`, `report:unclear-docs`, `report:missing-capability`,
+`report:idea`); see `docs/mcp-connector.md` § Reporting a fault.
+
 ## Quality gates
 
 `.github/workflows/ci.yml` runs on every push and PR and must stay green:

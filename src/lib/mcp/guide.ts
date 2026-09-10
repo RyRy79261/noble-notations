@@ -12,8 +12,21 @@ import 'server-only';
  * The text follows ASD Simplified Technical English: short sentences, one
  * idea in each sentence, active voice, and no words that need other words
  * to explain them.
+ *
+ * ONE PARAGRAPH IS CONDITIONAL. `report_issue` is registered only when
+ * `GITHUB_ISSUE_TOKEN` is set, so on a deployment without it — local
+ * development, a preview, a fork — instructions that tell an agent to call
+ * that tool advertise a tool that is not in `tools/list`. An agent that
+ * follows them meets a tool-not-found error, which is the same "told a
+ * capability exists, found it absent" failure this whole branch exists to
+ * reduce, and it cannot file a report about that either. So the reporting
+ * text is included by the same predicate the registration uses.
+ * `src/lib/github/config.ts` imports nothing by design, so reading the
+ * predicate here costs this module nothing.
  */
-export const SERVER_INSTRUCTIONS = `
+import { issueReportingConfigured } from '@/lib/github/config';
+
+const INSTRUCTIONS_HEAD = `
 Noble Notations is a cooking store that keeps versions.
 
 The most important rule: a recipe has a name that does not change. Its
@@ -43,13 +56,45 @@ Units come from a fixed list. A unit outside it is refused.
 
 After a write, read needsDescription in the result. It names the tags and
 ingredients that are still bare. Describe them in the same session.
+`.trim();
 
+const INSTRUCTIONS_REPORTING = `
+If a tool does the wrong thing, call report_issue. Give the tool name, the
+payload that you sent, and the response that came back. Copy each one
+exactly. A report that you write from memory is usually wrong. A refusal
+that tells you what to send instead is not a fault.
+`.trim();
+
+const INSTRUCTIONS_TAIL = `
 Before you make anything, call search_recipes.
 
 Call get_started to read the full guide.
 `.trim();
 
-export const GUIDE = {
+/**
+ * The short version, surfaced by clients that read `instructions`.
+ *
+ * A function, not a constant, for the same reason the token is read inside
+ * one: the route is `force-dynamic` so it can answer from the live
+ * environment, and a module-scope constant would freeze the value the build
+ * saw.
+ */
+export function serverInstructions(
+  reportingConfigured = issueReportingConfigured(),
+): string {
+  return [
+    INSTRUCTIONS_HEAD,
+    ...(reportingConfigured ? [INSTRUCTIONS_REPORTING] : []),
+    INSTRUCTIONS_TAIL,
+  ].join('\n\n');
+}
+
+const SCOPES_WITHOUT_REPORTING =
+  'The read tools need the scope noble-notations:read. The nine write ' +
+  'tools also need noble-notations:write. The system checks the scope on ' +
+  'each call.';
+
+const GUIDE = {
   whatThisIs:
     'A cooking store that keeps versions. Before this store, the same dish ' +
     'was made again from the start in each conversation. Now the dish ' +
@@ -83,6 +128,7 @@ export const GUIDE = {
     'Call add_note for each thing that you learned that is not an instruction.',
     'Call log_experiment after you cook a batch and measure it.',
     'Call add_mass_flow or describe_mechanism only for a record that is already stored.',
+    'If a tool does the wrong thing, call report_issue. Send the payload and the response, copied exactly.',
   ],
 
   noteKinds: {
@@ -219,7 +265,58 @@ export const GUIDE = {
   scopes:
     'The read tools need the scope noble-notations:read. The nine write ' +
     'tools also need noble-notations:write. The system checks the scope on ' +
-    'each call.',
+    'each call. report_issue needs no extra scope. Each connector can file ' +
+    'a report.',
+
+  /**
+   * The short version of this is in SERVER_INSTRUCTIONS too, and that
+   * duplication is deliberate. An agent meets a fault in the middle of a
+   * task. It will not spend a call on get_started at that moment, and the
+   * payload and the response leave its context when the turn ends. A tool
+   * that is only documented here is therefore only ever called by an agent
+   * that read the guide first and remembered — which is the population whose
+   * reports were already good. The detail stays here; the pointer is in the
+   * instructions, the same split add_mass_flow and describe_mechanism use.
+   *
+   * The numbers are real. The report that prompted this tool made six claims
+   * and three of them did not survive being reproduced, because it carried a
+   * memory of the session rather than the request and the response.
+   */
+  reportingAFault:
+    'This connector can take a bug report. Call report_issue. The report ' +
+    'becomes an issue on the public GitHub repository of this project. A ' +
+    'person reads it.\n\n' +
+    'A report needs evidence. Name the tool that you called in toolName. ' +
+    'Put the arguments that you sent in payload. Put the result or the ' +
+    'error that came back in response. Copy both exactly. The server writes ' +
+    'the commit that is deployed, so you do not send it. These four things ' +
+    'settle a report.\n\n' +
+    'Copy the payload and the response while you still hold them. Your turn ' +
+    'ends and they are gone. A report that you write from memory is usually ' +
+    'wrong. One agent reported six faults from memory. Three of the six ' +
+    'were wrong. One of the three blamed this server for a fault in the ' +
+    'client that wrote the report. Two named a thing as missing that was ' +
+    'built weeks before.\n\n' +
+    'Each report has a kind. A report of kind "bug" must carry the tool ' +
+    'name, the payload and the response. The tool refuses a bug report ' +
+    'without all three. If you do not hold them, send the report with the ' +
+    'kind "unclear-docs", "missing-capability" or "idea". Those kinds need ' +
+    'no evidence.\n\n' +
+    'File a report when this server does the wrong thing. File one when a ' +
+    'tool description or this guide says too little, or says something ' +
+    'untrue. File one when you wanted to do a thing and found no tool for ' +
+    'it.\n\n' +
+    'Do not file a report for a refusal that names what to send instead. ' +
+    'That refusal is the system working. Do not file a report for a call ' +
+    'that failed one time and then worked.\n\n' +
+    'Write a title that names the fault: "get_recipe returns an error for a ' +
+    'slug that exists". Use the same title if the fault happens again. The ' +
+    'tool finds the issue that is already open and adds your evidence to it ' +
+    'as a comment. It does not open a second issue. So a second report of ' +
+    'the same fault is safe.\n\n' +
+    'The tool adds three comments for one fault. Then it refuses and names ' +
+    'the issue that holds your evidence. Stop there. A fourth report of one ' +
+    'fault tells a person nothing new.',
 
   rules: [
     'Write a reason that says what you changed and why. Do not write "updated recipe".',
@@ -258,3 +355,30 @@ export const GUIDE = {
     'upsert_ingredient for everything it names. Do this in the same ' +
     'session, while you still know what the words mean.',
 } as const;
+
+export type AgentGuide =
+  | typeof GUIDE
+  | (Omit<typeof GUIDE, 'reportingAFault' | 'workflow' | 'scopes'> & {
+      workflow: string[];
+      scopes: string;
+    });
+
+/**
+ * The full guide, as `get_started` returns it.
+ *
+ * The three places that name `report_issue` go together when the tool is not
+ * registered. A guide that teaches a tool the registry does not carry sends
+ * an agent to a tool-not-found error at the moment it most needs to be
+ * believed.
+ */
+export function agentGuide(
+  reportingConfigured = issueReportingConfigured(),
+): AgentGuide {
+  if (reportingConfigured) return GUIDE;
+  const { reportingAFault: _reportingAFault, ...rest } = GUIDE;
+  return {
+    ...rest,
+    workflow: GUIDE.workflow.filter((step) => !step.includes('report_issue')),
+    scopes: SCOPES_WITHOUT_REPORTING,
+  };
+}

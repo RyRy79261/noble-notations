@@ -74,6 +74,7 @@ const TOOLS = [
   'list_experiments',
   'list_ingredients',
   'log_experiment',
+  'report_issue',
   'revise_recipe',
   'search_recipes',
   'upsert_category',
@@ -2699,6 +2700,59 @@ test.describe('MCP contract', () => {
     expect(find('create_recipe').description).not.toMatch(
       /only ones present in/,
     );
+  });
+
+  /*
+   * The third such rule, and the most important one in the tool that has it.
+   *
+   * `report_issue` requires `toolName`, `payload` and `response` only when
+   * `kind` is "bug". JSON Schema cannot express a conditional requirement,
+   * so the enforced contract lives in a `superRefine` and the advertised
+   * one has to carry the same rule in prose. If it does not, a caller meets
+   * a refusal it had no way to predict — which is the exact drift the
+   * shape/schema split in `src/lib/domain/schemas.ts` exists to prevent.
+   */
+  test('the bug-report rule a caller cannot see in the schema is in the text', async () => {
+    const mcp = rw();
+    const tools = await mcp.listToolSchemas();
+    const report = tools.find((t) => t.name === 'report_issue')!;
+    const schema = report.inputSchema ?? {};
+
+    // Three fields are always required. A three-field tool gets called; a
+    // six-field one gets skipped by the agent that most needs it.
+    expect(((schema.required as string[]) ?? []).sort()).toEqual([
+      'body',
+      'kind',
+      'title',
+    ]);
+
+    const properties = (schema.properties ?? {}) as Record<
+      string,
+      { description?: string }
+    >;
+    for (const field of ['toolName', 'payload', 'response']) {
+      expect(Object.keys(properties)).toContain(field);
+    }
+
+    // …and the conditional demand is stated where a caller reads it.
+    expect(properties.kind?.description).toMatch(/kind "bug"/);
+    expect(properties.kind?.description).toMatch(/toolName/);
+    expect(properties.kind?.description).toMatch(/payload/);
+    expect(properties.kind?.description).toMatch(/response/);
+    expect(report.description).toMatch(/payload/);
+    expect(report.description).toMatch(/response/);
+
+    // The repository is not a parameter, and the text says so rather than
+    // leaving an agent to look for the field it cannot find.
+    expect(Object.keys(properties).sort()).toEqual([
+      'body',
+      'kind',
+      'payload',
+      'response',
+      'title',
+      'toolName',
+    ]);
+    expect(report.description).toMatch(/one repository/);
   });
 
   /*

@@ -93,9 +93,14 @@ string, so a `redirect_uri` still in flight survives the rename.
 | `noble-notations:read`  | Every read tool                                                                                                                                                    |
 | `noble-notations:write` | `create_recipe`, `revise_recipe`, `backfill_revision`, `add_note`, `add_mass_flow`, `describe_mechanism`, `upsert_ingredient`, `upsert_category`, `log_experiment` |
 
-The consent screen names which is being requested and warns explicitly when
-write is included. Scope is re-checked on every tool call, not just at
-authorization.
+`report_issue` is in neither scope. It needs authentication and nothing
+else, so a read-only connector can file a report — a read-only agent is
+exactly the one that meets a read tool's bug. See § Reporting a fault.
+
+The consent screen names which scope is being requested and warns explicitly
+when write is included. It also names the reporting capability, under both
+scopes, because that tool is not behind either one. Scope is re-checked on
+every tool call, not just at authorization.
 
 ## Tools
 
@@ -106,6 +111,12 @@ Read: `get_started`, `search_recipes`, `get_recipe`, `list_categories`,
 Write: `create_recipe`, `revise_recipe`, `backfill_revision`, `add_note`,
 `add_mass_flow`, `describe_mechanism`, `upsert_ingredient`,
 `upsert_category`, `log_experiment`.
+
+Neither: `report_issue`.
+
+Twenty tools. `/connect` and `TOOLS` in `e2e/mcp-contract.spec.ts` name the
+same set; a tool that appears or disappears without all three moving is
+drift, and that test is the line that says so.
 
 Tool descriptions are the only instructions the model gets, and they are
 written to push toward revising rather than duplicating — `create_recipe`
@@ -150,6 +161,82 @@ When a new record is being written, the fields ride along instead:
 `conditions` on any note. `massFlow` is deliberately **not** carried
 forward by `revise_recipe`, because it records what one batch weighed and
 copying it into a version nobody weighed would invent a measurement.
+
+## Reporting a fault
+
+`report_issue` is the one tool whose effect lands outside this system. It
+opens an issue on `RyRy79261/noble-notations`, which is public.
+
+It exists because an agent hit six problems with this connector and had no
+way to tell anybody. The owner copied the report out of a chat and pasted it
+to a developer; seven agents then reproduced every claim, and three were
+wrong. Every one of those errors was the same error — the report carried a
+**memory** of what happened instead of the **evidence**. So the tool is not a
+feedback box. It captures four things at the moment of failure: the tool that
+was called, the payload that was sent, the response that came back, and the
+commit that is deployed. The server supplies the last one, because the report
+that created this tool named the wrong commit.
+
+**The repository is hardcoded** in `src/lib/github/config.ts`. There is no
+`repo` argument, no `GITHUB_REPO` variable, and every URL in
+`src/lib/github/` is built from one constant. The token would refuse a
+foreign repository anyway, but the refusal is the wrong place for the
+control: an agent must not be able to name a target at all.
+
+**`GITHUB_ISSUE_TOKEN` is the credential, and it is the whole of the setup.**
+Mint a **fine-grained** personal access token with:
+
+| Setting           | Value                            |
+| ----------------- | -------------------------------- |
+| Repository access | Only `RyRy79261/noble-notations` |
+| Issues            | Read and write                   |
+| Metadata          | Read                             |
+| Everything else   | No access                        |
+
+Do not use a classic token with the `repo` scope. Every approved connector
+can reach this endpoint, and a `repo` token would make that endpoint a way to
+read private code and push to it.
+
+**Create five labels before the first report.** GitHub answers `422` for a
+label that does not exist, the report is lost, and the message an agent then
+reads says so. The labels are `agent-report` — on every report, and what the
+dedup and the cap count — plus one per kind: `report:bug`,
+`report:unclear-docs`, `report:missing-capability`, `report:idea`.
+
+**Without the token the tool is not registered.** It is absent from
+`tools/list`, the server instructions and `get_started` stop naming it, and
+the server prints one warning. A registered-but-broken `report_issue` would
+be strictly worse than no tool, because an agent would file into a void and
+consider the problem reported.
+
+**What stops an agent filling the tracker.** Three limits, and the second is
+the one that is easy to forget:
+
+- Ten open agent reports at a time. Closing the backlog restores capacity.
+- Three comments for one fault. A repeat of the same title comments on the
+  open issue instead of filing again — the second occurrence is worth having,
+  because its commit and its payload may differ — and the fourth is refused.
+- Five reports an hour for one principal, on the degraded path only, where
+  the issues list could not be read and the first limit could not be counted.
+
+The first two are counted from GitHub and from this process. Vercel runs many
+instances, so the per-process halves bound one instance, not the deployment.
+A hard global bound would need a shared store beside `mcp_audit_log`.
+
+**What is done to the text before it is published.** The agent's prose is
+escaped so it cannot form Markdown structure, wrapped so every mention and
+cross-reference sits in a code span, and quoted so a reader can tell it from
+the server's facts. `payload` and `response` go in a fenced block, byte for
+byte. Everything is passed through a credential redactor first, and the
+number of removals is reported in the issue and to the caller. The redactor
+is a blocklist: it removes what matches a known pattern, and every sentence
+written about it says so.
+
+**`GITHUB_API_BASE_URL` is a test seam.** `e2e/github-stub.ts` answers on it,
+which is what makes "never call the real GitHub API" a property of the
+network layer rather than of discipline. It is honoured only when it names a
+loopback host, because a live override on a deployment would send this
+credential, as a bearer header, to whatever host it names.
 
 ## Hard-won details
 

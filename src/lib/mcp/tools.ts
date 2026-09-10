@@ -27,6 +27,8 @@ import {
   describeMechanismShape,
   logExperimentSchema,
   logExperimentShape,
+  reportIssueSchema,
+  reportIssueShape,
   reviseRecipeSchema,
   reviseRecipeShape,
   backfillRevisionSchema,
@@ -67,7 +69,11 @@ import {
   upsertCategory,
 } from '@/lib/queries/write';
 import type { WriteResult } from '@/lib/queries/write';
-import { GUIDE } from '@/lib/mcp/guide';
+import { issueReportingConfigured, issueToken } from '@/lib/github/config';
+import { createGitHubIssues } from '@/lib/github/client';
+import { ReportFailedError, submitReport } from '@/lib/github/report';
+import { redact } from '@/lib/github/redact';
+import { agentGuide } from '@/lib/mcp/guide';
 import { writeMcpAudit } from '@/lib/mcp/audit';
 import { hasScope, WRITE_SCOPE } from '@/lib/mcp/scopes';
 
@@ -223,6 +229,7 @@ async function runTool<T>(
       err instanceof NotFoundError ||
       err instanceof ConflictError ||
       err instanceof ScopeError ||
+      err instanceof ReportFailedError ||
       err instanceof z.ZodError;
     if (err instanceof z.ZodError) {
       return fail(`Invalid input:\n${z.prettifyError(err)}`);
@@ -231,6 +238,35 @@ async function runTool<T>(
       ? fail(message)
       : fail('An internal error occurred while processing your request.');
   }
+}
+
+/**
+ * `report_issue` is registered only when `GITHUB_ISSUE_TOKEN` is set, so the
+ * human half of that notice is a warning printed once per process rather
+ * than once per request.
+ */
+let warnedReportingIsOff = false;
+
+function warnIssueReportingIsOff(): void {
+  if (warnedReportingIsOff) return;
+  warnedReportingIsOff = true;
+  console.warn(
+    '[mcp] GITHUB_ISSUE_TOKEN is not set — report_issue is not registered.',
+  );
+}
+
+/**
+ * The tool name as the audit row may hold it: redacted, then cut.
+ *
+ * The audit row is written from the raw arguments, so this value has met
+ * neither the schema's `max(64)` nor the redaction that protects the public
+ * issue. `src/lib/mcp/audit.ts` says free-form text is never logged, and a
+ * caller that puts a bearer token where a tool name belongs must not be the
+ * exception.
+ */
+function auditToolName(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  return redact(raw).text.slice(0, 64);
 }
 
 export function registerTools(server: McpServer): void {
@@ -254,7 +290,7 @@ export function registerTools(server: McpServer): void {
       inputSchema: {},
     },
     async (_args, extra) =>
-      runTool(extra as AuthCtx, 'get_started', {}, async () => GUIDE),
+      runTool(extra as AuthCtx, 'get_started', {}, async () => agentGuide()),
   );
 
   server.registerTool(
@@ -912,4 +948,114 @@ export function registerTools(server: McpServer): void {
         },
       ),
   );
+
+  // ───────────────────────────────────────────────────────────────────────
+  // Reporting a fault
+  // ───────────────────────────────────────────────────────────────────────
+
+  /**
+   * The one tool whose effect lands outside this system.
+   *
+   * It exists because an agent hit six problems with this connector and had
+   * no way to tell anybody. The owner copied the report out of a chat and
+   * pasted it to a developer; seven agents then reproduced every claim and
+   * three were wrong. Every one of those errors was the same error — the
+   * report carried a MEMORY of what happened instead of the EVIDENCE. So
+   * this is not a feedback box. It captures, at the moment of failure, the
+   * tool that was called, the payload that was sent, the response that came
+   * back, and the commit that is deployed.
+   *
+   * REGISTERED ONLY WHEN THE CREDENTIAL EXISTS. `registerTools` is
+   * synchronous and is called from `createMcpHandler`'s builder inside a
+   * route marked `export const dynamic = "force-dynamic"`, so this `if` runs
+   * per request and reads the live environment. A registered-but-broken
+   * `report_issue` would be strictly worse than no tool, because an agent
+   * would file into a void and consider the problem reported.
+   *
+   * NO SCOPE CHECK, AND DELIBERATELY SO. Do not add `requireWrite` here.
+   * `noble-notations:write` means "may add and revise content in this
+   * repository"; this tool writes no row and reads none. Worse, gating on it
+   * fails the use case: a read-only agent is exactly the one that meets a
+   * read tool's bug, and the reports we most want would be the ones we could
+   * not receive. A third scope was rejected too — `parseScopeString` drops
+   * an unrecognised scope and falls back to read, so every token already
+   * minted would lack it and every existing connector would be refused this
+   * tool until its owner re-ran the whole OAuth dance. The gate is
+   * authentication: `withMcpAuth` is `required: true`, so every caller holds
+   * a token the owner approved on a consent screen, and that approval is the
+   * permission that matters.
+   */
+  if (issueReportingConfigured()) {
+    server.registerTool(
+      'report_issue',
+      {
+        title: 'Report a fault in this connector',
+        description:
+          'File a report about this connector. The report becomes an issue ' +
+          'on the public GitHub repository of this project. Call it the ' +
+          'moment a tool does the wrong thing. Do not wait until your task ' +
+          'is finished.\n\n' +
+          'Send evidence. Do not send memory. Copy the arguments you sent ' +
+          'into `payload`. Copy the answer you got into `response`. Name ' +
+          'the tool in `toolName`. The tool adds the commit that is ' +
+          'deployed. Those four facts settle a report. A report written ' +
+          'from memory has been wrong before.\n\n' +
+          'A report of kind "bug" must carry toolName, payload and ' +
+          'response. The tool refuses a bug report without all three. Use ' +
+          'the kind "unclear-docs", "missing-capability" or "idea" when you ' +
+          'do not have them.\n\n' +
+          'The report is public. The tool removes values that match a known ' +
+          'credential pattern. It tells you how many values it removed. It ' +
+          'cannot find every credential, so do not send one.\n\n' +
+          'The tool writes to one repository. You cannot choose it.\n\n' +
+          'Call the tool one time for one fault. If the same fault happens ' +
+          'again, call it again with the same title. The tool then adds a ' +
+          'comment to the report that is already filed. It does not file a ' +
+          'second one. The tool adds three comments for one fault. Then it ' +
+          'refuses, and you must stop.',
+        inputSchema: reportIssueShape,
+      },
+      async (args, extra) =>
+        runTool(
+          extra as AuthCtx,
+          'report_issue',
+          // The audit rule holds here as everywhere: no free-form text. The
+          // kind and the tool name are identifying primitives; the title,
+          // the body, the payload and the response are not logged. This row
+          // is the only local record that a filing happened at all, and it
+          // is the evidence for "who filed the hundred issues" when the cap
+          // is investigated. The cap does not read it — that write is
+          // fire-and-forget and may fail, and enforcement must not stand on
+          // data that is allowed to be missing.
+          //
+          // `toolName` is free-form text until the schema has seen it, and
+          // this row is written from the RAW arguments, before the parse and
+          // before the redaction that protects the public issue. Sixty-four
+          // characters is room enough for one of this server's own access
+          // tokens, so it is redacted and cut here.
+          { kind: args.kind, toolName: auditToolName(args.toolName) },
+          async (principal) => {
+            const input = reportIssueSchema.parse(args);
+            const token = issueToken();
+            if (!token) {
+              // Only reachable if the variable was cleared between the
+              // registration above and this call.
+              throw new ReportFailedError(
+                'The tool did not file this report. This deployment cannot ' +
+                  'file reports. The fault is in the server. Your report is ' +
+                  'correct.\n\nTell the person you work with about this ' +
+                  'fault. Give them the tool name, the payload and the ' +
+                  'response. Do not call report_issue again in this session.',
+                0,
+              );
+            }
+            return submitReport(input, createGitHubIssues({ token }), {
+              userId: principal.userId,
+            });
+          },
+        ),
+    );
+  } else {
+    warnIssueReportingIsOff();
+  }
 }
