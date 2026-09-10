@@ -137,11 +137,27 @@ export const GUIDE = {
     'only add: the tool never removes one. A replacement that is not an ' +
     'ingredient makes a new ingredient record.\n\n' +
     'One recipe can list one ingredient twice, such as rice for a powder ' +
-    'and rice for the table. A step must point to one line, so give the ' +
-    'second line its own spelling. Put that spelling in the other names of ' +
-    'the ingredient first. Do not invent a new ingredient for it: two ' +
-    'records for one thing split the shopping list, and nothing can join ' +
-    'them again.',
+    'and rice for the table. A step must point to one line. You can say ' +
+    'which line you mean in two ways.\n\n' +
+    'The first way is the component. A line can carry a component: the ' +
+    'heading above it, such as "Khao khua" or "To serve". In a step, write ' +
+    'the component, then a colon, then the name: "To serve: Glutinous ' +
+    'rice". This needs one call and no new name. You can write a name this ' +
+    'way at any time, even when only one line answers to it. When two ' +
+    'lines answer to a name, you must use one of the two ways, because the ' +
+    'tool refuses a bare name that fits two lines. The component and the ' +
+    'name must fit one line together. The tool refuses a pair that fits no ' +
+    'line, and the error names the components of the list. The name comes ' +
+    'after the last colon, so a component that holds a colon still ' +
+    'works.\n\n' +
+    'The second way is another name. Give the second line its own ' +
+    'spelling, such as "Glutinous rice, to serve". Put that spelling in ' +
+    'the other names of the ingredient first. Then write the line and its ' +
+    'step with the new spelling. Use this way when the two lines must read ' +
+    'differently: the page shows the spelling that you write. Both lines ' +
+    'stay one ingredient, so a shopping list still adds the two amounts. ' +
+    'Do not invent a new ingredient for it: two records for one thing ' +
+    'split the shopping list, and nothing can join them again.',
 
   /**
    * D-02. The conditions are a list because R-SCR-41 requires them to stay
