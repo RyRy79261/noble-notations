@@ -89,15 +89,51 @@ export const RECIPE_LINK_KINDS = [
 // Building blocks
 // ─────────────────────────────────────────────────────────────────────────
 
-export const noteSourceSchema = z.object({
-  url: z.url().optional(),
-  title: z.string().max(300).optional(),
-  citation: z.string().max(2000).optional(),
-  accessedAt: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD')
-    .optional(),
-});
+/**
+ * A source has to name something. Every field on it is optional, so `{}` is
+ * a legal object — and `requireSourcesForResearch` only counts the array,
+ * so one empty object satisfied the count and defeated the rule the
+ * `research` kind exists for. `sources: [{}]` and `sources: [{title: ''}]`
+ * were both accepted; the page then drew the row as "Untitled source",
+ * which is the row `src/components/f/citation.tsx` says must assert
+ * nothing. Provenance that names nothing is not provenance.
+ *
+ * The check goes on the leaf rather than on `noteSchema`, for two reasons.
+ * `noteSourceSchema` is referenced in exactly one place — `noteSchema.sources`
+ * — so refining it here reaches all five note paths at once and
+ * `requireSourcesForResearch` needs no change. And a check on `noteSchema`
+ * would have to reach through the array itself, while `addNoteShape` spreads
+ * `noteSchema.shape`: keeping the object schema unwrapped keeps that spread
+ * working and keeps the issue path on the offending row rather than on the
+ * note.
+ *
+ * Trimmed, because a string of spaces is as empty as no string at all, and
+ * `accessedAt` is excluded on purpose: a date says when the source was read,
+ * not what was read. It qualifies a source; it cannot be one.
+ */
+export const noteSourceSchema = z
+  .object({
+    url: z.url().optional(),
+    title: z.string().max(300).optional(),
+    citation: z.string().max(2000).optional(),
+    accessedAt: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD')
+      .optional(),
+  })
+  .refine(
+    (source) =>
+      [source.url, source.title, source.citation].some(
+        (field) => (field ?? '').trim() !== '',
+      ),
+    {
+      error:
+        'This entry in `sources` is empty. Give it a `url`, a `title` or a ' +
+        '`citation`. One of the three is enough. A blank string does not ' +
+        'count. An `accessedAt` on its own does not count either — a date ' +
+        'says when you read the source, not what the source is.',
+    },
+  );
 
 /**
  * A unit the vocabulary knows, in any of its spellings.
@@ -167,7 +203,14 @@ export const noteSchema = z.object({
    * `warning` wants to say at what temperature it applies.
    */
   conditions: conditionsField.optional(),
-  sources: z.array(noteSourceSchema).max(100).optional(),
+  sources: z
+    .array(noteSourceSchema)
+    .max(100)
+    .optional()
+    .describe(
+      'Each source needs a `url`, a `title` or a `citation`. One of the ' +
+        'three is enough. An `accessedAt` on its own is not a source.',
+    ),
 });
 export type NoteInput = z.infer<typeof noteSchema>;
 
@@ -266,7 +309,15 @@ export const stepSchema = z.object({
    * of a line in `ingredients` — validated below, because a step pointing at
    * an ingredient the recipe does not have is always a mistake.
    */
-  uses: z.array(z.string().max(200)).max(50).optional(),
+  uses: z
+    .array(z.string().max(200))
+    .max(50)
+    .optional()
+    .describe(
+      'Names of ingredient lines this step uses. Each name must fit exactly ' +
+        'one line in `ingredients`. A name that fits two lines is refused, ' +
+        'because a step points at one line.',
+    ),
   /**
    * Optional picture of what this stage should look like. Images are
    * referenced by URL rather than uploaded — the repository stores notes,
@@ -555,29 +606,137 @@ export const recipeBodyShape = {
 };
 
 /**
- * A step may only reference ingredients the recipe actually lists. Catching
- * this at the boundary keeps `recipe_step_ingredients` honest — the
- * alternative is a silently dropped link that makes "which step uses the
- * tandoori masala" quietly wrong.
+ * Name one ingredient line the way a reader would point at it on the page.
+ *
+ * The component heading is what actually separates two lines of the same
+ * ingredient — "Khao khua" against "To serve" — so it leads. The amount
+ * follows it, because two lines under one heading are told apart by the
+ * number. A line with neither is named by its place in the list, which is
+ * the only handle left.
+ */
+function describeLine(line: IngredientLineInput, position: number): string {
+  const amount =
+    line.quantity == null
+      ? null
+      : [
+          line.quantityMax == null
+            ? `${line.quantity}`
+            : `${line.quantity}–${line.quantityMax}`,
+          line.unit ?? '',
+        ]
+          .join(' ')
+          .trim();
+  const heading = line.component?.trim() || null;
+  if (heading && amount) return `${heading} (${amount})`;
+  return heading ?? amount ?? `line ${position + 1}`;
+}
+
+/**
+ * Say that one `uses` name points at more than one ingredient line.
+ *
+ * Exported because two paths enforce the same rule and must say the same
+ * thing: this one, at the parse boundary, and `reviseRecipe` in the write
+ * layer, which cross-checks a steps-only revision against the lines it
+ * carried forward. A caller that meets the rule on one path and a different
+ * sentence on the other has to learn it twice.
+ */
+export function ambiguousUseMessage(
+  stepNumber: number,
+  used: string,
+  matches: { line: IngredientLineInput; position: number }[],
+): string {
+  const named = matches
+    .map(({ line, position }) => describeLine(line, position))
+    .join(', ');
+  // The example is built from a heading this recipe already uses, so the
+  // caller is shown a name that fits its own dish rather than a generic one.
+  // A line with no heading gives nothing to build from, and an invented
+  // example would be worse than none.
+  //
+  // The remedy names the alias route and not a bare rename, because a bare
+  // rename is not safe. `resolveIngredient` inserts on a name it cannot
+  // match, so "Glutinous rice, to serve" mints a second canonical
+  // ingredient: `build_shopping_list` then reports 40 g and 400 g as two
+  // rows that can never sum, `list_ingredients` carries a row that describes
+  // nothing, and no write path in this repository can delete either. The
+  // alias keeps one ingredient and still gives the line a name of its own.
+  const heading = matches[matches.length - 1]!.line.component?.trim();
+  const spelling = heading
+    ? `, such as "${used.trim()}, ${heading.toLowerCase()}"`
+    : '';
+  // "lines of that ingredient" and not "lines with that name", because the
+  // two write-layer callers count lines by resolved ingredient. Two lines
+  // written under two spellings would be named by a spelling neither of them
+  // carries, and a caller cannot act on a sentence that describes no line it
+  // can see. Every line counted here is a line of one ingredient on all
+  // three paths, so this wording is true on all three.
+  return (
+    `Step ${stepNumber} uses "${used}". The ingredient list has ` +
+    `${matches.length} lines of that ingredient: ${named}. A step must point ` +
+    `to one line. Give one line a second spelling${spelling}. Call ` +
+    'upsert_ingredient first and put that spelling in `aliases`, so both ' +
+    'lines stay one ingredient. Then write the line and its `uses` with the ' +
+    'new spelling. A spelling that is not an alias makes a second ' +
+    'ingredient, and a shopping list stops adding the two amounts together.'
+  );
+}
+
+/**
+ * A step may only reference ingredients the recipe actually lists, and the
+ * name it writes must point at exactly one of them. Catching this at the
+ * boundary keeps `recipe_step_ingredients` honest — the alternative is a
+ * silently dropped link that makes "which step uses the tandoori masala"
+ * quietly wrong.
+ *
+ * The second half of that rule is newer and cost a reader a real number.
+ * One dish legitimately lists the same ingredient twice: laab ped writes
+ * 40 g of glutinous rice under "Khao khua" for the toasted powder and 400 g
+ * under "To serve". Both lines are right and both are accepted. What was
+ * wrong is where a step naming "Glutinous rice" landed — `writeRevisionBody`
+ * indexes lines by name and keeps the first, so every such step bound to the
+ * 40 g line and the 400 g line was reachable from no step at all. The page
+ * then told a cook to soak 40 g of rice for the table.
+ *
+ * The write layer cannot break that tie. The two lines differ only in a
+ * component heading, and `uses` has no way to spell one. So the tie is
+ * refused here instead of guessed at, and the message names the components
+ * so the caller can see the two things it is choosing between. Giving one
+ * line an alias of the same ingredient is the way through; a `uses` that
+ * names a component is the larger change this deliberately does not make.
+ *
+ * Two lines written under two spellings of one ingredient are NOT this
+ * case, and are not refused. They name themselves apart, so the caller has
+ * already said which line it means. `writeRevisionBody` claims every written
+ * name before any canonical one, which is what makes that promise true.
  */
 function checkStepReferences(
   value: { ingredients?: IngredientLineInput[]; steps?: StepInput[] },
   ctx: z.RefinementCtx,
 ) {
-  const known = new Set(
-    (value.ingredients ?? []).map((i) => i.name.trim().toLowerCase()),
-  );
+  const linesByName = new Map<
+    string,
+    { line: IngredientLineInput; position: number }[]
+  >();
+  (value.ingredients ?? []).forEach((line, position) => {
+    const key = line.name.trim().toLowerCase();
+    const found = linesByName.get(key);
+    if (found) found.push({ line, position });
+    else linesByName.set(key, [{ line, position }]);
+  });
+
   (value.steps ?? []).forEach((step, stepIndex) => {
     (step.uses ?? []).forEach((used, usedIndex) => {
-      if (!known.has(used.trim().toLowerCase())) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['steps', stepIndex, 'uses', usedIndex],
-          message:
-            `Step ${stepIndex + 1} uses "${used}", which is not in the ` +
-            'ingredient list. Add it to `ingredients` or remove it from `uses`.',
-        });
-      }
+      const matches = linesByName.get(used.trim().toLowerCase()) ?? [];
+      if (matches.length === 1) return;
+      ctx.addIssue({
+        code: 'custom',
+        path: ['steps', stepIndex, 'uses', usedIndex],
+        message:
+          matches.length === 0
+            ? `Step ${stepIndex + 1} uses "${used}", which is not in the ` +
+              'ingredient list. Add it to `ingredients` or remove it from `uses`.'
+            : ambiguousUseMessage(stepIndex + 1, used, matches),
+      });
     });
   });
 }
@@ -657,9 +816,13 @@ export const reviseRecipeShape = {
 export const reviseRecipeSchema = z
   .object(reviseRecipeShape)
   .superRefine((value, ctx) => {
-    // Only cross-check when both lists are being replaced together; a
-    // steps-only revision is checked against the carried-forward ingredients
-    // at write time, where the previous revision is in hand.
+    // Only cross-check here when both lists are replaced together, because
+    // only then does this schema hold both. A revision that sends one list
+    // is checked at write time instead, in BOTH directions: a steps-only
+    // revision against the carried-forward ingredients, and an
+    // ingredients-only revision against the carried-forward steps. See
+    // `checkCarriedUses` in `src/lib/queries/write.ts`, which has the
+    // previous revision in hand and can name the lines a step could mean.
     if (value.ingredients && value.steps) checkStepReferences(value, ctx);
     checkMassFlowStages(value.massFlow?.stages, ctx, ['massFlow', 'stages']);
   });
@@ -897,8 +1060,29 @@ export const logExperimentShape = {
     .max(120)
     .optional(),
   title: z.string().min(1).max(200),
-  recipeSlug: z.string().max(120).optional(),
-  revisionNumber: z.number().int().positive().optional(),
+  /**
+   * `.nullish()`, not `.optional()`. An omitted slug carries the stored link
+   * forward, which is right for a re-log that adds one number — but it left
+   * "this run belongs to no recipe" unreachable, so a run linked to the
+   * wrong recipe could be moved and never unlinked.
+   */
+  recipeSlug: z
+    .string()
+    .max(120)
+    .nullish()
+    .describe(
+      'Leave it out to keep the recipe that is stored. Send null to unlink ' +
+        'the run from every recipe.',
+    ),
+  revisionNumber: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe(
+      'Which version was cooked. Send it together with recipeSlug. The run ' +
+        'keeps the version it recorded, so send this only to correct it.',
+    ),
   summary: z.string().max(4000).nullish(),
   startedAt: z
     .string()
@@ -928,7 +1112,22 @@ export const logExperimentShape = {
     .optional(),
 };
 
-export const logExperimentSchema = z.object(logExperimentShape);
+export const logExperimentSchema = z
+  .object(logExperimentShape)
+  .superRefine((value, ctx) => {
+    // The same cross-field rule `addNoteSchema` states, for the same reason.
+    // A revision number is resolved against the recipe, so without one it
+    // named nothing and was dropped without a word.
+    if (value.revisionNumber != null && !value.recipeSlug) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['revisionNumber'],
+        message:
+          'revisionNumber only applies together with recipeSlug. Send the ' +
+          'recipe slug beside it.',
+      });
+    }
+  });
 export type LogExperimentArgs = z.input<typeof logExperimentSchema>;
 export type LogExperimentInput = z.infer<typeof logExperimentSchema>;
 

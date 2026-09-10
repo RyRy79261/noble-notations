@@ -24,6 +24,13 @@ reason. Do not make a second recipe for the same dish.
 You cannot delete anything. You cannot edit ingredients or steps. This is
 correct behaviour, not a fault.
 
+A write can still replace a list. The categories field holds all the tags
+of a recipe, in every category type. A write that sends this field replaces
+them all. A write that leaves it out changes no tag. An empty categories
+object removes every tag. So send back each tag that you want to keep. Two
+other lists replace in the same way: the other names of an ingredient, and
+the items and observations of a run.
+
 You can add an older version that you find later. Call backfill_revision.
 This adds history. It does not change the recipe that people read.
 
@@ -103,15 +110,38 @@ export const GUIDE = {
     'cuisine, course, technique, diet, season, equipment, occasion, ' +
     'preservation, texture and ingredient_class. When you add a tag to a ' +
     'recipe, the system makes the tag if it does not exist. The new tag has ' +
-    'no explanation, so call upsert_category to add one.',
+    'no explanation, so call upsert_category to add one.\n\n' +
+    'The categories field holds all the tags of a recipe. create_recipe and ' +
+    'revise_recipe replace them all. A category type that you do not send ' +
+    'loses its tags. An empty categories object removes every tag. A ' +
+    'revision that leaves the field out changes no tag. Read the recipe ' +
+    'with get_recipe first. Then send back each tag that you want to ' +
+    'keep.\n\n' +
+    'In each category type, the first tag in the list becomes the primary ' +
+    'one. get_recipe and search_recipes report it as isPrimary. There is no ' +
+    'field for it. The order of the list is the only control: put a tag ' +
+    'first to make it the primary one. Each category type has one primary ' +
+    'tag.',
 
   ingredients:
     'Each ingredient is one record. It is not free text. Other names for ' +
     'the same ingredient make search work: a search for "cilantro" finds ' +
     'coriander. The category of an ingredient puts it in the correct part ' +
     'of a shopping list. A new recipe makes simple ingredient records. Call ' +
-    'upsert_ingredient to add the other names, the density, the category ' +
-    'and the possible replacements.',
+    'upsert_ingredient to give a record the other names, the density, the ' +
+    'category and the possible replacements.\n\n' +
+    'A field that you leave out keeps the value the store holds. The name ' +
+    'is the exception: it is required, so every call writes it. Send the ' +
+    'stored name unless you mean to change it. The other names replace the ' +
+    'stored list, so send them all each time. The possible replacements ' +
+    'only add: the tool never removes one. A replacement that is not an ' +
+    'ingredient makes a new ingredient record.\n\n' +
+    'One recipe can list one ingredient twice, such as rice for a powder ' +
+    'and rice for the table. A step must point to one line, so give the ' +
+    'second line its own spelling. Put that spelling in the other names of ' +
+    'the ingredient first. Do not invent a new ingredient for it: two ' +
+    'records for one thing split the shopping list, and nothing can join ' +
+    'them again.',
 
   /**
    * D-02. The conditions are a list because R-SCR-41 requires them to stay

@@ -244,8 +244,8 @@ export function registerTools(server: McpServer): void {
       title: 'How this repository works',
       description:
         'Read this first. Explains how the pieces fit together — the ' +
-        'revision rule, which note kind means what, how the faceted ' +
-        'categories work, and the order of operations.\n\n' +
+        'revision rule, which note kind means what, how the categories ' +
+        'work, and the order of operations.\n\n' +
         'Every other tool description explains one tool; this explains the ' +
         'system. Worth one call at the start of any session that intends ' +
         'to write, because the most common mistake — creating a second ' +
@@ -477,8 +477,11 @@ export function registerTools(server: McpServer): void {
         'this repository is that a recipe improves across revisions rather ' +
         'than being re-derived each time. Creating a duplicate loses the ' +
         'history that makes the original useful.\n\n' +
-        'Everything except the title is optional. Steps may name ingredients ' +
-        'in `uses`, but only ones present in `ingredients`. Set `kind` to ' +
+        'Everything except the title is optional. A step may name ingredients ' +
+        'in `uses`. Each name must fit exactly one line in `ingredients`. The ' +
+        'tool refuses a name that fits two lines, because a step points at ' +
+        'one line and the tool must not choose for you. The refusal names ' +
+        'both lines and says how to tell them apart. Set `kind` to ' +
         '"preparation" for a component another recipe pulls in (a spice ' +
         'dredge, a demi-glace), "process" for a technique with no fixed ' +
         'yield, or "research" for a sourced write-up with no steps of its own.\n\n' +
@@ -518,8 +521,18 @@ export function registerTools(server: McpServer): void {
         'came before.\n\n' +
         'Omitted fields carry forward from the current revision, so changing ' +
         'one spice ratio means sending `slug`, `rationale` and `ingredients` ' +
-        'only. `ingredients` and `steps` each replace their whole list when ' +
-        'given — send the complete list, not a diff.\n\n' +
+        'only. `ingredients`, `steps` and `categories` each replace their ' +
+        'whole list when given — send the complete list, not a diff.\n\n' +
+        '`categories` replaces every tag on the recipe. A category type that ' +
+        'you do not send loses its tags. If you send one cuisine tag only, ' +
+        'the write deletes the course tag and the technique tag. An empty ' +
+        '`categories` object removes every tag. Call get_recipe first. Then ' +
+        'send back each tag that you want to keep.\n\n' +
+        'A step names ingredients in `uses`, and each name must fit exactly ' +
+        'one line. Send `steps` alongside `ingredients` whenever you change ' +
+        'a line that a step names. A revision that sends `ingredients` alone ' +
+        'keeps the stored steps, and the tool refuses it if a carried step ' +
+        'then fits two lines.\n\n' +
         '`rationale` is required and should say what changed and why, in the ' +
         'terms that will matter next time: "coriander to a coarse grind, the ' +
         'fine grind disappeared into the dredge", not "updated ingredients".\n\n' +
@@ -609,7 +622,9 @@ export function registerTools(server: McpServer): void {
         'barrier, not a flavour layer" is science.\n' +
         '- `research` is what was learned around it afterwards: ' +
         'alternatives, hacks, sourcing, background. "Where to buy crayfish ' +
-        'in Berlin" is research. Give `sources` where you have them.\n\n' +
+        'in Berlin" is research. Give `sources` where you have them. Each ' +
+        'source needs a `url`, a `title` or a `citation`. One of the three ' +
+        'is enough. An `accessedAt` on its own is not a source.\n\n' +
         'The rest: `observation` for what was noticed, `result` for how it ' +
         'turned out, `substitution` for what was swapped and why, `warning` ' +
         'for a trap worth flagging, `idea` for something untried, ' +
@@ -759,13 +774,32 @@ export function registerTools(server: McpServer): void {
     {
       title: 'Create or update an ingredient',
       description:
-        'Enrich the canonical ingredient list. Recipes auto-create bare ' +
-        'ingredient stubs as they are written; this is how a stub gains its ' +
-        'category, aliases, density and substitutes.\n\n' +
-        '`aliases` is what makes search work across vocabularies (cilantro / ' +
-        'coriander). `densityGPerMl` is what lets a cup in one recipe be ' +
-        'compared against grams in another. `substitutes` is recorded in both ' +
-        'directions.',
+        'Create an ingredient, or change one that is stored. A new recipe ' +
+        'makes a bare ingredient record. This tool gives that record its ' +
+        'category, its other names, its density and its replacements.\n\n' +
+        'A field that you leave out keeps the value the store holds. An ' +
+        'explicit null clears `plural`, `description`, `densityGPerMl` and ' +
+        '`defaultUnit`. `category` takes no null. Leave `category` out when ' +
+        'you do not know it. Send "other" only for a new ingredient that ' +
+        'belongs in no group.\n\n' +
+        '`name` is the one field that this rule does not cover. It is ' +
+        'required, so every call writes it. Send the stored name unless you ' +
+        'mean to change it. Send `slug` as well, so the tool changes the ' +
+        'record you mean. The tool refuses a `name` that another ingredient ' +
+        'already answers to, because two records with one name split the ' +
+        'ingredient list for good.\n\n' +
+        '`aliases` replaces the whole list. Send every name that you want to ' +
+        'keep. Send an empty list to remove them all. The other names make ' +
+        'search work across two vocabularies: a search for "cilantro" finds ' +
+        'coriander. An alias is also how one recipe lists one ingredient ' +
+        'twice: give the second line its own spelling here, then a step can ' +
+        'name the line it means.\n\n' +
+        '`substitutes` does not replace. It adds to the list, and it never ' +
+        'removes a name. The tool records each pair in both directions. A ' +
+        'name here that is not an ingredient makes a new ingredient record. ' +
+        'Call list_ingredients first, and use the name that is there.\n\n' +
+        '`densityGPerMl` lets you compare a volume in one recipe with grams ' +
+        'in another.',
       inputSchema: upsertIngredientShape,
     },
     async (args, extra) =>
@@ -787,17 +821,23 @@ export function registerTools(server: McpServer): void {
       title: 'Describe a category tag',
       description:
         'Give a tag its display label, its explanatory blurb and its place ' +
-        'in the hierarchy. Tagging a recipe auto-creates any term it names, ' +
-        'so terms usually exist already but with no explanation attached; ' +
+        'in the hierarchy. Tagging a recipe auto-creates any tag it names, ' +
+        'so tags usually exist already but with no explanation attached; ' +
         'this is how one gets described.\n\n' +
         'The `description` is shown to readers on hover, so write the ' +
-        'sentence a curious reader needs: what distinguishes this term, not ' +
+        'sentence a curious reader needs: what distinguishes this tag, not ' +
         'just a restatement of its name. "Cajun" should explain that it is ' +
         'Louisiana country cooking built on a dark roux, not that it is a ' +
         'kind of cuisine.\n\n' +
-        '`parentSlug` nests a narrower term under a broader one in the same ' +
-        'facet ("cajun" under "american"). Facets never mix: a cuisine ' +
-        'cannot be parented to a technique.\n\n' +
+        'A field that you leave out keeps the value the store holds. Send ' +
+        'null to clear `description` or `parentSlug`. `label` is required, ' +
+        'so every call writes it.\n\n' +
+        '`parentSlug` puts a narrower tag under a broader one in the same ' +
+        'category type ("cajun" under "american"). A tag never crosses ' +
+        'category types: a cuisine cannot take a technique as its parent. ' +
+        'The tool refuses a `parentSlug` that names no tag, and it refuses a ' +
+        'tag that names itself. The error says which tag it looked for, and ' +
+        'the call writes nothing.\n\n' +
         'Use this after creating a recipe that introduced new tags, so the ' +
         'repository does not accumulate bare, unexplained labels.',
       inputSchema: upsertCategoryShape,
@@ -826,8 +866,22 @@ export function registerTools(server: McpServer): void {
         'against them — use a consistent `metric` name across runs ' +
         '("initial_weight", "final_weight", "days_to_cut") so batches can be ' +
         'compared.\n\n' +
-        "Re-logging the same slug replaces that run's items and observations " +
-        'rather than appending duplicates.',
+        'A field that you leave out keeps the value the store holds. A ' +
+        'second call that adds one observation does not clear the cost, the ' +
+        'dates or the recipe. `title` is the exception: it is required, so ' +
+        'every call writes it. Send the stored title unless you mean to ' +
+        'change it.\n\n' +
+        '`items` and `observations` move together, and they replace rather ' +
+        'than add. If you send either list, the tool writes both lists again ' +
+        'from what you sent, and a measurement that you leave out is gone. ' +
+        'So send every item and every observation of the run each time. If ' +
+        'you send neither list, the tool keeps the stored measurements.\n\n' +
+        'A run records one version of one recipe. Send `recipeSlug` with ' +
+        '`revisionNumber` to say which version you cooked. The run keeps ' +
+        'that version, so a later call that names the same recipe again does ' +
+        'not move the run onto the newest version. Send `revisionNumber` ' +
+        'only to correct it, and always with `recipeSlug`. Send ' +
+        '`recipeSlug: null` to unlink the run from every recipe.',
       inputSchema: logExperimentShape,
     },
     async (args, extra) =>

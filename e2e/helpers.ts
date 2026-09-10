@@ -14,9 +14,25 @@ import path from 'node:path';
  * Playwright workers are separate processes, and a token minted in
  * global-setup would otherwise have to rely on env inheritance holding.
  */
+/** One tool as `tools/list` advertises it, JSON Schema included. */
+export interface AdvertisedTool {
+  name: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+}
+
 export interface McpClient {
   call<T = unknown>(tool: string, args: Record<string, unknown>): Promise<T>;
   listTools(): Promise<string[]>;
+  /**
+   * The registry with its schemas, not just the names.
+   *
+   * `src/lib/domain/schemas.ts` is the submission contract and the tools
+   * derive their JSON Schema from it, so a rule stated in a `.describe()` is
+   * the only way a caller learns a rule JSON Schema cannot carry. This is
+   * how a test reads what the caller reads.
+   */
+  listToolSchemas(): Promise<AdvertisedTool[]>;
   raw(body: unknown): Promise<Response>;
 }
 
@@ -24,7 +40,7 @@ interface JsonRpcResponse {
   result?: {
     content?: { type: string; text: string }[];
     isError?: boolean;
-    tools?: { name: string }[];
+    tools?: AdvertisedTool[];
   };
   error?: { code: number; message: string };
 }
@@ -98,6 +114,18 @@ export function mcpClient(baseURL: string, token: string): McpClient {
     await res.text();
   }
 
+  async function listToolSchemas(): Promise<AdvertisedTool[]> {
+    await ensureSession();
+    const res = await post({
+      jsonrpc: '2.0',
+      id: nextId++,
+      method: 'tools/list',
+      params: {},
+    });
+    const parsed = parseBody(await res.text());
+    return parsed.result?.tools ?? [];
+  }
+
   return {
     async raw(body) {
       await ensureSession();
@@ -105,16 +133,10 @@ export function mcpClient(baseURL: string, token: string): McpClient {
     },
 
     async listTools() {
-      await ensureSession();
-      const res = await post({
-        jsonrpc: '2.0',
-        id: nextId++,
-        method: 'tools/list',
-        params: {},
-      });
-      const parsed = parseBody(await res.text());
-      return (parsed.result?.tools ?? []).map((t) => t.name);
+      return (await listToolSchemas()).map((t) => t.name);
     },
+
+    listToolSchemas,
 
     async call<T>(tool: string, args: Record<string, unknown>) {
       await ensureSession();
