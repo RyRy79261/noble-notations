@@ -267,6 +267,23 @@ kill "$SERVER"               # by PID, not `pkill next-server`
 Stop the server by PID. `pkill -f next-server` takes a sibling agent's server
 down with it.
 
+**Run it the way CI runs it, or you have not run it.**
+
+`.github/workflows/ci.yml` sets two variables the local recipe above does
+not. A test that reads the environment can pass here and fail there, and one
+did: `e2e/auth-oauth.spec.ts` asserted that a forwarded host decides the
+OAuth issuer, which is true only when no override is set. CI sets the
+override, so the test was wrong and the code was right.
+
+Before you push, run the suite once more with CI's environment:
+
+```bash
+MCP_PUBLIC_URL=http://127.0.0.1:3100 CI=true E2E_PORT=3100 pnpm test:e2e
+```
+
+`CI=true` also turns off `reuseExistingServer`, so this run builds and boots
+its own server exactly as the workflow does.
+
 **If the port refuses to bind.** This machine sometimes reports
 `address already in use` for a published port that nothing holds. Start the
 container with no `-p` and read its address instead:

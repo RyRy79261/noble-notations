@@ -74,14 +74,25 @@ async function token(form: Record<string, string>): Promise<{
 // 1. Discovery — the documents a client reads first
 // ─────────────────────────────────────────────────────────────────────────
 
-test('the authorization server advertises itself at the host the request arrived on', async () => {
+test('the authorization server advertises itself at the origin it is told to', async () => {
   // THE VERCEL_URL FAULT, and it is the one that ends a connection with no
   // error a person can read. `VERCEL_URL` is the deployment-hash domain and
   // on a production deployment that domain sits behind Vercel SSO: advertise
-  // it here and claude.ai follows it into a 403. `getPublicOrigin()` prefers
-  // the host the user actually reached, so a proxied request must be
-  // answered with the proxied host — not with the socket this server is
-  // listening on, and not with anything read from the environment.
+  // it here and claude.ai follows it into a 403.
+  //
+  // `getPublicOrigin()` in `src/lib/mcp/origin.ts` states the priority, and
+  // this test asserts it rather than one branch of it:
+  //   1. MCP_PUBLIC_URL          explicit override, and it beats everything
+  //   2. x-forwarded-host/proto  the host the user actually reached
+  //   3. host header
+  //   4. VERCEL_URL              no-request contexts only
+  //
+  // THIS TEST USED TO ASSERT BRANCH 2 ALONE. It passed here and failed in
+  // CI, because `.github/workflows/ci.yml` sets MCP_PUBLIC_URL and branch 1
+  // outranks it. The code was right and the test was wrong. An environment
+  // decides which branch is live, so the test reads the environment too.
+  const override = process.env.MCP_PUBLIC_URL?.trim().replace(/\/$/, '');
+
   const proxied = await fetch(
     `${BASE}/.well-known/oauth-authorization-server`,
     {
@@ -94,7 +105,14 @@ test('the authorization server advertises itself at the host the request arrived
   expect(proxied.status).toBe(200);
   const metadata = (await proxied.json()) as Metadata;
 
-  expect(metadata.issuer).toBe('https://noble-notations.ryanjnoble.dev');
+  // With an override the answer is the override, EVEN behind a proxy. That
+  // is the whole point of priority 1: an operator who names the origin gets
+  // the origin they named, and no header can move it.
+  // With no override the forwarded host wins, which is what keeps a real
+  // deployment off the SSO-protected hash domain.
+  const expected = override ?? 'https://noble-notations.ryanjnoble.dev';
+  expect(metadata.issuer).toBe(expected);
+
   // Every endpoint in the document is built from that same origin. One of
   // them pointing somewhere else sends the browser to a host that will not
   // recognise the code it is carrying.
@@ -103,18 +121,16 @@ test('the authorization server advertises itself at the host the request arrived
     metadata.token_endpoint,
     metadata.registration_endpoint,
   ]) {
-    expect(endpoint.startsWith('https://noble-notations.ryanjnoble.dev/')).toBe(
-      true,
-    );
+    expect(endpoint.startsWith(`${expected}/`)).toBe(true);
   }
   expect(metadata.authorization_endpoint).toContain('/api/mcp/oauth/authorize');
 
-  // And with no proxy header the same document names this server, so a
+  // And with no proxy header the same document names the same origin, so a
   // loopback client and a deployed one both get an issuer that answers.
   const direct = (await (
     await fetch(`${BASE}/.well-known/oauth-authorization-server`)
   ).json()) as Metadata;
-  expect(direct.issuer).toBe(BASE);
+  expect(direct.issuer).toBe(override ?? BASE);
 });
 
 test('discovery offers S256 and nothing else, which is what authorize enforces', async () => {
