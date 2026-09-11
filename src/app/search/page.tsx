@@ -390,12 +390,13 @@ export default async function SearchPage({
       <div className={MAIN}>
         <Breadcrumb items={[{ label: 'Search' }, { label: crumb }]} />
 
-        <PageHero
-          kicker="Section VI · Search"
-          title="Search"
-          lede="Every search you run is a link you can keep, send or bookmark."
-          ledeClassName="shell:max-w-205"
-        />
+        {/* NO LEDE. The one that was here — "Every search you run is a
+            link you can keep, send or bookmark" — is the last of the
+            sentences issue #21 objected to: a screen telling a reader how
+            it is built instead of getting out of the way. The address bar
+            still holds the query and every search is still a link; the
+            screen no longer says so. */}
+        <PageHero kicker="Section VI · Search" title="Search" />
 
         {/* R-CON-03. A plain GET form: shareable URLs, works without
             JavaScript, and the query string is the whole state. The screen

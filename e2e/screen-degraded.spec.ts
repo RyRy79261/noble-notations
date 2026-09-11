@@ -156,9 +156,12 @@ test('the second server really has no database, and says so on the home page', a
     page.getByText(/is not set, so nothing can be read/i),
   ).toBeVisible();
 
-  // …and nothing else on the screen is: the hero above it and the "How this
-  // works" cards below it do not read the database, and a notice that took
-  // the page with it would be the wrong repair.
+  // …and nothing else on the screen is: the hero above it and the foot
+  // below it do not read the database, and a notice that took the page with
+  // it would be the wrong repair. (The "How this works" cards used to be
+  // the half of this assertion below the notice. D-14 removed them; the
+  // three data-backed bands are absent here because they have nothing in
+  // them, which is R-SCR-01 and not a failure.)
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
   await expect(page.locator('[data-page-foot]')).toHaveCount(1);
 

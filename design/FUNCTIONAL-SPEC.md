@@ -724,7 +724,13 @@ The screen has 5 blocks in this order:
 3. **Recently revised.** Six recipe cards and a link to all recipes.
 4. **Browse by classification.** One block for each category type. Each
    block shows up to 14 terms.
-5. **How this works.** Four cards.
+5. ~~**How this works.** Four cards.~~ **Removed — D-14.** The four cards
+   explained the revision model, and the fourth told a reader how to point
+   an agent at the connector. A reader came to cook. The rule is carried by
+   the hero's two sentences, by the reason printed beside every revision on
+   a recipe, and by `/connect` for the person who sets a connector up.
+
+The build adds a sixth block, **Science**, which this section predates.
 
 - R-SCR-01: Block 3 and block 4 **MUST** be absent when they have no
   content.

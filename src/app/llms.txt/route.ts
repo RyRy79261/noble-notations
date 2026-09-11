@@ -91,6 +91,8 @@ export async function GET() {
     `- [Connect](${site.url}/connect): how to add the connector.`,
     `- MCP endpoint: ${site.url}/api/mcp/mcp`,
     '- Call `get_started` first. It explains the data model and the rules.',
+    '- Write in simple technical English: short sentences, one idea in each,',
+    '  active voice. A cook reads what you write, often while cooking.',
     '',
   );
 

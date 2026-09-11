@@ -176,7 +176,7 @@ export default async function IngredientsPage() {
               kicker="Ingredients · Index"
               title="Ingredients"
               ledeClassName="shell:max-w-160"
-              lede="Every ingredient the catalogue has ever called for, listed once and numbered. They are grouped the way a supermarket is laid out, so that a shopping list written from a recipe comes out in the order you will walk it."
+              lede="Every ingredient the catalogue has ever called for, listed once and numbered. They are grouped the way a supermarket is laid out."
             />
           </div>
 

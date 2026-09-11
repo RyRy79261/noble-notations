@@ -180,7 +180,7 @@ export default async function CuisinesPage() {
                 </>
               }
               title="Cuisines"
-              lede="Where a dish comes from. Every recipe carries exactly one cuisine, and it keeps that cuisine through every revision it passes into — the name and the origin outlive any single revision."
+              lede="Where a dish comes from. Every recipe carries exactly one cuisine."
               ledeClassName="shell:max-w-160"
             />
           </div>

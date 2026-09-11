@@ -71,7 +71,7 @@ export default function NotFound() {
           title="No page at this address"
           /* 860px — `access-1280.html`, `data-pencil-name="Lede"`. */
           ledeClassName="shell:max-w-215"
-          lede="There is nothing at the address you asked for. It may well be from an earlier issue of this site: the addresses changed when revisions were given names instead of numbers, and four sections were renamed. Nothing here is ever deleted, so whatever you were looking for is almost certainly still on the record under a different address."
+          lede="There is nothing at the address you asked for. Nothing here is deleted, so what you want is almost certainly still here at another address."
         />
 
         {/* The recessed address band. `f-desk`, no rule and no radius: 18/20

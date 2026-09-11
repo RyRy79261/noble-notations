@@ -171,6 +171,58 @@ test('the guide and the instructions name the website and its word', async () =>
   }
 });
 
+test('the guide, the instructions and the write tools state the writing rule', async () => {
+  // A model writes the way it is asked to write. Asked for a recipe and
+  // told nothing about style, it writes food prose: a step carrying three
+  // actions and a metaphor, an amount given as "a good glug". That text is
+  // read by a cook, on a phone, while cooking — the same reader the site's
+  // own copy has been written for since M2 — and nothing told the connector
+  // so. The rule is now in three places on purpose: the instructions a
+  // client reads at connect time, the guide behind `get_started`, and the
+  // description of every write tool that stores prose, because an agent
+  // that skips the first two still reads the third.
+  const mcp = agent();
+  const instructions = await serverInstructions();
+  const guide = await mcp.call<{ howToWrite: string }>('get_started', {});
+
+  for (const [where, text] of [
+    ['the server instructions', instructions],
+    ['howToWrite', guide.howToWrite],
+  ] as const) {
+    expect(text, `${where} does not name the style`).toMatch(
+      /simple technical english/i,
+    );
+    expect(text, `${where} does not ask for short sentences`).toMatch(
+      /short sentence/i,
+    );
+    expect(text, `${where} does not ask for the active voice`).toMatch(
+      /active voice/i,
+    );
+  }
+
+  // Every tool that stores text a reader sees carries the reminder. The
+  // list is the write tools that take prose — not `add_mass_flow` or
+  // `describe_mechanism`, which take figures and conditions.
+  const WRITES_PROSE = [
+    'create_recipe',
+    'revise_recipe',
+    'backfill_revision',
+    'add_note',
+    'log_experiment',
+    'upsert_category',
+    'upsert_ingredient',
+  ];
+  const advertised = await mcp.listToolSchemas();
+  for (const name of WRITES_PROSE) {
+    const tool = advertised.find((entry) => entry.name === name);
+    expect(tool, `${name} is not advertised`).toBeTruthy();
+    expect(
+      tool?.description ?? '',
+      `${name} does not state the writing rule`,
+    ).toMatch(/simple technical english/i);
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────────────
 // 2. The guide agrees with the schemas
 // ─────────────────────────────────────────────────────────────────────────
@@ -185,6 +237,7 @@ test('every section of the guide is present and says something', async () => {
   const SECTIONS = [
     'whatThisIs',
     'theOneRule',
+    'howToWrite',
     'olderVersions',
     'workflow',
     'noteKinds',

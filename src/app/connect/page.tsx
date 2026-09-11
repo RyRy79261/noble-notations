@@ -206,6 +206,24 @@ export default function ConnectPage() {
           <code className="[font-size:inherit] font-mono">correction</code>.
           Every tool call is written to an audit log.
         </Warning>
+
+        {/*
+         * D-14. A person approving write access is handing a model the copy
+         * of this site, and the reader at the other end is a cook holding a
+         * phone. The rule an agent is given is stated here so that the
+         * person can see what was asked for, and hold the result to it.
+         */}
+        <Warning title="An agent is asked to write in plain English">
+          Every recipe here is written in ASD Simplified Technical English:
+          short sentences, one idea in each, active voice, and the same word for
+          the same thing. A step reads as one instruction —{' '}
+          <em>Cut the beef into strips of 10 mm</em> — and every amount, time
+          and temperature carries a number and a unit. The connector states this
+          rule in its instructions, in{' '}
+          <code className="[font-size:inherit] font-mono">get_started</code> and
+          on every tool that stores text a reader sees. It is not enforced by
+          the schema, because no schema can tell good prose from bad.
+        </Warning>
       </div>
     </>
   );

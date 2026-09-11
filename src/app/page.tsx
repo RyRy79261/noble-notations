@@ -15,16 +15,28 @@
  *   RECENTLY WORKED   six recipe cards       SIX
  *   CLASSIFICATION    a row per facet        NINE GROUPS · 34 TAGS
  *   SCIENCE           two study cards        TWO STUDIES · SEVEN MECHANISMS
- *   HOW THIS WORKS    four columns, I to IV  FOUR
+ *
+ * THE FIFTH BAND IS GONE. §10.1 block 5 and the design draw HOW THIS WORKS:
+ * four columns explaining the revision model and, in the fourth, how to
+ * point an agent at the connector. It is the same fault issue #21 found on
+ * `/search` — a screen describing its own build to a reader who came to
+ * cook — and the connector half was the loudest part of it, on the one
+ * screen every reader lands on. The rule the cards taught is not lost: the
+ * lede states it in two sentences, every revision on a recipe carries its
+ * own reason, and `/connect` exists for the one person who wires an agent
+ * up. The SCIENCE band's closing sentence went with them for the same
+ * reason. AGENTS.md § Words and writing style records the rule; D-14 in
+ * `design/DECISIONS.md` records the departure from §10.1.
  *
  * THE RIGHT-HAND NOTE IS NOT DECORATION. It is the count of the things in
  * that band, spelled in words, and it comes from the same read that fills
  * the band — so a band that draws four cards cannot say SIX. `numberWord`
  * in `f/band.tsx` is the design's spelling rule, numeral and all.
  *
- * §10.1's five blocks are all here. The design adds a sixth, SCIENCE, which
- * §10.1 predates; BUILD-PLAN §2 makes the design the source of truth for
- * how a screen reads, the same way D-07 settled the page foot's copy.
+ * §10.1's first four blocks are here. The design adds SCIENCE, which §10.1
+ * predates; BUILD-PLAN §2 makes the design the source of truth for how a
+ * screen reads, the same way D-07 settled the page foot's copy. The fifth
+ * block is dropped — see above.
  *
  * R-SCR-01: RECENTLY WORKED and CLASSIFICATION are ABSENT when they have
  * nothing in them — not drawn empty. SCIENCE follows them for the same
@@ -51,7 +63,7 @@ import { getStats, listCategories, listRecipes } from '@/lib/queries/read';
 import type { TermWithCount } from '@/lib/queries/read';
 import { listScienceIndex } from '@/lib/queries/read';
 import { safeRead } from '@/lib/safe';
-import { CATEGORY_TYPE_LABELS, roman, site } from '@/lib/site';
+import { CATEGORY_TYPE_LABELS, site } from '@/lib/site';
 import { cn } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
@@ -69,31 +81,6 @@ const LEDE = 'shell:max-w-195';
 
 /** §10.1 block 4: "Each block shows up to 14 terms." */
 const TERMS_IN_A_FACET = 14;
-
-/**
- * §10.1 block 5, in the design's words and its order
- * (`home-recipes-1280.html:1607`). Four columns numbered I to IV — the
- * numerals are `roman()` rather than four literals, so the band and
- * F/Section label spell an ordinal the same way.
- */
-const HOW_THIS_WORKS = [
-  {
-    title: 'A dish has a name',
-    body: 'The name never changes. The ingredients and the steps belong to a revision, not to the dish.',
-  },
-  {
-    title: 'You add, never edit',
-    body: 'A revision cannot be altered once it is made. To improve a dish you add one on top.',
-  },
-  {
-    title: 'Every revision says why',
-    body: 'Beside each is a sentence describing what the dish became — the part a cook can act on.',
-  },
-  {
-    title: 'Agents read and write it',
-    body: 'A connector, /llms.txt and .md routes let an agent search the repository and add revisions to it.',
-  },
-] as const;
 
 export default async function HomePage() {
   const [stats, recent, categories, science] = await Promise.all([
@@ -141,7 +128,7 @@ export default async function HomePage() {
           size="display"
           kicker={site.tagline}
           title={site.name}
-          lede="A structured repository of recipes, ingredients, techniques and batch logs. The name of a dish never changes. Its ingredients and steps belong to a revision, and a revision cannot be altered once it is made — to improve a dish you add one on top and write down what changed and why."
+          lede="Recipes, ingredients, techniques and batch logs. A dish keeps its name. Each change to it is a new revision, and every revision says what changed and why."
           ledeClassName={LEDE}
         >
           {/* `Actions`, `flex-row gap-[16px]` at 1280 and `gap-[8px]` at 360.
@@ -309,9 +296,6 @@ export default async function HomePage() {
           <Band
             label="Science"
             meta={`${numberWord(science.data.studies.length)} studies · ${numberWord(science.data.mechanisms.length)} mechanisms`}
-            /* 28px between the card row and the closing sentence. The one
-               band gap in the design that is not 20, 24 or 32. */
-            centreClassName="shell:gap-7"
           >
             <CardGrid columns={2}>
               {science.data.studies.map((study) => (
@@ -327,30 +311,8 @@ export default async function HomePage() {
                 />
               ))}
             </CardGrid>
-
-            {/* The design's closing `Note`, 15 over 26 in the serif — the
-                one line of running prose on this screen. */}
-            <p className="m-0 w-full text-15 leading-170 font-serif tracking-flat text-ink-2">
-              A mechanism is written down once and cited from every method that
-              leans on it, so a correction lands in one place rather than in
-              six.
-            </p>
           </Band>
         ) : null}
-
-        {/* ── HOW THIS WORKS ─────────────────────────────────────────── */}
-        <Band label="How this works" meta={numberWord(HOW_THIS_WORKS.length)}>
-          <CardGrid columns={4}>
-            {HOW_THIS_WORKS.map((card, index) => (
-              <IndexCard
-                key={card.title}
-                kicker={roman(index + 1)}
-                title={card.title}
-                description={card.body}
-              />
-            ))}
-          </CardGrid>
-        </Band>
       </div>
     </>
   );
