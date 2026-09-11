@@ -1,4 +1,5 @@
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
+import { createServer, type Server } from 'node:http';
 import path from 'node:path';
 import { Client } from 'pg';
 import { test, expect } from '@playwright/test';
@@ -11,7 +12,11 @@ import {
   type StubRequest,
   type StubState,
 } from './github-stub-contract';
-import { issueReportingConfigured } from '../src/lib/github/config';
+import {
+  apiBaseUrl,
+  GITHUB_REPO_FULL,
+  issueReportingConfigured,
+} from '../src/lib/github/config';
 
 /**
  * `report_issue` — the one tool whose effect lands outside this system.
@@ -1169,4 +1174,653 @@ test('without GITHUB_ISSUE_TOKEN the tool is not in tools/list at all', async ()
       }
     }
   }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// 12. The test seam that must not be live
+// ─────────────────────────────────────────────────────────────────────────
+
+test('GITHUB_API_BASE_URL is honoured for a loopback host and nowhere else', () => {
+  // THE HIGHEST-SEVERITY PROPERTY IN THIS DIRECTORY, and the one the suite
+  // could not see: every test here already runs against 127.0.0.1, so the
+  // rule that restricts the override is satisfied by accident and deleting
+  // it changes nothing any other test observes.
+  //
+  // What it stops is specific. `GITHUB_API_BASE_URL` is a test seam. A stale
+  // or hostile value in a Vercel project's environment — and previews
+  // inherit project environment variables — would send `GITHUB_ISSUE_TOKEN`
+  // as `Authorization: Bearer …` to whatever host it names. The restriction
+  // is on the HOST rather than on the environment, deliberately: `next start`
+  // runs with NODE_ENV=production, so an environment test would lose the
+  // stub for this very suite, and losing the stub means calling the real
+  // GitHub API.
+  //
+  // `src/lib/github/config.ts` imports nothing precisely so a spec can reach
+  // it by relative path, which is what makes this assertion possible at all.
+  const REAL = 'https://api.github.com';
+
+  for (const loopback of [
+    'http://127.0.0.1:3101',
+    'http://localhost:3101',
+    'http://[::1]:3101',
+    'https://127.0.0.1',
+  ]) {
+    expect(apiBaseUrl({ GITHUB_API_BASE_URL: loopback })).toBe(loopback);
+  }
+
+  // A trailing slash is trimmed rather than doubling the slash in every path
+  // this base is joined to.
+  expect(apiBaseUrl({ GITHUB_API_BASE_URL: 'http://127.0.0.1:3101/' })).toBe(
+    'http://127.0.0.1:3101',
+  );
+
+  for (const elsewhere of [
+    'https://evil.example.com',
+    'https://api.github.com.evil.example',
+    // The host is what is checked, so a loopback address in any other part
+    // of the URL does not buy the override anything.
+    'https://evil.example.com/127.0.0.1',
+    'https://evil.example.com?host=localhost',
+    'http://169.254.169.254',
+    'not a url at all',
+    '',
+    '   ',
+  ]) {
+    expect(
+      apiBaseUrl({ GITHUB_API_BASE_URL: elsewhere }),
+      `${elsewhere} must not be honoured`,
+    ).toBe(REAL);
+  }
+
+  // Unset is the deployed case, and it is the real API.
+  expect(apiBaseUrl({})).toBe(REAL);
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// 13. The cap, under the concurrency an MCP client produces for free
+// ─────────────────────────────────────────────────────────────────────────
+
+test('the open-report cap holds when many connectors file at the same moment', async () => {
+  test.setTimeout(90_000);
+
+  // A cap that reads a count from GitHub and then acts on it, with nothing
+  // held in between, is not a cap. MCP calls are independent HTTP POSTs, so
+  // a client makes this happen with no special effort: every request reads
+  // the same open-report count, every request finds room, and every request
+  // files. The suite only ever filed sequentially, so the two counters that
+  // fix it — `createsInFlight`, held across the create, and
+  // `createsCompleted`, which dates each caller's snapshot — were never
+  // exercised.
+  //
+  // Nine open reports and a cap of ten leaves room for exactly one. That is
+  // what makes this readable: the answer is one, and without the counters it
+  // is however many callers arrived.
+  //
+  // THE ANSWER IS ONE WHATEVER THE SCHEDULING DOES, which is the part that
+  // had to be earned. This asserted the same `1` against `createsInFlight`
+  // alone, and failed about one run in four under the load a full suite
+  // makes: a caller whose read landed before the create and whose decision
+  // ran after the reservation was given back saw nine and filed a tenth.
+  // Every arrival order now lands on the cap — the reservation covers a
+  // create still in flight, and the counter covers one that has finished —
+  // so a red here is a regression and never the machine being busy.
+  await programStub({
+    issues: Array.from({ length: 9 }, (_, i) => ({
+      number: 900 + i,
+      state: 'open' as const,
+      title: `an agent report that is already open (${i})`,
+      body: `<!-- noble-notations:agent-report v1 fingerprint=b105000000${i} -->`,
+      labels: ['agent-report', 'report:bug'],
+    })),
+  });
+
+  const CALLERS = 24;
+  // A session each, because these have to be genuinely concurrent requests
+  // rather than one client's queue.
+  const connectors = Array.from({ length: CALLERS }, () => agent());
+  await Promise.all(connectors.map((mcp) => mcp.listTools()));
+
+  const outcomes = await Promise.all(
+    connectors.map((mcp, i) =>
+      mcp.call<Outcome>(
+        'report_issue',
+        bugReport({
+          // Different titles, so the dedup cannot be what stops them. This
+          // is the cap being tested, and only the cap.
+          title: `a burst of connectors, number ${i}, hits its own fault`,
+        }),
+      ),
+    ),
+  );
+
+  const filed = outcomes.filter((result) => result.status === 'filed');
+  const capped = outcomes.filter((result) => result.status === 'capped');
+  expect(filed).toHaveLength(1);
+  expect(capped).toHaveLength(CALLERS - 1);
+  // Every caller was answered, and answered with one of the two. A refusal
+  // that arrived as an error, or a caller that got no answer at all, would
+  // otherwise read here as a cap that held.
+  expect(filed.length + capped.length).toBe(CALLERS);
+
+  // And the assertion that matters is on what left the process, not on what
+  // the callers were told.
+  expect(await created()).toHaveLength(1);
+
+  for (const result of capped) {
+    expect((result as Capped).reason).toBe('open-reports');
+  }
+  // The refusal is a success, not an error: `isError` invites the retry the
+  // cap exists to stop, and `call()` throwing on `isError` means resolving
+  // is itself part of this assertion.
+  expect((capped[0] as Capped).limit).toBe(10);
+});
+
+test('a slot taken while this caller was reading the list is already gone', async () => {
+  test.setTimeout(60_000);
+
+  /*
+   * The same cap, at the one moment the reservation cannot see.
+   *
+   * `createsInFlight` covers a create that has not answered yet. It is
+   * released the instant GitHub does answer, so it says nothing at all to a
+   * caller whose own list read was still in the air at that moment: that
+   * caller holds a snapshot from before the create, adds a reservation of
+   * zero, finds room that another caller has already taken, and files the
+   * eleventh report against a cap of ten. The burst test above reaches this
+   * window only by luck, which is why it used to flap.
+   *
+   * Two callers and two held reads make it certain instead. Both list
+   * requests arrive before anything is created, so both snapshots say nine
+   * open; the first is answered at 300ms and files the tenth; the second is
+   * answered at 1500ms, long after the reservation was given back, and is
+   * the caller the reservation alone would have let through.
+   */
+  await programStub({
+    issues: Array.from({ length: 9 }, (_, i) => ({
+      number: 940 + i,
+      state: 'open' as const,
+      title: `a held-read report that is already open (${i})`,
+      body: `<!-- noble-notations:agent-report v1 fingerprint=b205000000${i} -->`,
+      labels: ['agent-report', 'report:bug'],
+    })),
+    // Arrival order, not call order. Which of the two callers gets which
+    // does not matter: one of them files and the other meets the cap.
+    listDelaysMs: [300, 1500],
+  });
+
+  const connectors = [agent(), agent()];
+  // Sessions opened first, so both `report_issue` calls leave together and
+  // both list reads are at the stub before any create can happen.
+  await Promise.all(connectors.map((mcp) => mcp.listTools()));
+
+  const outcomes = await Promise.all(
+    connectors.map((mcp, i) =>
+      mcp.call<Outcome>(
+        'report_issue',
+        bugReport({ title: `a read held open, caller ${i}, hits a fault` }),
+      ),
+    ),
+  );
+
+  const filed = outcomes.filter((result) => result.status === 'filed');
+  const capped = outcomes.filter((result) => result.status === 'capped');
+  expect(filed).toHaveLength(1);
+  expect(capped).toHaveLength(1);
+  expect((capped[0] as Capped).reason).toBe('open-reports');
+
+  // And the assertion that matters is on what left the process.
+  expect(await created()).toHaveLength(1);
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// 14. A title that survives the schema and then disappears
+// ─────────────────────────────────────────────────────────────────────────
+
+test('a title that neutralises to nothing gets one that says so', async () => {
+  // `min(8)` counts UTF-16 code units, so ten zero-width joiners pass the
+  // schema — and `neutraliseTitle` deletes every one of them, because a
+  // format character has no width to preserve. GitHub answers 422 to an
+  // empty title, and this tool's 422 branch blames a missing label: whoever
+  // read that went looking at labels for a fault that was in the title.
+  // Built from a code point on purpose: a literal one is invisible in a diff.
+  const invisible = String.fromCodePoint(0x200d).repeat(10);
+
+  const first = (await agent().call<Outcome>('report_issue', {
+    title: invisible,
+    body:
+      'The title of this report is ten zero-width joiners. It passes the ' +
+      'minimum length and renders as nothing at all.',
+    kind: 'idea',
+  })) as Filed;
+  expect(first.status).toBe('filed');
+
+  const posts = await created();
+  expect(posts).toHaveLength(1);
+  expect(posts[0]!.body?.title).toBe(
+    'A report of kind "idea" with no readable title',
+  );
+
+  // THE FINGERPRINT IS TAKEN FROM THE RAW TITLE, so the substitution cannot
+  // merge two unrelated unreadable reports into one thread — and the same
+  // unreadable title still deduplicates onto its own issue.
+  const again = (await agent().call<Outcome>('report_issue', {
+    title: invisible,
+    body: 'The same unreadable title, sent a second time by the same agent.',
+    kind: 'idea',
+  })) as Commented;
+  expect(again.status).toBe('commented');
+  expect(again.fingerprint).toBe(first.fingerprint);
+  expect(await created()).toHaveLength(1);
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// 15. A credential where a tool name belongs
+// ─────────────────────────────────────────────────────────────────────────
+
+test('a credential sent as a tool name never reaches the audit row', async () => {
+  // The audit row is written from the RAW arguments, before the schema has
+  // seen them and before the redaction that protects the public issue. Every
+  // other field is left out of that row by design — `src/lib/mcp/audit.ts`
+  // says free-form text is never logged — and `toolName` is in it because a
+  // tool name is an identifying primitive. A caller that puts a bearer token
+  // where a tool name belongs must not be the exception that writes a live
+  // credential for this very server into `mcp_audit_log`.
+  const credential = `mcp_at_${'A'.repeat(43)}`;
+
+  await agent().call<Outcome>(
+    'report_issue',
+    bugReport({
+      title: 'a tool name that is really an access token for this server',
+      toolName: credential,
+    }),
+  );
+
+  const client = new Client({ connectionString: process.env.DATABASE_URL });
+  await client.connect();
+  try {
+    let row: { args_json: string | null } | undefined;
+    for (let attempt = 0; attempt < 40 && !row; attempt += 1) {
+      const result = await client.query<{ args_json: string | null }>(
+        `select args_json from mcp_audit_log
+         where tool = 'report_issue' order by timestamp desc, id desc limit 1`,
+      );
+      row = result.rows[0];
+      if (!row) await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    expect(row, 'no report_issue row reached mcp_audit_log').toBeTruthy();
+    expect(row!.args_json).not.toContain(credential);
+    expect(row!.args_json).not.toContain('AAAAAAAAAAAAAAAA');
+    expect(row!.args_json).toContain('[redacted:');
+  } finally {
+    await client.end();
+  }
+
+  // And the same value does not reach the public repository either, which is
+  // the worse of the two places.
+  const post = (await created())[0]!;
+  expect(post.rawBody).not.toContain(credential);
+  expect(post.rawBody).toContain('[redacted:');
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// 16. The redactor, rule by rule
+// ─────────────────────────────────────────────────────────────────────────
+
+test('every credential pattern the redactor knows is actually removed', async () => {
+  test.setTimeout(90_000);
+
+  // The redactor has nine rules and the suite exercised two of them: an
+  // Authorization header and a connection string. Rule 4 is the one that
+  // matters most and had no coverage at all — `GITHUB_ISSUE_TOKEN` is itself
+  // a `github_pat_…`, and the destination of this tool is a PUBLIC
+  // repository. A rule that quietly stopped matching would leak in silence,
+  // because the count is the only signal a caller gets and a count of zero
+  // reads as "nothing to remove".
+  //
+  // One row per rule, one credential per row, so the count is unambiguous
+  // and the label says which rule fired.
+  const ROWS: { rule: string; payload: string; label: string }[] = [
+    {
+      rule: "this server's own access token",
+      payload: `mcp_at_${'B'.repeat(43)}`,
+      label: '[redacted: noble-notations token]',
+    },
+    {
+      rule: 'an Authorization header inside JSON',
+      payload: '{"headers":{"authorization":"Bearer abcdefghijklmnop0123"}}',
+      label: '[redacted: authorization header]',
+    },
+    {
+      rule: 'a bare bearer token in prose',
+      payload: 'the client sent Bearer abcdefghijklmnop0123456789 and got 401',
+      label: '[redacted: bearer token]',
+    },
+    {
+      rule: 'a classic GitHub token',
+      payload: `the token ghp_${'C'.repeat(36)} was refused`,
+      label: '[redacted: github token]',
+    },
+    {
+      rule: 'a fine-grained GitHub token, the shape this server holds',
+      payload: `the token github_pat_${'D'.repeat(40)} was refused`,
+      label: '[redacted: github token]',
+    },
+    {
+      rule: 'a JWT',
+      payload:
+        'id_token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dBjftJeZ4CVPmB92K27uhbUJU1p1r',
+      label: '[redacted: jwt]',
+    },
+    {
+      rule: 'a connection string password',
+      payload: 'postgres://noble:hunter2secret@db.example.com:5432/noble',
+      label: '[redacted: password]',
+    },
+    {
+      rule: 'a key that is named as a key',
+      payload: 'X-Admin-Key: abcdefgh12345678',
+      label: '[redacted: admin-key]',
+    },
+    {
+      rule: 'a private key block',
+      payload:
+        '-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA\n-----END RSA PRIVATE KEY-----',
+      label: '[redacted: private key]',
+    },
+    {
+      rule: 'an AWS access key id',
+      payload: 'AKIAIOSFODNN7EXAMPLE is the id it printed',
+      label: '[redacted: aws key]',
+    },
+    {
+      rule: 'a Slack token',
+      payload: 'xoxb-1234567890-abcdefghijkl is the token it printed',
+      label: '[redacted: slack token]',
+    },
+    {
+      rule: 'a model-provider key',
+      payload: `sk-ant-${'E'.repeat(30)} is the key it printed`,
+      label: '[redacted: api key]',
+    },
+  ];
+
+  let index = 0;
+  for (const row of ROWS) {
+    await resetStub();
+    const result = (await agent().call<Outcome>(
+      'report_issue',
+      bugReport({
+        title: `a payload that carries a credential, case ${index++}`,
+        payload: row.payload,
+      }),
+    )) as Filed;
+
+    // The count is the only mechanism that tells an agent it just leaked
+    // something, so it is asserted as a number and not as "more than zero".
+    expect(result.redactions, row.rule).toBe(1);
+
+    const post = (await created())[0]!;
+    const sent = post.body?.body ?? '';
+    expect(sent, row.rule).toContain(row.label);
+
+    // And the secret itself is gone from the bytes that were about to leave.
+    // Read off the raw body rather than the parsed field: an occurrence
+    // anywhere in the JSON on the wire is an occurrence in the issue.
+    for (const secret of [
+      'B'.repeat(43),
+      'abcdefghijklmnop0123',
+      'C'.repeat(36),
+      'D'.repeat(40),
+      'dBjftJeZ4CVPmB92K27uhbUJU1p1r',
+      'hunter2secret',
+      'abcdefgh12345678',
+      'MIIEowIBAAKCAQEA',
+      'AKIAIOSFODNN7EXAMPLE',
+      'xoxb-1234567890-abcdefghijkl',
+      'E'.repeat(30),
+    ]) {
+      expect(post.rawBody, `${row.rule} leaked ${secret}`).not.toContain(
+        secret,
+      );
+    }
+  }
+});
+
+test('two rules that overlap produce one placeholder, not a mangled one', async () => {
+  // `Authorization: Bearer mcp_at_…` matches rule 1 and rule 2 over the same
+  // characters. Without the freeze, rule 1 writes its placeholder and rule 2
+  // then eats half of it, leaving `[redacted: authorization header]
+  // noble-notations token]` — a broken placeholder in a public issue, and a
+  // count that no longer describes anything. Nothing in the suite sent an
+  // input that triggered two rules at once.
+  const result = (await agent().call<Outcome>(
+    'report_issue',
+    bugReport({
+      title: 'a payload where two redaction rules cover the same characters',
+      payload: `Authorization: Bearer mcp_at_${'F'.repeat(43)}`,
+    }),
+  )) as Filed;
+
+  expect(result.redactions).toBe(1);
+
+  const sent = (await created())[0]!.body?.body ?? '';
+  expect(sent).toContain(
+    'Authorization: Bearer [redacted: noble-notations token]',
+  );
+  // A placeholder inside a placeholder, or a stray closing bracket, is what
+  // the freeze exists to stop.
+  expect(sent).not.toContain('[redacted: [redacted:');
+  expect(sent).not.toMatch(/\[redacted: [a-z0-9 _-]+\][a-z0-9 _-]+\]/);
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// 17. What GitHub says, and what the tool refuses to believe
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Two guarantees that need a GitHub which answers WRONGLY rather than
+ * badly, and `e2e/github-stub.ts` cannot produce either: it answers 201 with
+ * a real issue or it answers a failure status, and both of these are a
+ * success status carrying the wrong body.
+ *
+ * So this block runs a second production server — from the build already on
+ * disk — pointed at a small stub of its own. The server is the real one; the
+ * only thing that changes is which host `GITHUB_API_BASE_URL` names, and
+ * that host is loopback, so the rule asserted in section 12 still holds.
+ */
+test.describe('a GitHub that answers wrongly', () => {
+  const SERVER_PORT = Number(
+    process.env.E2E_MALFORMED_PORT ?? Number(process.env.E2E_PORT ?? 3100) + 4,
+  );
+  const STUB_PORT = Number(
+    process.env.E2E_MALFORMED_STUB_PORT ??
+      Number(process.env.E2E_PORT ?? 3100) + 5,
+  );
+  const SERVER = `http://127.0.0.1:${SERVER_PORT}`;
+
+  /** The address a real GitHub would never send back for this repository. */
+  const FOREIGN_COMMENT_URL =
+    'https://evil.example.com/RyRy79261/noble-notations/issues/1#issuecomment-1';
+
+  let stub: Server | null = null;
+  let server: ChildProcess | null = null;
+  let output = '';
+
+  /** What the create call answers. Flipped between tests, not per request. */
+  let createAnswer: 'issue' | 'no-number' = 'issue';
+  let stored: Record<string, unknown>[] = [];
+  let nextNumber = 701;
+
+  test.beforeAll(async () => {
+    test.setTimeout(180_000);
+
+    stub = createServer((req, res) => {
+      let raw = '';
+      req.on('data', (chunk: Buffer) => (raw += chunk.toString()));
+      req.on('end', () => {
+        const url = new URL(req.url ?? '/', 'http://stub.invalid');
+        const send = (status: number, payload: unknown) => {
+          const text = JSON.stringify(payload);
+          res.writeHead(status, {
+            'content-type': 'application/json',
+            'content-length': Buffer.byteLength(text),
+          });
+          res.end(text);
+        };
+        const issues = `/repos/${GITHUB_REPO_FULL}/issues`;
+
+        if (url.pathname === '/__health') return send(200, { ok: true });
+        if (url.pathname === issues && req.method === 'GET') {
+          return send(200, stored);
+        }
+        if (url.pathname === issues && req.method === 'POST') {
+          if (createAnswer === 'no-number') {
+            // A gateway or a proxy answering a success it did not get from
+            // GitHub. The status says yes and the body is not an issue.
+            return send(200, { ok: true });
+          }
+          const input = JSON.parse(raw || '{}') as Record<string, unknown>;
+          const number = nextNumber++;
+          const issue = {
+            number,
+            state: 'open',
+            title: input.title,
+            body: input.body,
+            labels: input.labels ?? [],
+            html_url: `https://github.com/${GITHUB_REPO_FULL}/issues/${number}`,
+            closed_at: null,
+          };
+          stored.unshift(issue);
+          return send(201, issue);
+        }
+        if (/\/issues\/\d+\/comments$/.test(url.pathname)) {
+          // The address the API chose, and it is not this project's.
+          return send(201, { html_url: FOREIGN_COMMENT_URL });
+        }
+        send(404, { message: `no route for ${req.method} ${url.pathname}` });
+      });
+    });
+    await new Promise<void>((resolve) =>
+      stub!.listen(STUB_PORT, '127.0.0.1', resolve),
+    );
+
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      GITHUB_ISSUE_TOKEN: 'stub-token-not-a-real-credential',
+      GITHUB_API_BASE_URL: `http://127.0.0.1:${STUB_PORT}`,
+    };
+
+    server = spawn(
+      process.execPath,
+      [
+        path.join(process.cwd(), 'node_modules', 'next', 'dist', 'bin', 'next'),
+        'start',
+        '-p',
+        String(SERVER_PORT),
+      ],
+      { cwd: process.cwd(), env, stdio: 'pipe', detached: true },
+    );
+    server.stdout?.on('data', (chunk: Buffer) => (output += chunk.toString()));
+    server.stderr?.on('data', (chunk: Buffer) => (output += chunk.toString()));
+
+    const deadline = Date.now() + 120_000;
+    let listening = false;
+    while (!listening && Date.now() < deadline) {
+      try {
+        await fetch(`${SERVER}/api/mcp/mcp`, { method: 'GET' });
+        listening = true;
+      } catch {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+    }
+    expect(
+      listening,
+      `the second server never answered on ${SERVER}:\n${output}`,
+    ).toBe(true);
+  });
+
+  test.afterAll(async () => {
+    // By PID and by process group, so the child cannot be orphaned. Never
+    // `pkill` — that takes a sibling agent's server down with it.
+    if (server?.pid) {
+      try {
+        process.kill(-server.pid, 'SIGTERM');
+      } catch {
+        try {
+          process.kill(server.pid, 'SIGTERM');
+        } catch {
+          /* already gone */
+        }
+      }
+    }
+    if (stub)
+      await new Promise<void>((resolve) => stub!.close(() => resolve()));
+  });
+
+  test.beforeEach(() => {
+    createAnswer = 'issue';
+    stored = [];
+    nextNumber = 701;
+  });
+
+  test('a 2xx that is not an issue is a failure, not "filed as issue 0"', async () => {
+    createAnswer = 'no-number';
+
+    // A confident success over a failed filing is the one outcome this tool
+    // must never produce: the agent stops reporting because it believes the
+    // evidence landed, and the address it was given ends in /issues/0.
+    const call = mcpClient(SERVER, tokens().readWrite).call('report_issue', {
+      title: 'a gateway answered the create call with no issue number',
+      body:
+        'The create call came back 200 with a body that is not an issue. ' +
+        'A correct answer is a refusal, not a success.',
+      kind: 'idea',
+    });
+
+    await expect(call).rejects.toThrow(/502/);
+    // 502 is the retryable side, which is right: a gateway is usually what
+    // did it, and one more attempt often lands.
+    await expect(call).rejects.toThrow(/one more time/);
+    await expect(call).rejects.not.toThrow(/issue 0/);
+    await expect(call).rejects.not.toThrow(/Filed as/);
+  });
+
+  test('the comment address is this project or nothing, whatever the API answers', async () => {
+    const mcp = mcpClient(SERVER, tokens().readWrite);
+    const title = 'a fault whose second report must land on this project';
+
+    const first = await mcp.call<Outcome>('report_issue', {
+      title,
+      body:
+        'The first report of this fault. It files an issue, so there is one ' +
+        'for the second report to comment on.',
+      kind: 'idea',
+    });
+    expect(first.status).toBe('filed');
+
+    const second = (await mcp.call<Outcome>('report_issue', {
+      title,
+      body:
+        'The same fault again. The API answers the comment with an address ' +
+        'on a host that is not GitHub.',
+      kind: 'idea',
+    })) as Commented;
+    expect(second.status).toBe('commented');
+
+    // Every address an agent is given is built from the hardcoded
+    // repository. This one arrives from the API, so it is checked against
+    // that constant rather than trusted — under a misconfigured base URL the
+    // answer could name anything, and the agent would be handed it as this
+    // project's address and would quote it to a person.
+    expect(second.commentUrl).not.toContain('evil.example.com');
+    expect(
+      second.commentUrl.startsWith(
+        `https://github.com/${GITHUB_REPO_FULL}/issues/`,
+      ),
+      `commentUrl was ${second.commentUrl}`,
+    ).toBe(true);
+    expect(second.url).toBe(
+      `https://github.com/${GITHUB_REPO_FULL}/issues/${second.issueNumber}`,
+    );
+  });
 });

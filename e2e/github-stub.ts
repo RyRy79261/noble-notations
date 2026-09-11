@@ -60,6 +60,7 @@ function defaults(): StubState {
     createStatus: 201,
     commentStatus: 201,
     nextIssueNumber: 101,
+    listDelaysMs: [],
   };
 }
 
@@ -162,6 +163,11 @@ function handleControl(
       const value = next[key];
       if (typeof value === 'number') state[key] = value;
     }
+    if (Array.isArray(next.listDelaysMs)) {
+      state.listDelaysMs = next.listDelaysMs.map((ms) =>
+        typeof ms === 'number' && ms > 0 ? ms : 0,
+      );
+    }
     send(res, 200, { ok: true });
     return true;
   }
@@ -196,7 +202,14 @@ function handleGitHub(
     const matching = state.issues.filter((issue) =>
       wanted.every((label) => issue.labels.includes(label)),
     );
-    return send(res, 200, matching.map(serialise));
+    // Serialised NOW and sent later. See `listDelaysMs` in the contract.
+    const payload = matching.map(serialise);
+    const delay = state.listDelaysMs.shift() ?? 0;
+    if (delay > 0) {
+      setTimeout(() => send(res, 200, payload), delay);
+      return;
+    }
+    return send(res, 200, payload);
   }
 
   if (path === STUB_ISSUES_PATH && method === 'POST') {

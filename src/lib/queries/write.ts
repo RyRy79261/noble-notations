@@ -38,6 +38,7 @@ import {
 } from '@/lib/domain/units';
 import {
   ambiguousUseMessage,
+  isReservedTagSlug,
   qualifiedUseKey,
   qualifierMessage,
   splitQualifiedUse,
@@ -1631,11 +1632,35 @@ export async function describeMechanism(
  * authored ahead of any recipe using it. `description` and `parentSlug` are
  * only written when supplied — passing just a label will not blank out a
  * blurb that is already there. Pass an explicit `null` to clear one.
+ *
+ * THE RESULT REPORTS THE PARENT, ALWAYS — the one it just set, the one it
+ * just cleared, or the stored one an omitted `parentSlug` left alone. It was
+ * reported nowhere before, and `list_categories` did not carry it either, so
+ * a caller could not see what its own call had done to the hierarchy. An
+ * agent that named a parent, got `{"created": false}` back, and had no way
+ * to check it, filed a report saying the argument was discarded. It was not
+ * discarded; it was invisible, which from the outside is the same thing.
  */
-export async function upsertCategory(
-  input: UpsertCategoryInput,
-): Promise<{ categoryType: CategoryType; slug: string; created: boolean }> {
+export async function upsertCategory(input: UpsertCategoryInput): Promise<{
+  categoryType: CategoryType;
+  slug: string;
+  created: boolean;
+  /** The broader tag this one now sits under. Always in the same category
+      type, so it needs no type of its own. `null` means it is top level. */
+  parent: { slug: string; label: string } | null;
+}> {
   return withTransaction(async (tx) => {
+    /** Read a parent back for the result, by id. */
+    const parentById = async (id: string | null) => {
+      if (!id) return null;
+      const rows = await tx
+        .select({ slug: taxonomyTerms.slug, label: taxonomyTerms.label })
+        .from(taxonomyTerms)
+        .where(eq(taxonomyTerms.id, id))
+        .limit(1);
+      return rows[0] ?? null;
+    };
+
     const slug = input.slug ? slugify(input.slug) : slugify(input.label);
     // Unreachable: `slugify` falls back to 'untitled' rather than returning
     // an empty string. Kept as a guard, worded the way a reader would read
@@ -1643,6 +1668,7 @@ export async function upsertCategory(
     if (!slug) throw new Error('Tag label does not produce a usable slug.');
 
     let parentId: string | null | undefined;
+    let namedParent: { slug: string; label: string } | null = null;
     if (input.parentSlug !== undefined) {
       if (input.parentSlug === null) {
         parentId = null;
@@ -1663,7 +1689,11 @@ export async function upsertCategory(
         // technique would make the hierarchy meaningless, and silently
         // dropping it would hide the mistake.
         const parent = await tx
-          .select({ id: taxonomyTerms.id })
+          .select({
+            id: taxonomyTerms.id,
+            slug: taxonomyTerms.slug,
+            label: taxonomyTerms.label,
+          })
           .from(taxonomyTerms)
           .where(
             and(
@@ -1679,12 +1709,32 @@ export async function upsertCategory(
               'instead.',
           );
         }
+        // AFTER the lookup, not before it, and the order carries the whole
+        // meaning. A reserved word is refused as a NAME by
+        // `upsertCategorySchema`, so no tag can be given one from here on;
+        // a tag that has one is a legacy accident from before that rule.
+        // Checking first would replace the message above — which already
+        // names the slug and already says that an explicit `null` clears a
+        // parent — for every caller who simply typed the wrong slug. So the
+        // reserved check fires only where it has something to say: the junk
+        // tag is really there, and the caller is about to be parented onto
+        // it and told nothing.
+        if (isReservedTagSlug(parentSlug)) {
+          throw new ConflictError(
+            `The tag "${parentSlug}" exists, but its name is a reserved ` +
+              'word, so it is a tag somebody made by accident. It will not ' +
+              'be used as a parent. To clear the parent, send parentSlug as ' +
+              'JSON null — the value null, not the four letters in quotes. ' +
+              'To set a parent, name a tag that groups something.',
+          );
+        }
         parentId = parent[0].id;
+        namedParent = { slug: parent[0].slug, label: parent[0].label };
       }
     }
 
     const existing = await tx
-      .select({ id: taxonomyTerms.id })
+      .select({ id: taxonomyTerms.id, parentId: taxonomyTerms.parentId })
       .from(taxonomyTerms)
       .where(
         and(
@@ -1706,7 +1756,17 @@ export async function upsertCategory(
           updatedAt: new Date(),
         })
         .where(eq(taxonomyTerms.id, existing[0].id));
-      return { categoryType: input.categoryType, slug, created: false };
+      return {
+        categoryType: input.categoryType,
+        slug,
+        created: false,
+        // An omitted `parentSlug` wrote nothing, so the result says what is
+        // stored rather than saying null and reading as a clear.
+        parent:
+          parentId === undefined
+            ? await parentById(existing[0].parentId)
+            : namedParent,
+      };
     }
 
     await tx.insert(taxonomyTerms).values({
@@ -1716,7 +1776,12 @@ export async function upsertCategory(
       description: input.description ?? null,
       parentId: parentId ?? null,
     });
-    return { categoryType: input.categoryType, slug, created: true };
+    return {
+      categoryType: input.categoryType,
+      slug,
+      created: true,
+      parent: namedParent,
+    };
   });
 }
 

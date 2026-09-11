@@ -61,10 +61,23 @@ async function globalSetup(): Promise<void> {
       encoding: 'utf8',
       env: process.env,
     });
-    // pnpm prefixes its own banner lines; the JSON is the last object.
-    const start = out.indexOf('{');
-    return (JSON.parse(out.slice(start)) as { accessToken: string })
-      .accessToken;
+    /*
+     * pnpm prefixes its own banner lines; the JSON is the last object, and
+     * it is the only one that starts a line.
+     *
+     * This took the FIRST brace and cost four separate readers a run each.
+     * On a Node below the engine this package requires, pnpm prints
+     * `WARN Unsupported engine: wanted: {"node":">=24.0.0"}` before anything
+     * else — that brace won, and the suite died in setup with
+     * `SyntaxError: Unexpected non-whitespace character after JSON at
+     * position 20`, which says nothing about Node at all. `mint-mcp-token`
+     * prints its object with `JSON.stringify(…, null, 2)`, so the opening
+     * brace is at the start of its own line and a warning's inline one is
+     * not.
+     */
+    const start = out.lastIndexOf('\n{');
+    const json = start === -1 ? out.slice(out.indexOf('{')) : out.slice(start);
+    return (JSON.parse(json) as { accessToken: string }).accessToken;
   };
 
   mkdirSync(path.dirname(TOKEN_FILE), { recursive: true });

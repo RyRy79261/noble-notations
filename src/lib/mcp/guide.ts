@@ -167,7 +167,20 @@ const GUIDE = {
     'one. get_recipe and search_recipes report it as isPrimary. There is no ' +
     'field for it. The order of the list is the only control: put a tag ' +
     'first to make it the primary one. Each category type has one primary ' +
-    'tag.',
+    'tag.\n\n' +
+    'A tag can sit under a broader tag of the same type: "cajun" sits ' +
+    'under "american". Set this with parentSlug in upsert_category. To ' +
+    'remove a parent, send parentSlug as JSON null. Do not send the word ' +
+    '"null" as text: the tool reads text as the name of a tag. The result ' +
+    'of upsert_category gives the parent, and list_categories gives the ' +
+    'parent of every tag. Read one of them to check what you wrote.\n\n' +
+    'A tag cannot be named after an empty value. The names null, ' +
+    'undefined, none, true, false and object-object are refused. A program ' +
+    'prints these words when a value is missing, so a tag with one of them ' +
+    'is an accident. This rule holds on all three fields that make a tag: ' +
+    'the label in upsert_category, the categories of a recipe, and the ' +
+    'technique of a step. A search is not a write, so search_recipes ' +
+    'accepts these names and finds the recipes that carry such a tag.',
 
   ingredients:
     'Each ingredient is one record. It is not free text. Other names for ' +
@@ -322,6 +335,7 @@ const GUIDE = {
     'Write a reason that says what you changed and why. Do not write "updated recipe".',
     'Do not invent a measurement. If nobody recorded it, say this in a note.',
     'Do not make a version that only changes the text format.',
+    'Send text as characters. A title with \\u2014 or \\" in it is refused. Encode the message as JSON one time only.',
   ],
 
   /**

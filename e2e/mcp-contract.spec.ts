@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { Client } from 'pg';
 import { mcpClient, tokens } from './helpers';
 
 /**
@@ -40,6 +41,12 @@ const COLON_SLUG = 'mcp-contract-poached-chicken';
 const COLON_AMBIG_SLUG = 'mcp-contract-chilli-twice';
 const SHADOW_SLUG = 'mcp-contract-two-salts';
 const LONG_SLUG = 'mcp-contract-long-cure';
+const HIER_PARENT_SLUG = 'mcp-contract-regional-american';
+const HIER_CHILD_SLUG = 'mcp-contract-cajun';
+const RESERVED_LABEL_SLUG = 'mcp-contract-no-restriction';
+const JUNK_CHILD_SLUG = 'mcp-contract-dry-toasting-child';
+const ENCODED_SLUG = 'mcp-contract-double-encoded';
+const ROUND_TRIP_SLUG = 'mcp-contract-bobotie';
 
 /**
  * The second spelling of one ingredient, the remedy the ambiguity refusal
@@ -167,6 +174,22 @@ interface CategoryRow {
   categoryType: string;
   slug: string;
   label: string;
+  /** The broader tag this one sits under, or null at the top level. */
+  parent: { slug: string; label: string } | null;
+}
+
+/** A recipe read for its title and the full text of its notes. */
+interface TextRecipeResult {
+  title: string;
+  notes: { id: string; kind: string; title: string | null; body: string }[];
+}
+
+/** What `upsert_category` hands back, parent included. */
+interface UpsertCategoryResult {
+  categoryType: string;
+  slug: string;
+  created: boolean;
+  parent: { slug: string; label: string } | null;
 }
 
 interface ExperimentResult {
@@ -2906,6 +2929,574 @@ test.describe('MCP contract', () => {
         conditions: ['20 °C'],
       }),
     ).rejects.toThrow(/already states its conditions/);
+  });
+
+  /**
+   * A parent that is written and cannot be read is a parent nobody can
+   * check.
+   *
+   * This is the defect behind the report that said `parentSlug` was
+   * discarded. It was not discarded — it was invisible. `upsert_category`
+   * answered `{"created": false}` and named no parent; `list_categories`
+   * returned a flat list; and the registry exposes no tool that reads one
+   * tag on its own. So the whole `re-parent` branch of the write could be
+   * deleted and nothing in this repository would notice.
+   *
+   * The order below is the point. The tag is created WITHOUT a parent first,
+   * so the call that sets one takes the UPDATE branch — which is the branch
+   * that had no reader. Then the three answers a caller needs to tell apart:
+   * a parent that was just set, a parent that was left alone, and a parent
+   * that was cleared. The middle one is why an omitted `parentSlug` cannot
+   * simply report null: an omission writes nothing, and a null in the result
+   * would read as a clear.
+   */
+  test('a parent is reported by the write and readable in the list', async () => {
+    const mcp = rw();
+
+    const parentOf = async (slug: string) =>
+      (
+        await mcp.call<CategoryRow[]>('list_categories', {
+          categoryType: 'cuisine',
+        })
+      ).find((row) => row.slug === slug)?.parent ?? null;
+
+    await mcp.call('upsert_category', {
+      categoryType: 'cuisine',
+      slug: HIER_PARENT_SLUG,
+      label: 'Contract regional American',
+    });
+
+    // Created flat. Both the write and the list say so.
+    const flat = await mcp.call<UpsertCategoryResult>('upsert_category', {
+      categoryType: 'cuisine',
+      slug: HIER_CHILD_SLUG,
+      label: 'Contract Cajun',
+    });
+    expect(flat.created).toBe(true);
+    expect(flat.parent).toBeNull();
+    expect(await parentOf(HIER_CHILD_SLUG)).toBeNull();
+
+    // The UPDATE branch: the tag exists, and this call gives it a parent.
+    const parented = await mcp.call<UpsertCategoryResult>('upsert_category', {
+      categoryType: 'cuisine',
+      slug: HIER_CHILD_SLUG,
+      label: 'Contract Cajun',
+      parentSlug: HIER_PARENT_SLUG,
+    });
+    expect(parented.created).toBe(false);
+    expect(parented.parent).toEqual({
+      slug: HIER_PARENT_SLUG,
+      label: 'Contract regional American',
+    });
+    expect(await parentOf(HIER_CHILD_SLUG)).toEqual({
+      slug: HIER_PARENT_SLUG,
+      label: 'Contract regional American',
+    });
+
+    // An omitted `parentSlug` writes nothing, so the result reports what is
+    // stored. Reporting null here would tell a caller its parent was gone.
+    const untouched = await mcp.call<UpsertCategoryResult>('upsert_category', {
+      categoryType: 'cuisine',
+      slug: HIER_CHILD_SLUG,
+      label: 'Contract Cajun',
+      description: 'The cooking of south Louisiana.',
+    });
+    expect(untouched.parent).toEqual({
+      slug: HIER_PARENT_SLUG,
+      label: 'Contract regional American',
+    });
+    expect(await parentOf(HIER_CHILD_SLUG)).toEqual({
+      slug: HIER_PARENT_SLUG,
+      label: 'Contract regional American',
+    });
+
+    // An explicit null clears it, and both surfaces say so.
+    const cleared = await mcp.call<UpsertCategoryResult>('upsert_category', {
+      categoryType: 'cuisine',
+      slug: HIER_CHILD_SLUG,
+      label: 'Contract Cajun',
+      parentSlug: null,
+    });
+    expect(cleared.parent).toBeNull();
+    expect(await parentOf(HIER_CHILD_SLUG)).toBeNull();
+
+    // The parent's own row is unchanged by any of it: a parent is not a
+    // child of itself and the list still reports it at the top level.
+    expect(await parentOf(HIER_PARENT_SLUG)).toBeNull();
+  });
+
+  /**
+   * A tag cannot be named after an empty value.
+   *
+   * `slugify('null')` is `'null'`, so a caller that once interpolated a
+   * variable holding nothing into a label made a real tag with a real slug.
+   * That tag is not merely useless, it is usable: `parentSlug: 'null'` —
+   * which is what a caller reaches for when it means "no parent" — then
+   * resolves against it. Refusing the name is what stops the two mistakes
+   * meeting.
+   *
+   * The test is on the SLUG, and the last block is the escape hatch that
+   * makes that a defensible rule rather than a banned-words list. A label is
+   * free text; only a slug is identity.
+   */
+  test('a tag named after an empty value is refused, and a slug is the way round it', async () => {
+    const mcp = rw();
+
+    const slugsIn = async (categoryType: string) =>
+      (await mcp.call<CategoryRow[]>('list_categories', { categoryType })).map(
+        (row) => row.slug,
+      );
+
+    // The word that started this, as a label.
+    const asLabel = await refusal(
+      mcp.call('upsert_category', {
+        categoryType: 'technique',
+        label: 'null',
+      }),
+    );
+    expect(asLabel).toContain('null');
+    // The instruction the caller has to act on: a `slug` of its own is what
+    // keeps the word as a label. Without that sentence the refusal is a
+    // dead end for anyone who really did mean to write "None".
+    expect(asLabel).toMatch(/slug/);
+    expect(asLabel).not.toMatch(/internal error/i);
+    expect(await slugsIn('technique')).not.toContain('null');
+
+    // And as an explicit slug, which is the other half of the same rule.
+    expect(
+      await refusal(
+        mcp.call('upsert_category', {
+          categoryType: 'technique',
+          label: 'Dry toasting, contract',
+          slug: 'undefined',
+        }),
+      ),
+    ).toContain('undefined');
+    expect(await slugsIn('technique')).not.toContain('undefined');
+
+    // What Python prints, and what JavaScript prints for an object. Both
+    // arrive the same way and both slugify to a usable tag.
+    expect(
+      await refusal(
+        mcp.call('upsert_category', { categoryType: 'diet', label: 'None' }),
+      ),
+    ).toContain('none');
+    expect(
+      await refusal(
+        mcp.call('upsert_category', {
+          categoryType: 'course',
+          label: '[object Object]',
+        }),
+      ),
+    ).toContain('object-object');
+    expect(await slugsIn('diet')).not.toContain('none');
+    expect(await slugsIn('course')).not.toContain('object-object');
+
+    // The other door. Tagging a recipe creates any tag it names, and that
+    // path has no `slug` field to escape through, so the same rule applies
+    // to the label — and the issue lands on the entry, not on the recipe.
+    const tagged = await refusal(
+      mcp.call('create_recipe', {
+        title: 'A recipe tagged with nothing at all',
+        slug: 'mcp-contract-tagged-with-nothing',
+        kind: 'recipe',
+        rationale: 'Proving the rule reaches the path that auto-creates tags.',
+        categories: { diet: ['None'] },
+        ingredients: [{ name: 'Duck breast', quantity: 500, unit: 'g' }],
+        steps: [{ instruction: 'Sear the duck breast skin-side down.' }],
+      }),
+    );
+    expect(tagged).toMatch(/categories\.diet\[0\]/);
+    await expect(
+      mcp.call('get_recipe', { slug: 'mcp-contract-tagged-with-nothing' }),
+    ).rejects.toThrow(/No recipe/i);
+    expect(await slugsIn('diet')).not.toContain('none');
+
+    // The escape hatch. A reader still sees "None"; the identity is a word
+    // that means something.
+    await mcp.call('upsert_category', {
+      categoryType: 'diet',
+      label: 'None',
+      slug: RESERVED_LABEL_SLUG,
+    });
+    const kept = (
+      await mcp.call<CategoryRow[]>('list_categories', {
+        categoryType: 'diet',
+      })
+    ).find((row) => row.slug === RESERVED_LABEL_SLUG);
+    expect(kept?.label).toBe('None');
+  });
+
+  /**
+   * The legacy tag, and the reason the refusal above is not the whole fix.
+   *
+   * A tag named `null` can no longer be made. One that was made before the
+   * rule existed is still there, and that is the state the original report
+   * was filed from: `parentSlug: "null"` RESOLVED, the call answered
+   * `{"created": false}`, and a tag was quietly reparented onto junk.
+   *
+   * Planting the row needs raw SQL, because every write path now refuses to
+   * make one. That is the point rather than a shortcut: this is a state the
+   * connector can no longer reach and must still handle.
+   *
+   * The assertion that matters is the last one. A message can be reworded;
+   * what cannot change is that the child's parent did not move.
+   */
+  test('a tag whose name is a reserved word is not accepted as a parent', async () => {
+    const mcp = rw();
+    const client = new Client({ connectionString: process.env.DATABASE_URL });
+    await client.connect();
+
+    try {
+      // `ON CONFLICT DO NOTHING` because the row is a state, not an event:
+      // this test needs the junk tag to be there and does not care who put
+      // it there. The `finally` takes it away either way, which is the right
+      // outcome for a tag with this name however it arrived.
+      await client.query(
+        "INSERT INTO taxonomy_terms (facet, slug, label) VALUES ('technique', 'null', 'null') ON CONFLICT (facet, slug) DO NOTHING",
+      );
+
+      await mcp.call('upsert_category', {
+        categoryType: 'technique',
+        slug: JUNK_CHILD_SLUG,
+        label: 'Contract dry toasting',
+      });
+
+      const parentOf = async (slug: string) =>
+        (
+          await mcp.call<CategoryRow[]>('list_categories', {
+            categoryType: 'technique',
+          })
+        ).find((row) => row.slug === slug)?.parent ?? null;
+
+      // The junk tag really is there, and `list_categories` shows it — which
+      // is how the original reporter concluded it did not exist, since a
+      // zero-count tag sorts to the end of a long list.
+      const before = await mcp.call<CategoryRow[]>('list_categories', {
+        categoryType: 'technique',
+      });
+      expect(before.map((row) => row.slug)).toContain('null');
+      expect(await parentOf(JUNK_CHILD_SLUG)).toBeNull();
+
+      const message = await refusal(
+        mcp.call('upsert_category', {
+          categoryType: 'technique',
+          slug: JUNK_CHILD_SLUG,
+          label: 'Contract dry toasting',
+          parentSlug: 'null',
+        }),
+      );
+      // NOT the missing-tag message. That one tells a caller to create the
+      // tag it named, which here would be advice to keep the junk. The two
+      // situations are different and the answers are different.
+      expect(message).not.toMatch(/No tag/);
+      // It names the argument, and it says the value that clears a parent is
+      // the JSON null rather than the four letters — which is the mistake
+      // that brought the caller here.
+      expect(message).toMatch(/parentSlug/);
+      expect(message).toMatch(/\bnull\b/);
+      expect(message).not.toMatch(/internal error/i);
+
+      // The whole of issue #14: the tag was not quietly reparented.
+      expect(await parentOf(JUNK_CHILD_SLUG)).toBeNull();
+    } finally {
+      await client.query(
+        "DELETE FROM taxonomy_terms WHERE facet = 'technique' AND slug = 'null'",
+      );
+      await client.end();
+    }
+  });
+
+  /**
+   * Text that a JSON encoder ran over two times.
+   *
+   * A client that encodes a string and then encodes the result again sends
+   * the ESCAPE instead of the character: the six characters `\u2014` where
+   * an em dash belongs, and `\"` where a quotation mark belongs. Both are
+   * legal JSON string content, so the request parses and the escape is
+   * stored and drawn exactly as it arrived. Two titles in this repository
+   * carry that damage and nothing can repair them — a title is not a claim,
+   * so a `correction` note cannot answer it, and no tool edits a stored one.
+   *
+   * The refusal is at the boundary and it refuses rather than repairs.
+   * Unescaping on read or on write would corrupt a title that legitimately
+   * holds a backslash, and it would be guessing; a refusal asks.
+   *
+   * THE CONTROLS AT THE END ARE HALF THE TEST. A Windows path and a regular
+   * expression are things a person writes, and both hold a backslash. If
+   * either one is ever refused, the rule has grown past what `JSON.parse`
+   * can prove and has started guessing.
+   */
+  test('a name that arrives double-encoded is refused, on every field that names a thing', async () => {
+    const mcp = rw();
+
+    // Byte for byte what the reporting agent sent. In this source `'\\"'`
+    // is a backslash and a quote, and `'\\u2014'` is six characters.
+    const ENCODED =
+      'The name means \\"to mince\\", not \\"luck\\" \\u2014 the two words are homophones';
+
+    const noteTitle = await refusal(
+      mcp.call('add_note', {
+        recipeSlug: SLUG,
+        kind: 'research',
+        title: ENCODED,
+        body: 'The body of a note that must not be written.',
+        sources: [{ title: 'A dictionary of Thai food terms' }],
+      }),
+    );
+    expect(noteTitle).toMatch(/title/);
+    expect(noteTitle).not.toMatch(/internal error/i);
+    // Nothing was written. A refusal that still stored the note would be
+    // the same defect with a warning printed over it.
+    const after = await mcp.call<FlowRecipeResult>('get_recipe', {
+      slug: SLUG,
+    });
+    expect(after.notes.map((note) => note.title)).not.toContain(ENCODED);
+
+    // A recipe title.
+    expect(
+      await refusal(
+        mcp.call('create_recipe', {
+          title: `Bobotie ${ENCODED}`,
+          slug: ENCODED_SLUG,
+          kind: 'recipe',
+          rationale: 'A recipe whose title arrived encoded two times.',
+          ingredients: [{ name: 'Duck breast', quantity: 500, unit: 'g' }],
+          steps: [{ instruction: 'Sear the duck breast skin-side down.' }],
+        }),
+      ),
+    ).toMatch(/title/);
+    await expect(
+      mcp.call('get_recipe', { slug: ENCODED_SLUG }),
+    ).rejects.toThrow(/No recipe/i);
+
+    // A tag label.
+    expect(
+      await refusal(
+        mcp.call('upsert_category', {
+          categoryType: 'technique',
+          slug: `${ENCODED_SLUG}-tag`,
+          label: 'Dry-curing \\u2014 salt, then air',
+        }),
+      ),
+    ).toMatch(/label/);
+    expect(
+      (
+        await mcp.call<CategoryRow[]>('list_categories', {
+          categoryType: 'technique',
+        })
+      ).map((row) => row.slug),
+    ).not.toContain(`${ENCODED_SLUG}-tag`);
+
+    // An ingredient name.
+    expect(
+      await refusal(
+        mcp.call('upsert_ingredient', {
+          name: 'Cape Malay spice \\u2014 the whole blend',
+          slug: `${ENCODED_SLUG}-ingredient`,
+          category: 'spice',
+        }),
+      ),
+    ).toMatch(/name/);
+
+    // A run's title.
+    expect(
+      await refusal(
+        mcp.call('log_experiment', {
+          slug: `${ENCODED_SLUG}-run`,
+          title: 'Batch two \\u2014 the one that came out light',
+        }),
+      ),
+    ).toMatch(/title/);
+
+    // ── The controls. Every one of these holds a real backslash, and every
+    // one of them is something somebody meant to write.
+    const PATHS = 'Readings copied from C:\\notes\\biltong and C:\\Users\\ryan';
+    const REGEX = 'The label parser splits on /\\s+/ and keeps \\d as a digit';
+
+    for (const title of [PATHS, REGEX]) {
+      await mcp.call('add_note', {
+        recipeSlug: SLUG,
+        kind: 'observation',
+        title,
+        body: 'A title with a backslash in it, which is a title somebody meant.',
+      });
+    }
+
+    const stored = await mcp.call<FlowRecipeResult>('get_recipe', {
+      slug: SLUG,
+    });
+    const titles = stored.notes.map((note) => note.title);
+    // Byte for byte. A later unescape-on-read would turn `\n` in the first
+    // one into a newline and this is where it would be caught.
+    expect(titles).toContain(PATHS);
+    expect(titles).toContain(REGEX);
+  });
+
+  /**
+   * The test issue #13 asked for: a real em dash and a real quotation mark
+   * survive the round trip untouched.
+   *
+   * The report was filed as "the server corrupted my title". It did not —
+   * the client sent the corruption. But nothing here proved that the correct
+   * form works, so there was no evidence to answer it with, and this is the
+   * assertion that stops it being reported again.
+   *
+   * The body is the other half. `\u2014` inside a body is TEXT: a body is
+   * Markdown, Markdown holds code, and a fenced block explaining an escape
+   * sequence is something somebody wrote on purpose. The rule stops at the
+   * one-line names, and this is the assertion that says where the line is.
+   */
+  test('an em dash and a quotation mark survive a write and a read', async () => {
+    const mcp = rw();
+
+    const TITLE =
+      'The name means "to mince", not "luck" — the two words are homophones';
+    const RECIPE_TITLE = 'Bobotie — the Cape Malay bake';
+    // Six characters, in a body, on purpose.
+    const BODY =
+      'One client sent `\\u2014` where an em dash belonged. This body keeps ' +
+      'those six characters, because a body is Markdown and Markdown holds ' +
+      'code.';
+
+    await mcp.call('create_recipe', {
+      title: RECIPE_TITLE,
+      slug: ROUND_TRIP_SLUG,
+      kind: 'recipe',
+      rationale: 'Written with the characters themselves, encoded one time.',
+      ingredients: [{ name: 'Beef mince', quantity: 800, unit: 'g' }],
+      steps: [{ instruction: 'Bake until the custard sets.' }],
+      notes: [
+        {
+          kind: 'research',
+          title: TITLE,
+          body: BODY,
+          sources: [{ title: 'A dictionary of Afrikaans food terms' }],
+        },
+      ],
+    });
+
+    const created = await mcp.call<TextRecipeResult>('get_recipe', {
+      slug: ROUND_TRIP_SLUG,
+    });
+    expect(created.title).toBe(RECIPE_TITLE);
+
+    const fromCreate = created.notes.find((note) => note.title === TITLE);
+    expect(fromCreate).toBeDefined();
+
+    // The same text through the other door, because `create_recipe` and
+    // `add_note` write notes through the same function but arrive at it by
+    // different routes, and only one of them was ever exercised with this.
+    await mcp.call('add_note', {
+      recipeSlug: ROUND_TRIP_SLUG,
+      kind: 'research',
+      title: TITLE,
+      body: BODY,
+      sources: [{ title: 'The same dictionary, read again' }],
+    });
+
+    const both = await mcp.call<TextRecipeResult>('get_recipe', {
+      slug: ROUND_TRIP_SLUG,
+    });
+    const written = both.notes.filter((note) => note.title === TITLE);
+    expect(written).toHaveLength(2);
+
+    for (const note of written) {
+      // Byte for byte, which is what "survives" has to mean here.
+      expect(note.title).toBe(TITLE);
+      expect(note.body).toBe(BODY);
+      // The em dash is one character, U+2014, and not six.
+      expect(note.title!.includes('\u2014')).toBe(true);
+      expect(note.title).not.toContain('\\');
+      // And the body kept the escape sequence it was written with.
+      expect(note.body).toContain('\\u2014');
+    }
+  });
+
+  /**
+   * Issue #15, which was reported as missing and turned out to be enforced.
+   *
+   * The guard on `add_note` was already tested. Three other paths take notes
+   * and state the same rule, and none of them was ever refused in a test —
+   * so the rule could have been dropped from `recipeBodyShape` and from
+   * `logExperimentShape` with only `add_note` still holding.
+   *
+   * The assertion on the message is on the sentence that tells a caller what
+   * to do instead. "A source is missing" leaves an agent guessing; naming
+   * `observation` and `idea` tells it that the answer may be a different
+   * kind rather than an invented citation, which is the failure this rule
+   * exists to prevent.
+   */
+  test('a research note with no sources is refused on every path that takes one', async () => {
+    const mcp = rw();
+
+    // An explicit empty array, which the count-the-array rule has to catch
+    // as surely as an omitted field does.
+    const empty = await refusal(
+      mcp.call('add_note', {
+        recipeSlug: SLUG,
+        kind: 'research',
+        title: 'Where the technique comes from',
+        body: 'Read somewhere, once. The provenance is the whole point.',
+        sources: [],
+      }),
+    );
+    expect(empty).toMatch(/sources/);
+    expect(empty).toMatch(/observation/);
+    expect(empty).toMatch(/idea/);
+
+    // The revision path.
+    expect(
+      await refusal(
+        mcp.call('revise_recipe', {
+          slug: SLUG,
+          rationale: 'A revision carrying a research note with no source.',
+          notes: [
+            {
+              kind: 'research',
+              title: 'Where to buy duck',
+              body: 'Somebody said something about a shop.',
+            },
+          ],
+        }),
+      ),
+    ).toMatch(/notes\[0\]\.sources/);
+
+    // The run path.
+    expect(
+      await refusal(
+        mcp.call('log_experiment', {
+          slug: 'mcp-contract-unsourced-run',
+          title: 'A run with an unsourced research note',
+          notes: [
+            {
+              kind: 'research',
+              body: 'Something read about drying rates, source forgotten.',
+            },
+          ],
+        }),
+      ),
+    ).toMatch(/notes\[0\]\.sources/);
+    await expect(
+      mcp.call('get_experiment', { slug: 'mcp-contract-unsourced-run' }),
+    ).rejects.toThrow(/No experiment/i);
+
+    // And the accepted shape is unchanged on the same three paths: one
+    // title is still enough, and the other kinds still take none.
+    await expect(
+      mcp.call('log_experiment', {
+        slug: 'mcp-contract-sourced-run',
+        title: 'A run with a sourced research note',
+        notes: [
+          {
+            kind: 'research',
+            body: 'Drying rate, from the reference below.',
+            sources: [{ title: 'Kruger, Biltong and Droëwors' }],
+          },
+          { kind: 'observation', body: 'The strips felt dry on day four.' },
+        ],
+      }),
+    ).resolves.toBeTruthy();
   });
 
   test('a scope denial is an error result, not an auth challenge', async () => {

@@ -526,13 +526,39 @@ test.describe('a batch log with no source recipe', () => {
     // once the run above exists.
     await page.goto('/batch-logs');
 
+    /*
+     * THE FIGURE IS CHECKED AGAINST THE ROWS, NOT AGAINST A CONSTANT, and
+     * the reason is a real failure rather than a preference. This asserted
+     * `'1'` until three sibling spec files each logged a run with no
+     * `recipeSlug` of their own; the figure then read `5` and this test —
+     * owned by none of their authors, and passing in isolation — was the
+     * only thing that went red. A number that counts every row in a shared
+     * database is not a fact about this fixture, so asserting it as one
+     * makes every future spec a tripwire for this file.
+     *
+     * `unlinked` in `batch-logs/page.tsx:56` is `logs.filter(log =>
+     * !log.recipe).length`, and `rowMeta` in `batch-log-parts.tsx:103`
+     * writes `Not linked to a recipe` into the meta of exactly those rows,
+     * from the same list, with no pagination between them. So the figure
+     * and the row count are two readings of one predicate taken by two
+     * components — which is the thing R-SCR-44 actually asks to be true,
+     * and which an inverted filter or a dropped fallback still breaks.
+     */
+    const unlinkedRows = page
+      .locator('main')
+      .getByText('Not linked to a recipe');
+    const count = await unlinkedRows.count();
+
+    // This fixture is one of them, so the figure is drawn at all.
+    expect(count).toBeGreaterThanOrEqual(1);
+
     const figure = page
       .locator('main div')
       .filter({ hasText: /^Not yet linked/ })
       .last();
     await expect(figure).toBeVisible();
     // The label is the first span and the count is the second.
-    await expect(figure.locator('span').last()).toHaveText('1');
+    await expect(figure.locator('span').last()).toHaveText(String(count));
   });
 
   test('its own page answers', async ({ page }) => {

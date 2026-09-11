@@ -130,6 +130,40 @@ test.describe('backfilling earlier revisions', () => {
     ).rejects.toThrow(/not before it|revise_recipe/i);
   });
 
+  test('a version dated exactly at the earliest one is refused too', async () => {
+    const mcp = mcpClient(test.info().project.use.baseURL!, tokens().readWrite);
+
+    /*
+     * THE BOUNDARY ITSELF, which is the one case the guard exists for.
+     *
+     * `backfillRevision` compares with `occurredAt >= earliest`, and the
+     * test above only reaches the far side of it — a 2035 date is refused by
+     * any comparison anybody could write here. Relaxed to `>`, a backfill
+     * dated at exactly the earliest stored version is accepted, and the
+     * history then holds two versions claiming the same moment with no order
+     * between them but a revision number that says the later-written one is
+     * older. `get_recipe` orders by `COALESCE(occurred_at, created_at)`, so
+     * which of the two a reader is shown as the oldest is left to the
+     * planner.
+     *
+     * The date is revision 3's own `occurredAt`, so this is the exact
+     * equality and not a value near it.
+     */
+    await expect(
+      mcp.call('backfill_revision', {
+        slug: SLUG,
+        occurredAt: '2019-11-02',
+        rationale: 'The same day as the version that is already stored.',
+        ingredients: [{ name: 'Beef shin', quantity: 1, unit: 'kg' }],
+      }),
+    ).rejects.toThrow(/not before it|revise_recipe/i);
+
+    // And nothing was written. A refusal that still appended a revision
+    // would be the worse half of the same fault.
+    const after = await mcp.call<RecipeResult>('get_recipe', { slug: SLUG });
+    expect(after.revisions).toHaveLength(3);
+  });
+
   test('a backfill without ingredients is refused', async () => {
     const mcp = mcpClient(test.info().project.use.baseURL!, tokens().readWrite);
 
@@ -166,5 +200,91 @@ test.describe('backfilling earlier revisions', () => {
     // version EXISTED, and the note says when it was written down.
     await expect(backfilled).toContainText('02 NOV 2019');
     await expect(backfilled).toContainText(/recorded later/i);
+  });
+
+  /**
+   * The half of the rule the tests above do not reach.
+   *
+   * "Nothing carries forward into a backfill: inheriting a later version's
+   * ingredients would invent a history that never happened, so an old
+   * version states its own." The ingredients half is covered above, and it
+   * is covered by a backfill that SENT ingredients — which every backfill
+   * must, because a backfill without them is refused. So the rule is only
+   * actually observable on the fields a backfill may leave out: the steps,
+   * the summary, the yield, the servings and the times.
+   *
+   * `reviseRecipe` carries every one of those forward, deliberately and
+   * correctly, from the version it supersedes. `backfillRevision` must not,
+   * and it is the same five lines of code in the same shape one function
+   * away. A recipe of its own, so the timeline this file already asserts
+   * above does not move.
+   */
+  test('nothing carries forward into a backfill', async () => {
+    const mcp = mcpClient(test.info().project.use.baseURL!, tokens().readWrite);
+    const slug = 'backfill-carry-subject';
+
+    await mcp.call<WriteResult>('create_recipe', {
+      title: 'Carry subject stew',
+      slug,
+      kind: 'recipe',
+      rationale: 'The version that is current, with everything filled in.',
+      summary: 'A stew that has been through several kitchens.',
+      yieldQuantity: 3,
+      yieldUnit: 'kg',
+      servings: 6,
+      totalTimeMinutes: 240,
+      activeTimeMinutes: 40,
+      ingredients: [{ name: 'Carry subject shin', quantity: 1.5, unit: 'kg' }],
+      steps: [
+        { instruction: 'Brown the shin.' },
+        { instruction: 'Braise it for three hours.' },
+      ],
+    });
+
+    // A backfill that states its ingredients and nothing else. Everything
+    // omitted describes the CURRENT version, not the 2016 one.
+    await mcp.call<WriteResult>('backfill_revision', {
+      slug,
+      occurredAt: '2016-04-08',
+      rationale: 'Found in a notebook. One pot, no browning, no timings.',
+      ingredients: [{ name: 'Carry subject shin', quantity: 1, unit: 'kg' }],
+    });
+
+    const historical = await mcp.call<
+      RecipeResult & {
+        revision: {
+          summary: string | null;
+          yieldQuantity: number | null;
+          yieldUnit: string | null;
+          servings: number | null;
+          totalTimeMinutes: number | null;
+          activeTimeMinutes: number | null;
+        };
+        steps: { instruction: string }[];
+      }
+    >('get_recipe', { slug, revisionNumber: 2 });
+
+    // The 2016 version never had these steps: they belong to the version
+    // written years later. Copying them in would put words in a cook's
+    // notebook that the cook never wrote.
+    expect(historical.steps).toEqual([]);
+    expect(historical.revision.summary).toBeNull();
+    expect(historical.revision.yieldQuantity).toBeNull();
+    expect(historical.revision.yieldUnit).toBeNull();
+    expect(historical.revision.servings).toBeNull();
+    expect(historical.revision.totalTimeMinutes).toBeNull();
+    expect(historical.revision.activeTimeMinutes).toBeNull();
+    expect(names(historical).join(' ')).toMatch(/carry subject shin/i);
+
+    // And the version a reader sees is untouched, fields and all.
+    const current = await mcp.call<
+      RecipeResult & {
+        revision: { servings: number | null };
+        steps: { instruction: string }[];
+      }
+    >('get_recipe', { slug });
+    expect(current.revisionNumber).toBe(1);
+    expect(current.revision.servings).toBe(6);
+    expect(current.steps).toHaveLength(2);
   });
 });

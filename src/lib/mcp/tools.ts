@@ -359,6 +359,10 @@ export function registerTools(server: McpServer): void {
         'you add tags to a new recipe. Then you use the tags that exist. ' +
         'You do not make a tag that is almost the same as one that is here ' +
         '("stir fry" when "stir-frying" is here already).\n\n' +
+        'Each row gives `parent`: the broader tag that this tag sits under, ' +
+        'or null. A parent is always in the same category type. This is ' +
+        'how you read the hierarchy, and how you check a parent that you ' +
+        'set with upsert_category.\n\n' +
         'Do not give categoryType if you want all the tags.',
       inputSchema: {
         categoryType: z.enum(CATEGORY_TYPES).optional(),
@@ -840,6 +844,11 @@ export function registerTools(server: McpServer): void {
         'record you mean. The tool refuses a `name` that another ingredient ' +
         'already answers to, because two records with one name split the ' +
         'ingredient list for good.\n\n' +
+        'The tool also refuses a `name` that carries a backslash escape, ' +
+        'such as \\u2014 or \\". That text is a message that was encoded ' +
+        'two times. If the stored name already carries one, send `slug` ' +
+        'with the clean name: the tool finds the record by its slug and ' +
+        'writes the name you send. This is how you mend such a record.\n\n' +
         '`aliases` replaces the whole list. Send every name that you want to ' +
         'keep. Send an empty list to remove them all. The other names make ' +
         'search work across two vocabularies: a search for "cilantro" finds ' +
@@ -890,6 +899,19 @@ export function registerTools(server: McpServer): void {
         'The tool refuses a `parentSlug` that names no tag, and it refuses a ' +
         'tag that names itself. The error says which tag it looked for, and ' +
         'the call writes nothing.\n\n' +
+        'TO CLEAR A PARENT, SEND JSON null. Send the value null. Do not ' +
+        'send the four letters "null" as text. A text "null" is read as the ' +
+        'name of a tag, and the tool then looks for a tag with that name.\n\n' +
+        'The result gives `parent`: the tag that this tag now sits under, ' +
+        'or null. It is there after every call, so you can see what your ' +
+        'call did. A call that leaves `parentSlug` out gets back the parent ' +
+        'that is stored. list_categories reports the same field for every ' +
+        'tag.\n\n' +
+        'A tag cannot be named after an empty value: null, undefined, ' +
+        'none, true, false and object-object are refused. These are what a ' +
+        'program prints when a value is missing, so a tag with one of these ' +
+        'names is an accident. To keep such a word as the label a reader ' +
+        'sees, send your own `slug` beside it.\n\n' +
         'Use this after creating a recipe that introduced new tags, so the ' +
         'repository does not accumulate bare, unexplained labels.',
       inputSchema: upsertCategoryShape,
