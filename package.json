@@ -54,7 +54,7 @@
     "@types/node": "^24.10.0",
     "@types/pg": "^8.23.1",
     "@types/react": "^19.2.0",
-    "@types/react-dom": "^19.2.0",
+    "@types/react-dom": "^19.2.7",
     "@types/ws": "^8.18.1",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9.18.0",
