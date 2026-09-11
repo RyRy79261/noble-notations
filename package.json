@@ -47,7 +47,7 @@
     "zod": "^4.5.4"
   },
   "devDependencies": {
-    "@eslint/js": "^9.18.0",
+    "@eslint/js": "^10.0.1",
     "@next/eslint-plugin-next": "16.3.4",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "4.3.3",
@@ -57,9 +57,9 @@
     "@types/react-dom": "^19.2.7",
     "@types/ws": "^8.18.1",
     "drizzle-kit": "^0.31.10",
-    "eslint": "^9.18.0",
+    "eslint": "^10.10.0",
     "eslint-config-next": "16.3.4",
-    "globals": "^15.14.0",
+    "globals": "^17.12.0",
     "playwright-core": "^1.63.0",
     "prettier": "^3.4.2",
     "tailwindcss": "4.3.3",
