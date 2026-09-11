@@ -133,6 +133,19 @@ observations. The biltong batch logs are experiments, not recipes.
   than everything stored — it cannot change what is current. Nothing carries
   forward into a backfill: inheriting a later version's ingredients would
   invent a history that never happened, so an old version states its own.
+- **A note's text is fixed; where it hangs is not.** `reattachNote` moves a
+  note to another record and touches nothing a reader reads — kind, title,
+  body, conditions, sources and `created_at` all survive byte for byte.
+  This is not a hole in the rule above: a note's content being immutable
+  and its location being immutable are two decisions, and only the first
+  follows from the revision rule. The choice of parent is usually forced by
+  what happens to exist yet, and a note written against a batch because the
+  recipe did not exist was otherwise stranded there for good. A note pinned
+  to a revision or a step is refused, because that one really is a
+  statement about a stored version. Every previous home is kept in
+  `notes.previous_subjects` — the audit log cannot hold it, since an audit
+  row is built from the arguments a call was made with and so names only
+  the destination. This is D-13.
 - **`src/lib/domain/schemas.ts` is the submission contract.** MCP tools, the
   ingest script and the exporter all derive from it. Tools take the raw
   _shape_ (for JSON Schema) and parse with the assembled _schema_ (for
@@ -289,11 +302,12 @@ _why_ and need their full vocabulary.
 The word "taxonomy" is not used anywhere a person or an agent reads. The
 vocabulary is:
 
-| Say                                         | Not                      |
-| ------------------------------------------- | ------------------------ |
-| Categories                                  | Taxonomy, classification |
-| Category type (cuisine, course, technique…) | Facet                    |
-| Tag                                         | Term                     |
+| Say                                         | Not                             |
+| ------------------------------------------- | ------------------------------- |
+| Categories                                  | Taxonomy, classification        |
+| Category type (cuisine, course, technique…) | Facet                           |
+| Tag                                         | Term                            |
+| Batch log                                   | Experiment (reader-facing only) |
 
 **The database columns did not change.** `taxonomy_terms.facet` is still
 `facet`, and `CategoryType` is an alias over the same enum. Renaming those
@@ -305,6 +319,16 @@ MCP names follow the same vocabulary: `list_categories`,
 `upsert_category`, and the fields `categoryType` and `categories`. The
 reader-facing route is `/classes`; the old `/taxonomy` and `/categories`
 URLs both redirect permanently to it.
+
+**A batch log and an experiment are the same record.** The reader's word
+won the URL — `/batch-logs`, with `/experiments` redirecting permanently to
+it — and everything under the reader keeps the other word: the
+`experiments` table, `ExperimentView`, and the `list_experiments`,
+`get_experiment` and `log_experiment` tools. Unlike the categories rename,
+this split reaches an agent, because an agent reads the tool names and then
+looks at the site. That is what issue #19 was: a connector that only knew
+`experiment` could not find a page that had existed since the rename, and
+reported it as missing. So the guide names both words and the addresses.
 
 ## Note kinds
 
@@ -318,6 +342,19 @@ deliberate:
   alternatives, hacks, sourcing, background. "Where to buy crayfish in
   Berlin."
 
+A `research` note must carry at least one source.
+`requireSourcesForResearch` in `src/lib/domain/schemas.ts` enforces it on
+all five note paths — `add_note`, and the `notes` array on `create_recipe`,
+`revise_recipe`, `backfill_revision` and `log_experiment`. No other kind
+requires one and no kind forbids one: `writeNotes` stores `sources` for
+every kind, and the study reader filters citations by subject rather than
+by kind (see the comment in `src/lib/queries/read.ts`, which notes that the
+Wellington's one source hangs off a `warning`). A note with nothing to cite
+is an `observation` or an `idea`, not an unsourced `research`. A source
+entry must itself name something — `noteSourceSchema` refuses `{}`, a blank
+string and a bare `accessedAt` — so one empty object does not satisfy the
+count.
+
 `research` originally carried both, which is why "The science" needed a
 kind of its own rather than a filter over the existing one.
 
@@ -328,6 +365,15 @@ kind of its own rather than a filter over the existing one.
 the `get_started` tool (the full guide). They live together so they cannot
 drift. Tool descriptions explain one tool each; the guide explains how the
 pieces fit — most importantly that the repository is revision-first.
+
+**The guide must also name the website's words and its addresses.** An
+agent writes through the connector and is then asked about the result by
+someone looking at the site, so it needs to know what the site calls the
+thing it just wrote and where that thing now is. A connector that knows
+only `experiment` cannot answer "where is it" about `/batch-logs`. Keep the
+addresses in the guide relative: `NEXT_PUBLIC_SITE_URL` is set nowhere
+here, so `site.url` falls back to the production host and an absolute
+address would be wrong on every preview deployment.
 
 ## Shopping lists and filtering
 

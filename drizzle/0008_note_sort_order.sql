@@ -1,0 +1,30 @@
+ALTER TABLE "notes" ADD COLUMN "sort_at" timestamp with time zone DEFAULT now() NOT NULL;--> statement-breakpoint
+--
+-- Everything above this line is what `pnpm db:generate` wrote. The backfill
+-- below is added by hand, because the default is wrong for every row that
+-- already exists.
+--
+-- WHY THIS COLUMN EXISTS. `created_at` was the primary sort key for a
+-- subject's notes and `position` its tiebreak, and that worked because until
+-- `reattachNote` (D-13, migration 0007) a note was always read where it was
+-- written: its write time and its arrival at its subject were the same
+-- instant, so one column carried both meanings.
+--
+-- A move separates them. The note keeps the date it was written — rewriting
+-- that would falsify when the claim was made — but it arrives at its new
+-- subject today. Sorting by `created_at`, a note written against a batch in
+-- 2024 and moved onto a recipe in 2026 lands FIRST among that recipe's
+-- notes rather than last. `listScienceIndex` and `getScienceStudy` number a
+-- study's mechanisms M1…Mn by position in that list, so one moved science
+-- note renumbers every mechanism below it — codes that are already
+-- published. That is the fault D-02 records, arriving by a new route.
+--
+-- THE BACKFILL IS WHAT MAKES THIS CHANGE INVISIBLE. Every stored note has
+-- been read where it was written, so `sort_at = created_at` reproduces the
+-- existing order exactly: no note moves, no mechanism is renumbered, and
+-- `pnpm export` writes the same bytes for an unchanged database. `now()`
+-- from the default would instead collapse every stored note onto one
+-- timestamp and leave the order to `position` alone, which is the shuffle
+-- 0006 exists to prevent.
+--
+UPDATE "notes" SET "sort_at" = "created_at";

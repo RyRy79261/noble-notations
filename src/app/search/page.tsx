@@ -10,9 +10,23 @@ import { SectionHead } from '@/components/f/section-label';
 import { DatabaseNotice } from '@/components/database-notice';
 import { RecipeGrid } from '@/components/recipe-card';
 import { RECIPE_KINDS } from '@/lib/domain/schemas';
-import { getStats, listCategories, searchRecipes } from '@/lib/queries/read';
+import {
+  getStats,
+  listCategories,
+  searchExperiments,
+  searchNotes,
+  searchRecipes,
+} from '@/lib/queries/read';
 import { safeRead } from '@/lib/safe';
-import { Cardinal, cardinal, KIND_LABELS, site } from '@/lib/site';
+import {
+  batchLogPath,
+  Cardinal,
+  cardinal,
+  KIND_LABELS,
+  KIND_NOUNS,
+  NOTE_KIND_LABELS,
+  site,
+} from '@/lib/site';
 import { cn } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
@@ -20,7 +34,7 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = {
   title: 'Search',
   description:
-    'Search the repository by text, cuisine, technique and ingredient — including ingredients to exclude.',
+    'Search the repository by text, cuisine, technique and ingredient — including ingredients to exclude. Free text also reaches batch logs and notes.',
   alternates: { canonical: '/search' },
   robots: { index: true, follow: true },
 };
@@ -55,9 +69,6 @@ const FIELD_CELL = 'shell:w-auto shell:shrink shell:grow shell:basis-0';
  */
 const ISSUE_NUMBER = site.issue.split('·')[0]?.trim() ?? site.issue;
 
-/** The 9px mono micro-labels around the form. */
-const NOTE = 'text-09 font-mono tracking-label uppercase text-ink-3';
-
 type SearchParams = Promise<{
   q?: string;
   cuisine?: string;
@@ -76,6 +87,60 @@ function list(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
+/**
+ * Where to send a reader who found a note.
+ *
+ * A note is not a page and has no address of its own. It is read on the
+ * record it hangs off, which is the whole reason a result has to name that
+ * record — a hit with nowhere to go is the same dead end as not finding it.
+ * The five parent kinds collapse to four destinations. A note on the recipe
+ * itself goes to the recipe; a note on a REVISION or a step of one goes to
+ * that revision's page, because the recipe page only draws the current
+ * version's notes; an ingredient and a run go to their own pages.
+ *
+ * Route knowledge stays here and not in `read.ts`, so the MCP payload can
+ * keep returning slugs and a type rather than site addresses.
+ */
+function noteHref(note: {
+  attachedTo: {
+    type: string;
+    slug: string | null;
+    revisionNumber: number | null;
+  };
+}): string | null {
+  const { type, slug, revisionNumber } = note.attachedTo;
+  if (!slug) return null;
+  switch (type) {
+    case 'recipe':
+      return `/recipes/${slug}`;
+    case 'revision':
+    case 'step':
+      /*
+       * A REVISION NOTE DOES NOT GO TO THE RECIPE PAGE. `searchNotes`
+       * resolves a note through ANY revision — that is the whole reason it
+       * cannot reuse `noteBelongsToRecipe` — but `getRecipeBySlug` reads
+       * only `recipe_id = <recipe> OR revision_id = <CURRENT revision>`. So
+       * a note on a superseded version, which is everything
+       * `backfillRevision` writes, is findable here and absent from
+       * `/recipes/<slug>`. Sending a reader there would answer a search hit
+       * with a page that does not contain it.
+       */
+      return revisionNumber != null
+        ? `/recipes/${slug}/revisions/${revisionNumber}`
+        : `/recipes/${slug}`;
+    case 'ingredient':
+      return `/ingredients/${slug}`;
+    case 'experiment':
+      /* The run's own live address, which depends on whether it names a
+         recipe — D-01. `searchNotes` does not carry that, and a link to
+         `/batch-logs/<slug>` is correct either way: it answers for both and
+         redirects when the run has a recipe. */
+      return `/batch-logs/${slug}`;
+    default:
+      return null;
+  }
+}
+
 /** `a`, `a and b`, `a, b and c` — the design's own prose joins. */
 function series(values: string[]): string {
   if (values.length <= 1) return values.join('');
@@ -88,14 +153,24 @@ function series(values: string[]): string {
  *
  * A PLAIN GET FORM AND NOTHING ELSE. No `"use client"`, no `onChange`, no
  * submit handler: the browser serialises the six fields into the address bar
- * and asks the server again. That is what makes every search a link, and it
- * is why the design gives the screen a block that prints the address the
- * form produces — the URL is the API, so the screen shows it.
+ * and asks the server again. That is what makes every search a link.
+ *
+ * THE SCREEN NO LONGER SAYS ANY OF THAT. It used to. The design's reading
+ * was "the URL is the API, so the screen shows it", and the page carried a
+ * block printing the address the form produces, an accent line reading
+ * `SUBMITS WITH GET · WORKS WITHOUT JAVASCRIPT`, a note explaining how the
+ * dropdowns were populated, and a clear link that counted its own fields.
+ * Issue #21 is an agent reporting that a cook has no use for the HTTP
+ * method, and that the screen read as a debug view of itself. The
+ * guarantees are unchanged and R-CON-03 still holds — the form is still a
+ * bare GET and still works with scripting off. What went is the screen
+ * boasting about it. `e2e/screen-states.spec.ts` turns JavaScript off and
+ * drives the form, which is a better record of R-SCR-17 than a caption
+ * that was never once checked against the behaviour it claimed.
  *
  * The design draws two numbered sections and no spine: `I Query` over the
- * fields, `II Results` over the cards. Between them sit the two things that
- * make the query legible — the address, and R-SCR-18's sentence saying in
- * English what the filters add up to.
+ * fields, `II Results` over the cards. Between them sits R-SCR-18's
+ * sentence saying in English what the filters add up to.
  *
  * THE FIELD NAMES ARE THE BUILD'S, NOT THE DESIGN'S. The drawn address
  * reads `?q=…&with=…&without=…`; this build has answered to
@@ -119,20 +194,19 @@ export default async function SearchPage({
     ? (params.kind as 'recipe')
     : undefined;
 
-  /* R-SCR-18. A condition is a FIELD that was filled in, which is how the
-     design counts them: "one answers all six conditions" on a screen with
-     six of the six filled. */
-  const conditions = [
-    Boolean(query),
-    cuisine.length > 0,
-    technique.length > 0,
-    ingredient.length > 0,
-    exclude.length > 0,
-    Boolean(kind),
-  ].filter(Boolean).length;
-  const hasFilters = conditions > 0;
+  /* The screen counted filled fields and printed the number — "zero answer
+     all six conditions". It only ever needed to know whether ANY field was
+     filled, and the count produced "all one condition" whenever exactly one
+     was, which is issue #21's grammar complaint. */
+  const hasFilters =
+    Boolean(query) ||
+    cuisine.length > 0 ||
+    technique.length > 0 ||
+    ingredient.length > 0 ||
+    exclude.length > 0 ||
+    Boolean(kind);
 
-  const [results, categories, stats] = await Promise.all([
+  const [results, categories, stats, runs, noteHits] = await Promise.all([
     hasFilters
       ? safeRead(
           () =>
@@ -164,6 +238,31 @@ export default async function SearchPage({
       notes: 0,
       experiments: 0,
     }),
+    /* THE OTHER TWO HALVES ARE MATCHED ON THE TEXT ALONE, and only when
+       there is text. The cuisine, technique, ingredient and kind filters
+       are properties of a recipe — a note has no cuisine — so applying
+       them here would silently return nothing rather than everything, and
+       a reader would read that as "there are none". */
+    query
+      ? safeRead(() => searchExperiments({ query, limit: 20 }), {
+          results: [],
+          total: 0,
+        })
+      : Promise.resolve({
+          data: { results: [], total: 0 },
+          configured: true,
+          failed: false,
+        }),
+    query
+      ? safeRead(() => searchNotes({ query, limit: 20, offset: 0 }), {
+          results: [],
+          total: 0,
+        })
+      : Promise.resolve({
+          data: { results: [], total: 0 },
+          configured: true,
+          failed: false,
+        }),
   ]);
 
   const cuisines = categories.data.filter((t) => t.categoryType === 'cuisine');
@@ -178,18 +277,6 @@ export default async function SearchPage({
      figure is dropped instead when the read did not happen. */
   const counted = stats.configured && !stats.failed;
   const tagsKnown = categories.configured && !categories.failed;
-
-  /* The design's own address block. It prints what the form produces, in
-     the order the fields are drawn, so the reader can copy the query
-     rather than reverse-engineer it. */
-  const address = new URLSearchParams();
-  if (query) address.set('q', query);
-  if (ingredient.length) address.set('ingredient', ingredient.join(','));
-  if (exclude.length) address.set('exclude', exclude.join(','));
-  if (cuisine.length) address.set('cuisine', cuisine.join(','));
-  if (technique.length) address.set('technique', technique.join(','));
-  if (kind) address.set('kind', kind);
-  const addressText = address.size > 0 ? `/search?${address}` : '/search';
 
   /* R-SCR-18's sentence. Each clause is only written when its field was
      filled in, so the sentence is always true of the query that produced
@@ -210,16 +297,76 @@ export default async function SearchPage({
   const cuisineLabels = cuisine.map((slug) => label(cuisines, slug));
   const techniqueLabels = technique.map((slug) => label(techniques, slug));
 
+  /*
+   * THE SENTENCE NOW REPORTS, RATHER THAN RESTATING THE FORM.
+   *
+   * It read "You are asking for recipes that mention X. Six recipes were
+   * considered and zero answer all one condition." Three faults in one
+   * breath: it told the reader what they had just typed, it published the
+   * size of the catalogue and the number of predicates evaluated, and
+   * "all one condition" is not English — the plural agreement was
+   * hardcoded against a design mock that happened to draw six filled
+   * fields. Issue #21 quotes all three.
+   *
+   * What a reader wants is the answer, so the count is now the subject:
+   * "No recipes mention “demi-glace”." The clauses are kept — they are the
+   * honest half, and they are what makes an empty result legible — but
+   * they now hang off the finding rather than off the asking.
+   */
+  const noun = KIND_NOUNS[kind ?? 'recipe'] ?? {
+    one: 'recipe',
+    many: 'recipes',
+  };
+  const one = total === 1;
+  /* "No recipes mention X" rather than "Zero recipes mention X". `Cardinal`
+     is right everywhere else on this page, but an empty result is the one
+     sentence a reader is most likely to read closely, and "zero" is a
+     figure where "no" is English. */
+  const subject = `${total === 0 ? 'No' : Cardinal(total)} ${
+    one ? noun.one : noun.many
+  }`;
+
   const clauses = [
-    query ? `that mention “${query}” somewhere in their text` : null,
-    ingredient.length ? `that contain ${series(ingredient)}` : null,
-    exclude.length ? `that do not contain ${series(exclude)}` : null,
-    cuisine.length ? `whose cuisine is ${series(cuisineLabels)}` : null,
-    technique.length ? `whose technique is ${series(techniqueLabels)}` : null,
+    query ? `${one ? 'mentions' : 'mention'} “${query}”` : null,
+    ingredient.length
+      ? `${one ? 'contains' : 'contain'} ${series(ingredient)}`
+      : null,
+    exclude.length ? `leave${one ? 's' : ''} out ${series(exclude)}` : null,
+    cuisine.length ? `${one ? 'is' : 'are'} ${series(cuisineLabels)}` : null,
+    technique.length ? `use${one ? 's' : ''} ${series(techniqueLabels)}` : null,
   ].filter(Boolean) as string[];
-  const asked = `You are asking for ${
-    kind ? `recipes of the kind ${kind}` : 'recipes'
-  }${clauses.length ? ` ${series(clauses)}` : ''}.`;
+
+  const found = clauses.length
+    ? `${subject} ${series(clauses)}.`
+    : `${subject} ${one ? 'is' : 'are'} in the catalogue.`;
+
+  /*
+   * AND THE SENTENCE SAYS WHAT ELSE WAS LOOKED AT.
+   *
+   * This is the other half of issue #18, and the more important half. A
+   * reader searched for a batch log that existed, was told "zero of six
+   * recipes", and concluded the work had never been saved. The screen was
+   * accurate and still produced the wrong conclusion, because the one fact
+   * that mattered — that batch logs and notes were not searched at all —
+   * was not among the many facts it printed. Now they are searched, and
+   * the sentence says so whenever a free-text query ran, including when
+   * the answer is none.
+   */
+  const runTotal = runs.data.total;
+  const noteTotal = noteHits.data.total;
+  /* R-STA-01, the same rule `counted` applies above: a failed read reports
+     zero, and "No batch logs mention it" is a claim about the repository
+     rather than about the connection. When either read did not happen, the
+     sentence drops the clause instead of stating a figure it does not have. */
+  const otherHalvesKnown =
+    runs.configured && !runs.failed && noteHits.configured && !noteHits.failed;
+  const otherHalves =
+    query && otherHalvesKnown
+      ? ` ${runTotal === 0 ? 'No' : Cardinal(runTotal)} batch log` +
+        `${runTotal === 1 ? '' : 's'} and ${
+          noteTotal === 0 ? 'no' : cardinal(noteTotal)
+        } note${noteTotal === 1 ? '' : 's'} also mention it.`
+      : '';
 
   /* The crumb takes the same labels, for the same reason. */
   const crumb =
@@ -246,21 +393,29 @@ export default async function SearchPage({
         <PageHero
           kicker="Section VI · Search"
           title="Search"
-          lede="A plain form. It submits with GET, so the whole query lives in the address and every search you run is a link you can keep, send or bookmark. Nothing on this page needs scripting."
+          lede="Every search you run is a link you can keep, send or bookmark."
           ledeClassName="shell:max-w-205"
         />
 
         {/* R-CON-03. A plain GET form: shareable URLs, works without
-            JavaScript, and the query string is the whole state. */}
+            JavaScript, and the query string is the whole state. The screen
+            no longer says so — see the note at the top of this file. */}
         <form
           method="GET"
           action="/search"
           className="flex w-full shrink-0 flex-col items-start gap-5"
         >
+          {/* The design draws a meta on this head too, so the slot is kept
+              and filled with what the reader can act on — how much there is
+              to filter by — rather than with the form's method and action. */}
           <SectionHead
             ordinal="I"
             title="Query"
-            meta="Method GET · Action /search"
+            meta={
+              tagsKnown
+                ? `${cardinal(cuisines.length)} cuisines · ${cardinal(techniques.length)} techniques`
+                : undefined
+            }
           />
 
           <div className={FIELD_ROW}>
@@ -338,20 +493,13 @@ export default async function SearchPage({
             </Field>
           </div>
 
-          {tagsKnown ? (
-            <p className={cn('m-0', NOTE)}>
-              Each list shows how many recipes carry the tag · {cuisines.length}{' '}
-              cuisines · {techniques.length} techniques · {RECIPE_KINDS.length}{' '}
-              kinds
-            </p>
-          ) : null}
-
           <div className="flex w-full shrink-0 flex-row flex-wrap items-center gap-4">
             <Button type="submit">Search</Button>
             {/* The design's bare text control — 10px mono on no ground at
                 all, and explicitly NOT F/Button (see `button.tsx`). A link
-                back to the empty address clears all six fields with no
-                script, which is the only way that works under R-CON-03. */}
+                back to the empty address clears the form with no script,
+                which is the only way that works under R-CON-03. The label
+                counted the fields; the reader does not need the number. */}
             <Link
               href="/search"
               className={cn(
@@ -360,39 +508,22 @@ export default async function SearchPage({
                 FOCUS_RING,
               )}
             >
-              Clear all six fields
+              Clear the search
             </Link>
-            <span
-              className={cn(
-                'ml-auto text-09 font-mono tracking-label uppercase text-accent',
-              )}
-            >
-              Submits with GET · Works without JavaScript
-            </span>
-          </div>
-
-          <div className="flex w-full shrink-0 flex-col items-start gap-2 bg-desk px-3.25 py-2.75">
-            <span className={NOTE}>The address this form produces</span>
-            {/* 12 over 18 is `leading-150`, and the size travels with it in
-                ONE argument — TOKEN-MAP §4.3. `break-all` is this build's:
-                a query with six filled fields is longer than the column and
-                has no space in it to break at. */}
-            <code className="w-full text-12 leading-150 font-mono break-all text-ink">
-              {addressText}
-            </code>
           </div>
         </form>
 
         {hasFilters && results.configured && !results.failed ? (
-          <Notice title="What you are asking for, in words">
-            {/* `asked` ends in a full stop, so the count that follows it
-                opens a sentence and takes sentence case. */}
-            {asked}{' '}
-            {counted
-              ? `${Cardinal(indexed)} recipe${indexed === 1 ? '' : 's'} were considered and `
-              : ''}
-            {cardinal(total)} {total === 1 ? 'answers' : 'answer'} all{' '}
-            {cardinal(conditions)} condition{conditions === 1 ? '' : 's'}.
+          <Notice title="What you asked for">
+            {/* The hook is on the sentence, not on the Notice. `Notice`
+                spreads props onto its root, and that root also holds the
+                title span — so a hook there would capture "What you asked
+                for" as well, and the test asserting the exact sentence
+                would read the title with it. */}
+            <span data-search-summary="">{found}</span>
+            {otherHalves ? (
+              <span data-search-elsewhere="">{otherHalves}</span>
+            ) : null}
           </Notice>
         ) : null}
 
@@ -405,9 +536,9 @@ export default async function SearchPage({
                 ? 'Repository unavailable'
                 : !hasFilters
                   ? 'Nothing asked for yet'
-                  : counted
-                    ? `${cardinal(total)} of ${cardinal(indexed)} recipe${indexed === 1 ? '' : 's'}`
-                    : `${cardinal(total)} recipe${total === 1 ? '' : 's'}`
+                  : total === 0
+                    ? 'Nothing found'
+                    : `${cardinal(total)} ${total === 1 ? noun.one : noun.many}`
             }
           />
 
@@ -423,8 +554,8 @@ export default async function SearchPage({
             </Empty>
           ) : results.data.results.length === 0 ? (
             <Empty>
-              Nothing matched. Try dropping a filter — they are combined with
-              AND.
+              Nothing matched. Each field makes the search narrower. Remove one
+              and try again.
             </Empty>
           ) : (
             <>
@@ -434,13 +565,101 @@ export default async function SearchPage({
               <RecipeGrid recipes={results.data.results} columns={1} />
               {counted && total < indexed ? (
                 <Empty>
-                  Nothing else answered all {cardinal(conditions)} condition
-                  {conditions === 1 ? '' : 's'}. Drop one and more appear.
+                  Nothing else matched. Remove a filter and more recipes appear.
                 </Empty>
               ) : null}
             </>
           )}
         </div>
+
+        {/*
+          III and IV. Only drawn when there is free text, because that is
+          the only field these two are matched on — see the read above.
+          NOT `<article>`: `RecipeGrid` draws one per recipe and several
+          tests count `main article` to mean "recipes came back". A batch
+          log row that answered to that count would make an empty recipe
+          result look full.
+        */}
+        {query && runs.configured && !runs.failed ? (
+          <div className="flex w-full shrink-0 flex-col items-start gap-6">
+            <SectionHead
+              ordinal="III"
+              title="Batch logs"
+              meta={
+                runTotal === 0
+                  ? 'Nothing found'
+                  : `${cardinal(runTotal)} run${runTotal === 1 ? '' : 's'}`
+              }
+            />
+            {runTotal === 0 ? (
+              <Empty>No batch log mentions it.</Empty>
+            ) : (
+              <ul
+                data-search-runs=""
+                className="m-0 flex w-full list-none flex-col items-start gap-4 p-0"
+              >
+                {runs.data.results.map((run) => (
+                  <li key={run.slug} className="w-full">
+                    <Link
+                      href={batchLogPath(run)}
+                      className={cn('text-16 font-sans', PROSE_LINK)}
+                    >
+                      {run.title}
+                    </Link>
+                    {run.summary ? (
+                      <p className="m-0 text-14 leading-170 font-sans text-ink-2">
+                        {run.summary}
+                      </p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : null}
+
+        {query && noteHits.configured && !noteHits.failed ? (
+          <div className="flex w-full shrink-0 flex-col items-start gap-6">
+            <SectionHead
+              ordinal="IV"
+              title="Notes"
+              meta={
+                noteTotal === 0
+                  ? 'Nothing found'
+                  : `${cardinal(noteTotal)} note${noteTotal === 1 ? '' : 's'}`
+              }
+            />
+            {noteTotal === 0 ? (
+              <Empty>No note mentions it.</Empty>
+            ) : (
+              <ul
+                data-search-notes=""
+                className="m-0 flex w-full list-none flex-col items-start gap-4 p-0"
+              >
+                {noteHits.data.results.map((note) => (
+                  <li key={note.id} className="w-full">
+                    <p className="m-0 text-14 leading-170 font-sans text-ink">
+                      <span className="text-09 font-mono tracking-label uppercase text-ink-3">
+                        {NOTE_KIND_LABELS[note.kind] ?? note.kind}
+                      </span>{' '}
+                      {note.title ? <strong>{note.title}. </strong> : null}
+                      {note.excerpt}
+                      {note.truncated ? '…' : ''}
+                    </p>
+                    {/* A note is not a page. The link goes to the record it
+                        hangs off, which is where a reader can actually read
+                        it — the whole point of returning notes at all. */}
+                    {noteHref(note) ? (
+                      <Link href={noteHref(note)!} className={PROSE_LINK}>
+                        {note.attachedTo.title ?? note.attachedTo.slug}
+                      </Link>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : null}
       </div>
     </>
   );

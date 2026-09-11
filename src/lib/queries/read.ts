@@ -41,7 +41,11 @@ import {
   type QuantityBucket,
 } from '@/lib/domain/units';
 import { categoryRank } from '@/lib/site';
-import type { CategoryType, SearchRecipesInput } from '@/lib/domain/schemas';
+import type {
+  CategoryType,
+  SearchNotesInput,
+  SearchRecipesInput,
+} from '@/lib/domain/schemas';
 
 const n = (v: string | null) => (v == null ? null : Number(v));
 
@@ -108,6 +112,16 @@ export interface NoteView {
    * been given any; a caller draws no row for an empty list.
    */
   conditions: string[];
+  /**
+   * Every record this note hung off before this one, oldest first, as
+   * `recipe:<slug>`, `ingredient:<slug>` or `experiment:<slug>`. Empty on a
+   * note that has never moved, which is nearly all of them. D-13.
+   *
+   * A note written before its natural parent existed can be re-homed with
+   * `reattachNote`, and this is what stops that being a silent rewrite of
+   * where a claim came from.
+   */
+  movedFrom: string[];
   createdAt: string;
   sources: {
     url: string | null;
@@ -573,6 +587,53 @@ function formatMassFlowSummary(
   return summary;
 }
 
+/**
+ * The citations under a set of notes, grouped by note.
+ *
+ * WHY THIS IS A FUNCTION AND NOT THREE COPIES. It was one copy and two
+ * hardcoded `sources: []` — `getIngredient` and `getExperiment` each
+ * declared that notes on an ingredient and notes on a run carry no
+ * citations. They do: `writeNotes` stores `sources` for any kind, the
+ * schema *requires* one on a `research` note, and `NoteBlock` renders them
+ * on every screen that draws a note. So a sourced research note written
+ * through `log_experiment` — which is the documented way to record one —
+ * came back from `get_experiment` with its provenance silently dropped,
+ * and the run page drew the claim with nothing under it.
+ *
+ * The ORDER BY is the reason this must not be re-inlined a fourth time.
+ * This read had none at all once, so citations reshuffled between two
+ * loads of one seed and `pnpm export` produced a different `- Source:`
+ * block each time. Same three columns as every other ordered read here.
+ */
+async function noteSourcesByNote(
+  noteIds: string[],
+): Promise<Map<string, NoteView['sources']>> {
+  const byNote = new Map<string, NoteView['sources']>();
+  if (noteIds.length === 0) return byNote;
+
+  const rows = await db
+    .select()
+    .from(noteSources)
+    .where(inArray(noteSources.noteId, noteIds))
+    .orderBy(
+      asc(noteSources.createdAt),
+      asc(noteSources.position),
+      asc(noteSources.id),
+    );
+
+  for (const row of rows) {
+    const list = byNote.get(row.noteId) ?? [];
+    list.push({
+      url: row.url,
+      title: row.title,
+      citation: row.citation,
+      accessedAt: row.accessedAt,
+    });
+    byNote.set(row.noteId, list);
+  }
+  return byNote;
+}
+
 export async function getRecipeBySlug(
   slug: string,
   revisionNumber?: number,
@@ -678,18 +739,30 @@ export async function getRecipeBySlug(
           title: notes.title,
           body: notes.body,
           conditions: notes.conditions,
+          previousSubjects: notes.previousSubjects,
           createdAt: notes.createdAt,
         })
         .from(notes)
         .where(
           sql`${notes.recipeId} = ${recipe.id} OR ${notes.revisionId} = ${revision.id}`,
         )
-        // THE NOTE ORDER. `created_at` first, `position` second, `id` last —
+        // THE NOTE ORDER. `sort_at` first, `position` second, `id` last —
         // the same three columns in the same order in all five reads that
-        // return notes, so a note holds one place in one list wherever it is
-        // drawn.
+        // return the notes of ONE SUBJECT, so a note holds one place in one
+        // list wherever it is drawn.
         //
-        // `created_at` defaults to `now()`, which Postgres holds fixed for a
+        // `searchNotes` is the deliberate exception, and the only one. It
+        // crosses subjects to answer "what is here", which is the question
+        // `listRecipes` and `listExperiments` answer newest first. It keeps
+        // these same two columns as its tiebreaks, for the reason below.
+        //
+        // `sort_at` was `created_at` until a note could move between
+        // subjects (D-13). A moved note keeps the date it was written and
+        // arrives at its new subject today, and those are two different
+        // facts; `created_at` holds the first and this holds the second.
+        // Backfilled equal, so nothing stored reordered.
+        //
+        // `sort_at` defaults to `now()`, which Postgres holds fixed for a
         // transaction, so every note written by one call carries the SAME
         // timestamp. It sequences the *groups* exactly — one transaction
         // only ever writes notes against one subject, and this query reads
@@ -699,7 +772,7 @@ export async function getRecipeBySlug(
         // `writeNotes`. Before it, the tiebreak was `asc(notes.id)`, a random
         // uuid, so the Wellington's four mechanisms were renumbered on every
         // ingest. `id` stays on the end so the sort is total.
-        .orderBy(asc(notes.createdAt), asc(notes.position), asc(notes.id)),
+        .orderBy(asc(notes.sortAt), asc(notes.position), asc(notes.id)),
       // One flow at most — `uq_mass_flow_revision` — so the head repeats on
       // every stage row and a left join costs one statement instead of two.
       db
@@ -769,38 +842,7 @@ export async function getRecipeBySlug(
     usesByStep.set(row.stepId, list);
   }
 
-  const sourceRows = noteRows.length
-    ? await db
-        .select()
-        .from(noteSources)
-        .where(
-          inArray(
-            noteSources.noteId,
-            noteRows.map((x) => x.id),
-          ),
-        )
-        // This read had no ORDER BY at all, so the citations under a note
-        // came back in whatever order the scan produced — visible on the
-        // recipe page and, worse, in `pnpm export`, where a `- Source:`
-        // block reshuffled between two loads of the same seed. Same three
-        // columns as everywhere else; the grouping below preserves them.
-        .orderBy(
-          asc(noteSources.createdAt),
-          asc(noteSources.position),
-          asc(noteSources.id),
-        )
-    : [];
-  const sourcesByNote = new Map<string, NoteView['sources']>();
-  for (const row of sourceRows) {
-    const list = sourcesByNote.get(row.noteId) ?? [];
-    list.push({
-      url: row.url,
-      title: row.title,
-      citation: row.citation,
-      accessedAt: row.accessedAt,
-    });
-    sourcesByNote.set(row.noteId, list);
-  }
+  const sourcesByNote = await noteSourcesByNote(noteRows.map((x) => x.id));
 
   const [linkRows, backlinkRows, experimentRows] = await Promise.all([
     db
@@ -919,6 +961,7 @@ export async function getRecipeBySlug(
       title: row.title,
       body: row.body,
       conditions: row.conditions,
+      movedFrom: row.previousSubjects,
       createdAt: row.createdAt.toISOString(),
       sources: sourcesByNote.get(row.id) ?? [],
     })),
@@ -1270,16 +1313,20 @@ export async function getIngredient(slug: string): Promise<{
         title: notes.title,
         body: notes.body,
         conditions: notes.conditions,
+        previousSubjects: notes.previousSubjects,
         createdAt: notes.createdAt,
       })
       .from(notes)
       .where(eq(notes.ingredientId, row.id))
       // The note order — see `getRecipeBySlug`. `created_at` alone left
       // several notes written against one ingredient in planner order.
-      .orderBy(asc(notes.createdAt), asc(notes.position), asc(notes.id)),
+      .orderBy(asc(notes.sortAt), asc(notes.position), asc(notes.id)),
   ]);
 
-  const terms = await attachTerms(usedIn);
+  const [terms, sourcesByNote] = await Promise.all([
+    attachTerms(usedIn),
+    noteSourcesByNote(noteRows.map((x) => x.id)),
+  ]);
 
   return {
     ingredient: {
@@ -1301,8 +1348,9 @@ export async function getIngredient(slug: string): Promise<{
       title: x.title,
       body: x.body,
       conditions: x.conditions,
+      movedFrom: x.previousSubjects,
       createdAt: x.createdAt.toISOString(),
-      sources: [],
+      sources: sourcesByNote.get(x.id) ?? [],
     })),
   };
 }
@@ -1583,6 +1631,7 @@ export async function getExperiment(
         title: notes.title,
         body: notes.body,
         conditions: notes.conditions,
+        previousSubjects: notes.previousSubjects,
         createdAt: notes.createdAt,
       })
       .from(notes)
@@ -1590,8 +1639,10 @@ export async function getExperiment(
       // The note order — see `getRecipeBySlug`. `logExperiment` writes every
       // note on a run in one transaction, so this list was the one most
       // exposed to the tie: batch 2 carries three.
-      .orderBy(asc(notes.createdAt), asc(notes.position), asc(notes.id)),
+      .orderBy(asc(notes.sortAt), asc(notes.position), asc(notes.id)),
   ]);
+
+  const sourcesByNote = await noteSourcesByNote(noteRows.map((x) => x.id));
 
   return {
     slug: row.slug,
@@ -1614,9 +1665,341 @@ export async function getExperiment(
       title: x.title,
       body: x.body,
       conditions: x.conditions,
+      movedFrom: x.previousSubjects,
       createdAt: x.createdAt.toISOString(),
-      sources: [],
+      sources: sourcesByNote.get(x.id) ?? [],
     })),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Searching the halves that are not recipes
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface ExperimentSearchResult {
+  slug: string;
+  title: string;
+  summary: string | null;
+  outcome: string | null;
+  startedAt: string | null;
+  recipe: { slug: string; title: string } | null;
+  rank: number;
+}
+
+/**
+ * Runs, by free text.
+ *
+ * WHY THERE IS NO GENERATED COLUMN HERE, and why that is not laziness. The
+ * obvious build is a `tsvector` column on `experiments`, `GENERATED ALWAYS
+ * AS … STORED`, weighting the slug with the `'simple'` configuration so it
+ * is kept as typed. That is wrong, and it fails silently on the exact case
+ * issue #18 reports. `websearch_to_tsquery('english', …)` STEMS its input:
+ * `mixed-bone-demi-glace-batch-1` becomes a phrase query containing `mix`,
+ * not `mixed`. A `'simple'` vector holds `mixed`, so the two never meet and
+ * the slug that prompted the report would still return nothing. Checked on
+ * the Postgres this runs against: `'simple'` is false, `'english'` is true.
+ * Both sides must stem or neither may.
+ *
+ * So the matching is the same two-part clause `searchNotes` uses: a tsquery
+ * half that stems and ranks, and an ILIKE half that catches the literal
+ * substring a slug or a part-word would otherwise miss. It needs no column,
+ * no trigger and no migration, and the ILIKE half is what makes an exact
+ * slug pasted out of an MCP response find its record. When these tables are
+ * big enough that a sequential scan hurts, the answer is one hand-authored
+ * expression-index migration — drizzle-kit cannot emit those, which is why
+ * `0001_search_indexes.sql` was hand-written too.
+ */
+export async function searchExperiments(input: {
+  query?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{ results: ExperimentSearchResult[]; total: number }> {
+  const conditions = [sql`TRUE`];
+  const q = input.query?.trim();
+
+  if (q) {
+    conditions.push(sql`(
+      to_tsvector('english',
+        coalesce(e.title, '') || ' ' ||
+        coalesce(e.summary, '') || ' ' ||
+        coalesce(e.outcome, ''))
+        @@ websearch_to_tsquery('english', ${q})
+      OR e.slug ILIKE ${'%' + q + '%'}
+      OR e.title ILIKE ${'%' + q + '%'}
+      OR e.summary ILIKE ${'%' + q + '%'}
+      OR e.outcome ILIKE ${'%' + q + '%'}
+    )`);
+  }
+
+  const where = sql.join(conditions, sql` AND `);
+  const rank = q
+    ? sql`ts_rank_cd(
+        to_tsvector('english',
+          coalesce(e.title, '') || ' ' ||
+          coalesce(e.summary, '') || ' ' ||
+          coalesce(e.outcome, '')),
+        websearch_to_tsquery('english', ${q})
+      )`
+    : sql`0::float4`;
+  /* Newest first, the order `listExperiments` uses, for the same reason. */
+  const ordering = q
+    ? sql`${rank} DESC, e.started_at DESC NULLS LAST, e.slug ASC`
+    : sql`e.started_at DESC NULLS LAST, e.slug ASC`;
+
+  const result = await db.execute<Record<string, unknown>>(sql`
+    SELECT e.slug, e.title, e.summary, e.outcome, e.started_at,
+           r.slug AS recipe_slug, r.title AS recipe_title,
+           ${rank} AS rank,
+           COUNT(*) OVER () AS total
+      FROM experiments e
+      LEFT JOIN recipes r ON r.id = e.recipe_id
+     WHERE ${where}
+     ORDER BY ${ordering}
+     LIMIT ${input.limit ?? 20}
+    OFFSET ${input.offset ?? 0}
+  `);
+
+  const rows = result.rows as unknown as Record<string, unknown>[];
+  return {
+    total: rows.length > 0 ? Number(rows[0]!.total) : 0,
+    results: rows.map((row) => ({
+      slug: String(row.slug),
+      title: String(row.title),
+      summary: row.summary == null ? null : String(row.summary),
+      outcome: row.outcome == null ? null : String(row.outcome),
+      startedAt: row.started_at == null ? null : String(row.started_at),
+      recipe: row.recipe_slug
+        ? { slug: String(row.recipe_slug), title: String(row.recipe_title) }
+        : null,
+      rank: Number(row.rank ?? 0),
+    })),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Notes, as a set
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * How much of a body a result carries.
+ *
+ * Long enough to tell two notes apart and to judge whether one already says
+ * what you were about to write; short enough that the default page of
+ * twenty is a few kilobytes rather than a few tens. `bodyLength` and
+ * `truncated` come back with it, so a caller knows when to fetch the whole
+ * note from its parent record.
+ */
+const NOTE_EXCERPT_CHARS = 240;
+
+export interface NoteSearchResult {
+  id: string;
+  kind: string;
+  title: string | null;
+  excerpt: string;
+  truncated: boolean;
+  bodyLength: number;
+  conditions: string[];
+  sourceCount: number;
+  createdAt: string;
+  attachedTo: {
+    type: 'recipe' | 'revision' | 'step' | 'ingredient' | 'experiment';
+    slug: string | null;
+    title: string | null;
+    revisionNumber: number | null;
+  };
+  rank: number;
+}
+
+/**
+ * Every note, searchable, whatever it hangs off.
+ *
+ * WHY THIS EXISTS. Every other record type could be enumerated —
+ * `list_ingredients`, `list_categories`, `list_experiments`,
+ * `search_recipes` — and notes could not. The only way to reach one was to
+ * call `get_recipe`, `get_ingredient` or `get_experiment` on whatever it
+ * happened to be attached to, so you had to know where a note was in order
+ * to find it. At the sizes this store already holds that is seventy-odd
+ * calls to answer "what do I know about collagen", which no agent will
+ * spend speculatively. The store accumulated judgement faster than it could
+ * retrieve it, and notes were the one record type with no duplicate check.
+ *
+ * NEITHER `noteBelongsToRecipe` NOR `noteRecipeId` MAY BE REUSED HERE, and
+ * this is the trap to avoid. Both resolve a revision note only through
+ * `recipes.current_revision_id`, so both silently drop every note on a
+ * superseded revision. That is correct for `/science`, which draws the
+ * recipe as it stands. It is wrong here: `reviseRecipe` and
+ * `backfillRevision` attach their notes to a REVISION, so on any recipe
+ * that has been revised once, the rule those two encode hides exactly the
+ * notes an agent is looking for. The eight joins below resolve a note to
+ * its recipe through ANY revision.
+ *
+ * NO STATUS FILTER, unlike `searchRecipes`, which opens with
+ * `r.status = 'active'`. `getStats` counts notes with no such predicate,
+ * and the suite pins `counts.notes` to this function's `total`. A status
+ * filter here would break that agreement the first time a recipe is
+ * archived, and it would hide a note whose lesson outlives its dish.
+ *
+ * THE ORDER RUNS OPPOSITE TO EVERY OTHER NOTE READ, deliberately. The five
+ * reads that return the notes of ONE subject order `created_at, position,
+ * id` ascending, because there a note holds a place in a list a reader goes
+ * through in order. This read crosses subjects and answers "what is here",
+ * which is the question `listRecipes` and `listExperiments` answer newest
+ * first. `position` and `id` stay as tiebreaks so that paging is stable —
+ * `created_at` is fixed for a whole transaction, so a call that wrote four
+ * notes gives all four the same timestamp.
+ */
+export async function searchNotes(
+  input: SearchNotesInput,
+): Promise<{ results: NoteSearchResult[]; total: number }> {
+  const conditions = [sql`TRUE`];
+
+  const q = input.query?.trim();
+  if (q) {
+    /* No tsvector on `notes`. A generated column and a GIN index are the
+       answer when this table is large enough to need one; at the sizes
+       here every join is on a primary key and the planner reads the table
+       either way. The tsquery half ranks and stems, the ILIKE half catches
+       the substring a slug or a part-word would miss. */
+    conditions.push(sql`(
+      to_tsvector('english', coalesce(n.title, '') || ' ' || n.body)
+        @@ websearch_to_tsquery('english', ${q})
+      OR n.title ILIKE ${'%' + q + '%'}
+      OR n.body ILIKE ${'%' + q + '%'}
+    )`);
+  }
+  if (input.kind) {
+    conditions.push(sql`n.kind = ${input.kind}`);
+  }
+  if (input.recipeSlug) {
+    /* Through any revision, not only the current one — see the note above.
+       A run of the recipe is NOT included: a note on a batch is about that
+       batch, and `experimentSlug` asks for those. */
+    conditions.push(
+      sql`COALESCE(rec.slug, rvr.slug, srv.slug) = ${input.recipeSlug}`,
+    );
+  }
+  if (input.ingredientSlug) {
+    conditions.push(sql`ing.slug = ${input.ingredientSlug}`);
+  }
+  if (input.experimentSlug) {
+    conditions.push(sql`exp.slug = ${input.experimentSlug}`);
+  }
+
+  const where = sql.join(conditions, sql` AND `);
+
+  /* A bare integer in ORDER BY is an ordinal position in Postgres, so the
+     no-query case drops the rank term rather than ordering by a constant.
+     The EXPRESSION is interpolated into ORDER BY, never the output alias:
+     `rank` is also a window-function name, and the house pattern in
+     `searchRecipes` sidesteps the question entirely. */
+  const rank = q
+    ? sql`ts_rank_cd(
+        to_tsvector('english', coalesce(n.title, '') || ' ' || n.body),
+        websearch_to_tsquery('english', ${q})
+      )`
+    : sql`0::float4`;
+  const ordering = q
+    ? sql`${rank} DESC, n.created_at DESC, n.position ASC, n.id ASC`
+    : sql`n.created_at DESC, n.position ASC, n.id ASC`;
+
+  const result = await db.execute<Record<string, unknown>>(sql`
+    SELECT n.id, n.kind, n.title, n.body, n.conditions, n.created_at,
+           n.recipe_id, n.revision_id, n.step_id, n.ingredient_id,
+           n.experiment_id,
+           rec.slug  AS recipe_slug,       rec.title  AS recipe_title,
+           rvr.slug  AS revision_recipe_slug,
+           rvr.title AS revision_recipe_title,
+           rv.revision_number AS revision_number,
+           srv.slug  AS step_recipe_slug,
+           srv.title AS step_recipe_title,
+           sr.revision_number AS step_revision_number,
+           ing.slug  AS ingredient_slug,   ing.name   AS ingredient_name,
+           exp.slug  AS experiment_slug,   exp.title  AS experiment_title,
+           (SELECT COUNT(*) FROM note_sources ns WHERE ns.note_id = n.id)
+             AS source_count,
+           ${rank} AS rank,
+           COUNT(*) OVER () AS total
+      FROM notes n
+      LEFT JOIN recipes rec ON rec.id = n.recipe_id
+      LEFT JOIN recipe_revisions rv ON rv.id = n.revision_id
+      LEFT JOIN recipes rvr ON rvr.id = rv.recipe_id
+      LEFT JOIN recipe_steps st ON st.id = n.step_id
+      LEFT JOIN recipe_revisions sr ON sr.id = st.revision_id
+      LEFT JOIN recipes srv ON srv.id = sr.recipe_id
+      LEFT JOIN ingredients ing ON ing.id = n.ingredient_id
+      LEFT JOIN experiments exp ON exp.id = n.experiment_id
+     WHERE ${where}
+     ORDER BY ${ordering}
+     LIMIT ${input.limit}
+    OFFSET ${input.offset}
+  `);
+
+  const rows = result.rows as unknown as Record<string, unknown>[];
+  const str = (value: unknown): string | null =>
+    value == null ? null : String(value);
+  const num = (value: unknown): number | null =>
+    value == null ? null : Number(value);
+
+  return {
+    total: rows.length > 0 ? Number(rows[0]!.total) : 0,
+    results: rows.map((row) => {
+      const body = String(row.body ?? '');
+      const attachedTo: NoteSearchResult['attachedTo'] = row.recipe_id
+        ? {
+            type: 'recipe',
+            slug: str(row.recipe_slug),
+            title: str(row.recipe_title),
+            revisionNumber: null,
+          }
+        : row.revision_id
+          ? {
+              type: 'revision',
+              slug: str(row.revision_recipe_slug),
+              title: str(row.revision_recipe_title),
+              revisionNumber: num(row.revision_number),
+            }
+          : row.step_id
+            ? {
+                type: 'step',
+                slug: str(row.step_recipe_slug),
+                title: str(row.step_recipe_title),
+                revisionNumber: num(row.step_revision_number),
+              }
+            : row.ingredient_id
+              ? {
+                  type: 'ingredient',
+                  slug: str(row.ingredient_slug),
+                  /* `ingredients` has no `title`; its name is the title. */
+                  title: str(row.ingredient_name),
+                  revisionNumber: null,
+                }
+              : {
+                  type: 'experiment',
+                  slug: str(row.experiment_slug),
+                  title: str(row.experiment_title),
+                  revisionNumber: null,
+                };
+
+      return {
+        id: String(row.id),
+        kind: String(row.kind),
+        title: str(row.title),
+        excerpt: body.slice(0, NOTE_EXCERPT_CHARS),
+        truncated: body.length > NOTE_EXCERPT_CHARS,
+        bodyLength: body.length,
+        conditions: (row.conditions as string[] | null) ?? [],
+        /* The only signal that an ingredient or a run note carries a
+           citation at all. */
+        sourceCount: Number(row.source_count ?? 0),
+        /* ISO, whichever driver answered. node-postgres parses a
+           timestamptz into a Date; Neon's serverless driver can hand back
+           the raw Postgres text. Returning whichever arrived would make
+           this field's format depend on where the app is deployed. */
+        createdAt: new Date(row.created_at as string | Date).toISOString(),
+        attachedTo,
+        rank: Number(row.rank ?? 0),
+      };
+    }),
   };
 }
 
@@ -1832,7 +2215,7 @@ export async function listScienceIndex(): Promise<ScienceIndexView> {
       // two different things to a reader.
       .orderBy(
         asc(recipes.title),
-        asc(notes.createdAt),
+        asc(notes.sortAt),
         asc(notes.position),
         asc(notes.id),
       ),
@@ -1959,7 +2342,7 @@ export async function getScienceStudy(
     // (the recipe, its current revision, its steps and its runs), which is
     // why `created_at` leads: it is what puts the groups in the order they
     // were written, and `position` orders inside each one.
-    .orderBy(asc(notes.createdAt), asc(notes.position), asc(notes.id));
+    .orderBy(asc(notes.sortAt), asc(notes.position), asc(notes.id));
 
   const mechanisms: MechanismView[] = noteRows
     .filter((row) => row.kind === 'science')

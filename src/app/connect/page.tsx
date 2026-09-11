@@ -43,7 +43,7 @@ export const metadata: Metadata = {
  * THE TOOL LISTS ARE THE REAL ONES. The design draws four read tools and
  * three write tools with invented names — `search_entries`, `add_state`.
  * This list is the one a person reads before approving write access, so it
- * names every tool the scope grants and not a sample: ten, nine and the one
+ * names every tool the scope grants and not a sample: eleven, ten and the one
  * that is in neither scope, from `src/lib/mcp/tools.ts`.
  * `docs/mcp-connector.md` §Tools and that file are the other two places the
  * set is written down; all three move together, and `TOOLS` in
@@ -184,7 +184,8 @@ export default function ConnectPage() {
          * place". That is the rule for the thing it matters for and it was
          * never true of the whole connector: `upsert_ingredient` and
          * `upsert_category` have always written over a stored label, and
-         * `describe_mechanism` fills a field on a stored note. The scoped
+         * `describe_mechanism` fills a field on a stored note, and
+         * `reattach_note` moves a note to another record. The scoped
          * form is the one `src/lib/queries/write.ts` states at the top of the
          * file, and it is the sentence that is actually load-bearing — a
          * reader approving write access needs to know what CAN change, not a
@@ -195,12 +196,13 @@ export default function ConnectPage() {
           <code className="[font-size:inherit] font-mono">revise_recipe</code>{' '}
           writes a new revision and leaves every earlier one exactly where it
           was, so a revision that has been recorded can never be removed — not
-          by an agent, not by the administrator, not by mistake. Three things
-          can change: an ingredient and a tag can be improved in place, because
-          they describe a name and not a version, and a stored science note can
-          be given the conditions it was written without. That last one can be
-          done once. After it the tool refuses, and the answer to a wrong value
-          is a note of kind{' '}
+          by an agent, not by the administrator, not by mistake. Four things can
+          change. An ingredient and a tag can be improved in place, because they
+          describe a name and not a version. A stored science note can be given
+          the conditions it was written without; that can be done once, and
+          after it the tool refuses. And a note can be moved to another record —
+          the text of the note does not change, and the store keeps each record
+          it was on before. The answer to a wrong value is a note of kind{' '}
           <code className="[font-size:inherit] font-mono">correction</code>.
           Every tool call is written to an audit log.
         </Warning>
@@ -214,8 +216,8 @@ export default function ConnectPage() {
 type Tool = { name: string; text: string };
 
 /**
- * The ten tools the read scope grants, in the order `registerTools` declares
- * them (`src/lib/mcp/tools.ts:241`).
+ * The eleven tools the read scope grants, in the order `registerTools`
+ * declares them (`src/lib/mcp/tools.ts`).
  */
 const READ_TOOLS: Tool[] = [
   {
@@ -251,6 +253,10 @@ const READ_TOOLS: Tool[] = [
     text: 'One run: the date, the weights, what it cost and what happened.',
   },
   {
+    name: 'search_notes',
+    text: 'Every note, wherever it hangs: on a recipe, an ingredient or a run. Searchable by text and by kind.',
+  },
+  {
     name: 'build_shopping_list',
     text: 'The consolidated list for any set of recipes, combined by aisle and by unit.',
   },
@@ -260,7 +266,7 @@ const READ_TOOLS: Tool[] = [
   },
 ];
 
-/** The nine the write scope grants. Approving it grants all of them. */
+/** The ten the write scope grants. Approving it grants all of them. */
 const WRITE_TOOLS: Tool[] = [
   { name: 'create_recipe', text: 'A genuinely new dish. Search first.' },
   {
@@ -284,6 +290,10 @@ const WRITE_TOOLS: Tool[] = [
     text: 'The conditions a stored science note holds under. Once only.',
   },
   {
+    name: 'reattach_note',
+    text: 'Moves a note to another record. The note itself does not change, and the store keeps where it was.',
+  },
+  {
     name: 'upsert_ingredient',
     text: 'An ingredient’s categories, aliases, densities and substitutes.',
   },
@@ -298,7 +308,7 @@ const WRITE_TOOLS: Tool[] = [
 ];
 
 /**
- * The twentieth tool, and the only one in neither scope.
+ * The twenty-second tool, and the only one in neither scope.
  *
  * It is listed on its own because neither of the two lists above is true of
  * it: it needs no scope, and its effect lands outside this system. Reading
@@ -324,7 +334,7 @@ const REPORT_TOOLS: Tool[] = [
  * ingredient name is 14px Geist, the description is Geist where the alias is
  * serif italic, the scope is a 9px tracked label where the count is 12px
  * mono — so reusing it would mean three new props on a shared component for
- * one screen. A list is also the truer shape: this is nine or ten things of
+ * one screen. A list is also the truer shape: this is ten or eleven things of
  * one kind, not a record with four fields, and a screen reader announces the
  * count.
  *

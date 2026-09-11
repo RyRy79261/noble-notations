@@ -53,6 +53,7 @@ import type {
   LogExperimentInput,
   MassFlowInput,
   NoteInput,
+  ReattachNoteInput,
   ReviseRecipeInput,
   StepInput,
   CategoryType,
@@ -1622,6 +1623,208 @@ export async function describeMechanism(
     }
 
     return { noteId: input.noteId, conditions: input.conditions };
+  });
+}
+
+/**
+ * Move a note from one record to another. D-13.
+ *
+ * THIS IS NOT AN EDIT, and the file header's rule is not bent by it. That
+ * rule is "a recipe's ingredients and steps are never edited in place", and
+ * a note's text is governed by the same instinct — the answer to a wrong
+ * note is a `correction`, never a rewrite. But a note's CONTENT being fixed
+ * and its LOCATION being fixed are two decisions, and only the first one
+ * follows from the revision rule. Moving a note changes nothing about what
+ * it says or when it was written.
+ *
+ * The case it exists for: a note is bound to one subject chosen at write
+ * time, and that choice is often forced by what happens to exist yet. Five
+ * notes about stock were attached to a batch because no demi-glace recipe
+ * had been created. When the recipe arrives the notes belong on it, and the
+ * only repair available was to write them a second time — duplicating the
+ * text and letting the two copies drift apart. `logExperiment` already
+ * re-homes a run by naming a different `recipeSlug` on a later call; this
+ * is the same move for the one record type that could not make it.
+ *
+ * A REVISION NOTE IS REFUSED, NOT MOVED. A note pinned to one version is a
+ * statement about that version. Moving it would make a stored version say
+ * something it never said, which is exactly what the revision rule forbids.
+ * The caller is told to write the note again where it belongs.
+ *
+ * The concurrency shape is `describeMechanism`'s: lock the row, then repeat
+ * the guard in the UPDATE's own WHERE so two callers racing cannot both
+ * believe they moved it.
+ */
+export async function reattachNote(input: ReattachNoteInput): Promise<{
+  noteId: string;
+  from: string;
+  to: string;
+  previousSubjects: string[];
+}> {
+  return withTransaction(async (tx) => {
+    const found = await tx
+      .select({
+        id: notes.id,
+        recipeId: notes.recipeId,
+        revisionId: notes.revisionId,
+        stepId: notes.stepId,
+        ingredientId: notes.ingredientId,
+        experimentId: notes.experimentId,
+        previousSubjects: notes.previousSubjects,
+      })
+      .from(notes)
+      .where(eq(notes.id, input.noteId))
+      .limit(1)
+      .for('update');
+    const note = found[0];
+    if (!note) throw new NotFoundError(`No note with id "${input.noteId}".`);
+
+    if (note.revisionId) {
+      const [rev] = await tx
+        .select({
+          revisionNumber: recipeRevisions.revisionNumber,
+          slug: recipes.slug,
+        })
+        .from(recipeRevisions)
+        .innerJoin(recipes, eq(recipes.id, recipeRevisions.recipeId))
+        .where(eq(recipeRevisions.id, note.revisionId))
+        .limit(1);
+      throw new ConflictError(
+        `That note belongs to version ${rev?.revisionNumber ?? '?'} of ` +
+          `"${rev?.slug ?? 'a recipe'}". A note on a version says something ` +
+          'about that version, so it cannot be moved. Write the note again ' +
+          'on the record where it belongs.',
+      );
+    }
+    if (note.stepId) {
+      throw new ConflictError(
+        'That note belongs to a step of a stored version, so it cannot be ' +
+          'moved. Write the note again on the record where it belongs.',
+      );
+    }
+
+    /* Where it is now, in the form this column stores. Resolved by a second
+       read rather than joined into the lock above: only one of the three
+       can be set, so the join would be three left joins to answer one
+       question, and the refusals above return before this runs. */
+    let from: string;
+    if (note.recipeId) {
+      const [row] = await tx
+        .select({ slug: recipes.slug })
+        .from(recipes)
+        .where(eq(recipes.id, note.recipeId))
+        .limit(1);
+      from = `recipe:${row?.slug ?? note.recipeId}`;
+    } else if (note.ingredientId) {
+      const [row] = await tx
+        .select({ slug: ingredients.slug })
+        .from(ingredients)
+        .where(eq(ingredients.id, note.ingredientId))
+        .limit(1);
+      from = `ingredient:${row?.slug ?? note.ingredientId}`;
+    } else {
+      const [row] = await tx
+        .select({ slug: experiments.slug })
+        .from(experiments)
+        .where(eq(experiments.id, note.experimentId!))
+        .limit(1);
+      from = `experiment:${row?.slug ?? note.experimentId}`;
+    }
+
+    /* The destination. The lookups are addNote's, so a slug that is not
+       there is refused in the same words from both tools. */
+    const subject: NoteSubject = {};
+    let to: string;
+    if (input.recipeSlug) {
+      const [row] = await tx
+        .select({ id: recipes.id })
+        .from(recipes)
+        .where(eq(recipes.slug, input.recipeSlug))
+        .limit(1);
+      if (!row) throw new NotFoundError(`No recipe "${input.recipeSlug}".`);
+      subject.recipeId = row.id;
+      to = `recipe:${input.recipeSlug}`;
+    } else if (input.ingredientSlug) {
+      const [row] = await tx
+        .select({ id: ingredients.id })
+        .from(ingredients)
+        .where(eq(ingredients.slug, input.ingredientSlug))
+        .limit(1);
+      if (!row) {
+        throw new NotFoundError(`No ingredient "${input.ingredientSlug}".`);
+      }
+      subject.ingredientId = row.id;
+      to = `ingredient:${input.ingredientSlug}`;
+    } else {
+      const [row] = await tx
+        .select({ id: experiments.id })
+        .from(experiments)
+        .where(eq(experiments.slug, input.experimentSlug!))
+        .limit(1);
+      if (!row) {
+        throw new NotFoundError(`No experiment "${input.experimentSlug}".`);
+      }
+      subject.experimentId = row.id;
+      to = `experiment:${input.experimentSlug}`;
+    }
+
+    if (from === to) {
+      throw new ConflictError(
+        `That note is already on ${to}. Nothing was changed.`,
+      );
+    }
+
+    /* A new home means a new place in that home's list, and it takes TWO
+       columns to say that. `position` is an ordinal within a subject, so the
+       old one is meaningless here. And `sort_at` is the primary sort key: it
+       was `created_at` until a note could move, and leaving it alone would
+       land a note written in 2024 at the FRONT of a recipe written in 2026
+       — which on a science note renumbers every mechanism `/science` draws
+       below it, the fault D-02 records. `created_at` is untouched, because
+       when the note was written is not what changed. */
+    const position = await nextNotePosition(tx, subject);
+
+    const written = await tx
+      .update(notes)
+      .set({
+        recipeId: subject.recipeId ?? null,
+        revisionId: null,
+        stepId: null,
+        ingredientId: subject.ingredientId ?? null,
+        experimentId: subject.experimentId ?? null,
+        position,
+        sortAt: new Date(),
+        previousSubjects: sql`array_append(${notes.previousSubjects}, ${from}::text)`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(notes.id, input.noteId),
+          /* The guard, repeated: the row must still be where the lock found
+             it. A second caller that moved it first fails here rather than
+             appending a `from` that is no longer true. */
+          note.recipeId
+            ? eq(notes.recipeId, note.recipeId)
+            : note.ingredientId
+              ? eq(notes.ingredientId, note.ingredientId)
+              : eq(notes.experimentId, note.experimentId!),
+        ),
+      )
+      .returning({ previousSubjects: notes.previousSubjects });
+
+    if (written.length === 0) {
+      throw new ConflictError(
+        'That note was moved by someone else while this call was running. ' +
+          'Read it again to see where it is now.',
+      );
+    }
+
+    return {
+      noteId: input.noteId,
+      from,
+      to,
+      previousSubjects: written[0]!.previousSubjects,
+    };
   });
 }
 

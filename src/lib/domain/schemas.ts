@@ -370,8 +370,9 @@ export const noteSchema = z.object({
     .describe(
       'science = what is physically or chemically happening in the dish, ' +
         'and why a technique works; research = what was learned after ' +
-        'making it — alternatives, hacks, sourcing, background (give ' +
-        '`sources`); observation = what happened; substitution = what was ' +
+        'making it — alternatives, hacks, sourcing, background (must give ' +
+        'at least one entry in `sources`); observation = what happened; ' +
+        'substitution = what was ' +
         'swapped and why; warning = a trap; result = how it turned out; ' +
         'idea = untried; correction = fixes an earlier claim',
     ),
@@ -389,7 +390,9 @@ export const noteSchema = z.object({
     .max(100)
     .optional()
     .describe(
-      'Each source needs a `url`, a `title` or a `citation`. One of the ' +
+      'A `research` note must have at least one source. The other kinds do ' +
+        'not need a source, but they can have one. ' +
+        'Each source needs a `url`, a `title` or a `citation`. One of the ' +
         'three is enough. An `accessedAt` on its own is not a source.',
     ),
 });
@@ -432,6 +435,13 @@ export type NoteInput = z.infer<typeof noteSchema>;
  * from. Accepting one with no provenance produced exactly the thing the
  * kind was invented to prevent. Every other kind is a first-hand
  * observation and stays optional.
+ *
+ * The message says the other two kinds "need no source" rather than "take
+ * no sources", because the seven non-research kinds MAY carry one and the
+ * earlier wording read as a prohibition. `writeNotes` stores `sources` for
+ * any kind, `notes.tsx` renders them for any kind, and the study reader in
+ * `read.ts` records the standing counterexample: the Wellington's one
+ * source hangs off a `warning`. Only `research` is made to cite.
  */
 export function requireSourcesForResearch(
   value: { kind: string; sources?: unknown[] | null },
@@ -444,9 +454,9 @@ export function requireSourcesForResearch(
     path: ['sources'],
     message:
       'A research note must cite at least one source in `sources` — give a ' +
-      'url, or a title and citation. Research is the kind that records ' +
+      '`url`, a `title` or a `citation`. Research is the kind that records ' +
       'where something came from; without that it is an `observation` or ' +
-      'an `idea`, which take no sources.',
+      'an `idea`, which need no source.',
   });
 }
 
@@ -1529,6 +1539,54 @@ export const describeMechanismSchema = z.object(describeMechanismShape);
 export type DescribeMechanismArgs = z.input<typeof describeMechanismSchema>;
 export type DescribeMechanismInput = z.infer<typeof describeMechanismSchema>;
 
+/**
+ * Move a note to a different record.
+ *
+ * This is NOT an edit, and the distinction is the whole argument for the
+ * tool. A note's text is fixed — the answer to a wrong note is a
+ * `correction`, never a rewrite — but a note's LOCATION being fixed does
+ * not follow from that. Moving a note changes nothing about what it says or
+ * when it was written, and the choice of parent is frequently forced: a
+ * note about a dish gets attached to a batch because no recipe for the dish
+ * exists yet. `logExperiment` already re-homes a run the same way.
+ *
+ * No `revisionNumber`. A note pinned to one version is a statement about
+ * that version, and moving it would make the version say something it never
+ * said — that IS the immutability rule, so a revision note is refused
+ * rather than moved.
+ */
+export const reattachNoteShape = {
+  /** `z.guid()` for the same reason `describeMechanismShape` uses it. */
+  noteId: z
+    .guid()
+    .describe(
+      'The id of the note. get_recipe, get_ingredient and get_experiment ' +
+        'give it for every note they return, and so does search_notes.',
+    ),
+  recipeSlug: z.string().max(120).optional(),
+  ingredientSlug: z.string().max(120).optional(),
+  experimentSlug: z.string().max(120).optional(),
+};
+
+export const reattachNoteSchema = z
+  .object(reattachNoteShape)
+  .superRefine((value, ctx) => {
+    const targets = [
+      value.recipeSlug,
+      value.ingredientSlug,
+      value.experimentSlug,
+    ].filter(Boolean);
+    if (targets.length !== 1) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'Give exactly one of recipeSlug, ingredientSlug or experimentSlug.',
+      });
+    }
+  });
+export type ReattachNoteArgs = z.input<typeof reattachNoteSchema>;
+export type ReattachNoteInput = z.infer<typeof reattachNoteSchema>;
+
 export const upsertIngredientShape = {
   name: plainName(z.string().min(1).max(200), 'name'),
   slug: z.string().max(120).optional(),
@@ -1675,6 +1733,79 @@ export const searchRecipesShape = {
 
 export const searchRecipesSchema = z.object(searchRecipesShape);
 export type SearchRecipesInput = z.infer<typeof searchRecipesSchema>;
+
+/**
+ * Finding a note.
+ *
+ * THE SLUGS ARE NOT `plainName()`. They look like the write-side fields and
+ * they must not borrow their validation. `plainName` appends a rule about
+ * how a name may be minted and, through `RESERVED_TAG_SLUGS`, refuses
+ * 'null', 'undefined' and 'none'. `search_recipes` once shared the write's
+ * category schema and so refused a query that named a reserved tag —
+ * blocking the only tool that could have found the junk tag in the first
+ * place. `e2e/mcp-boundary.spec.ts` records it. A filter is a lookup key,
+ * not a name being minted.
+ *
+ * `query` is optional, so the tool degrades to plain enumeration. That is
+ * deliberate: a second `list_notes` would be one more name to learn for a
+ * strictly smaller behaviour.
+ */
+export const searchNotesShape = {
+  query: z
+    .string()
+    .max(300)
+    .optional()
+    .describe(
+      'Free text. It matches the title and the body of a note. Leave it ' +
+        'out to list notes without searching.',
+    ),
+  kind: z
+    .enum(NOTE_KINDS)
+    .optional()
+    .describe('Return only notes of this kind.'),
+  recipeSlug: z
+    .string()
+    .max(120)
+    .optional()
+    .describe(
+      'Return only notes on this recipe. This includes notes on every ' +
+        'version of it, not only the current one. It does not include ' +
+        'notes on a run of it.',
+    ),
+  ingredientSlug: z
+    .string()
+    .max(120)
+    .optional()
+    .describe('Return only notes on this ingredient.'),
+  experimentSlug: z
+    .string()
+    .max(120)
+    .optional()
+    .describe('Return only notes on this run.'),
+  limit: z.number().int().min(1).max(100).default(20),
+  offset: z.number().int().min(0).max(10000).default(0),
+};
+
+export const searchNotesSchema = z
+  .object(searchNotesShape)
+  .superRefine((value, ctx) => {
+    const targets = [
+      value.recipeSlug,
+      value.ingredientSlug,
+      value.experimentSlug,
+    ].filter(Boolean);
+    /* `> 1`, not `!== 1`: none is the common case and means "everywhere". */
+    if (targets.length > 1) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'Give at most one of `recipeSlug`, `ingredientSlug` or ' +
+          '`experimentSlug`. A note hangs off one record, so two filters ' +
+          'can never both hold. Leave all three out to search everywhere.',
+      });
+    }
+  });
+export type SearchNotesInput = z.infer<typeof searchNotesSchema>;
 
 // ─────────────────────────────────────────────────────────────────────────
 // Reporting a fault in the connector

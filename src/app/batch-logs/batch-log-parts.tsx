@@ -4,7 +4,7 @@ import { BatchLine, BatchSource } from '@/components/f/batch-line';
 import { citationDate } from '@/components/f/citation';
 import { ListMark } from '@/components/f/list-row';
 import type { ExperimentSummary } from '@/lib/queries/read';
-import { revisionOrdinal } from '@/lib/site';
+import { batchLogPath, revisionOrdinal } from '@/lib/site';
 import { cn } from '@/lib/utils';
 
 /**
@@ -224,19 +224,14 @@ function Weights({ log }: { log: BatchLogRow }) {
 /**
  * D-01 — the one live address of a run.
  *
- * A run that names a recipe belongs under that recipe; a run that names none
- * has no recipe slug to put in that shape and stays at the top level. Both
- * indexes link straight at whichever of the two the run's own address is, so
- * the reader never pays for the redirect in `/batch-logs/[log]`.
+ * Re-exported, not defined here. The rule was written three times — here,
+ * inline in `src/app/sitemap.ts`, and again in the redirect at
+ * `/batch-logs/[log]` — and `/search` now needs it as well, from a file
+ * that has no business importing a page component. It lives in
+ * `src/lib/site.ts` beside the other address rules; this line keeps the
+ * three existing call sites reading as they did.
  */
-export function batchLogPath(log: {
-  slug: string;
-  recipe: { slug: string } | null;
-}): string {
-  return log.recipe
-    ? `/recipes/${log.recipe.slug}/batch-logs/${log.slug}`
-    : `/batch-logs/${log.slug}`;
-}
+export { batchLogPath };
 
 export type BatchLogRowsProps = {
   logs: BatchLogRow[];

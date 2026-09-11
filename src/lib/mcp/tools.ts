@@ -27,6 +27,8 @@ import {
   describeMechanismShape,
   logExperimentSchema,
   logExperimentShape,
+  reattachNoteSchema,
+  reattachNoteShape,
   reportIssueSchema,
   reportIssueShape,
   reviseRecipeSchema,
@@ -35,6 +37,8 @@ import {
   backfillRevisionShape,
   buildShoppingListSchema,
   buildShoppingListShape,
+  searchNotesSchema,
+  searchNotesShape,
   searchRecipesSchema,
   searchRecipesShape,
   CATEGORY_TYPES,
@@ -53,6 +57,7 @@ import {
   listExperiments,
   listIngredients,
   listCategories,
+  searchNotes,
   searchRecipes,
 } from '@/lib/queries/read';
 import {
@@ -63,6 +68,7 @@ import {
   describeMechanism,
   logExperiment,
   NotFoundError,
+  reattachNote,
   reviseRecipe,
   backfillRevision,
   upsertIngredient,
@@ -426,7 +432,9 @@ export function registerTools(server: McpServer): void {
       description:
         'Recorded runs — an actual batch that was cooked, with its ' +
         'measurements. Distinct from a recipe: the recipe is the intent, an ' +
-        'experiment is what happened when it met reality.',
+        'experiment is what happened when it met reality.\n\n' +
+        'The website calls these batch logs. Every run is listed at ' +
+        '/batch-logs.',
       inputSchema: {},
     },
     async (_args, extra) =>
@@ -443,7 +451,11 @@ export function registerTools(server: McpServer): void {
         'One recorded run with every per-item observation (weights, dates, ' +
         'costs), its outcome, and the recipe revision it was cooking. Use it ' +
         'when a revision needs to be justified by measured results rather ' +
-        'than by taste memory.',
+        'than by taste memory.\n\n' +
+        'The website calls this a batch log. One run is at ' +
+        '/batch-logs/<slug>. A run that names a recipe is also at ' +
+        '/recipes/<recipe>/batch-logs/<slug>. The address /batch-logs/<slug> ' +
+        'always answers.',
       inputSchema: { slug: z.string().min(1).max(120) },
     },
     async (args, extra) =>
@@ -455,6 +467,45 @@ export function registerTools(server: McpServer): void {
           const found = await getExperiment(args.slug);
           if (!found) throw new NotFoundError(`No experiment "${args.slug}".`);
           return found;
+        },
+      ),
+  );
+
+  server.registerTool(
+    'search_notes',
+    {
+      title: 'Search notes',
+      description:
+        'Find what the repository already knows. A note can hang off a ' +
+        'recipe, a version of a recipe, a step, an ingredient or a run, so ' +
+        'reading one record shows you only the notes on that record. This ' +
+        'searches all of them at once.\n\n' +
+        'Call it before add_note. A near-copy of a note that is already ' +
+        'here cannot be told apart from the original later, and nothing ' +
+        'removes either one.\n\n' +
+        'Free text matches the title and the body. Leave `query` out to ' +
+        'list notes, newest first. Use `kind` on its own to read a class of ' +
+        'note across the whole store: every warning, or every science note.' +
+        '\n\n' +
+        'Each result names the record it is attached to, so you can fetch ' +
+        'the whole thing with get_recipe, get_ingredient or get_experiment. ' +
+        '`recipeSlug` covers every version of that recipe, not only the ' +
+        'current one. It does not cover runs of it; ask for those with ' +
+        '`experimentSlug`.\n\n' +
+        'A body is cut to an excerpt. `truncated` says whether it was, and ' +
+        '`bodyLength` says how long the whole body is. `sourceCount` says ' +
+        'how many sources the note cites. The `id` on a result is the one ' +
+        'describe_mechanism asks for.',
+      inputSchema: searchNotesShape,
+    },
+    async (args, extra) =>
+      runTool(
+        extra as AuthCtx,
+        'search_notes',
+        { query: args.query, kind: args.kind },
+        async () => {
+          const input = searchNotesSchema.parse(args);
+          return searchNotes(input);
         },
       ),
   );
@@ -678,9 +729,13 @@ export function registerTools(server: McpServer): void {
         'barrier, not a flavour layer" is science.\n' +
         '- `research` is what was learned around it afterwards: ' +
         'alternatives, hacks, sourcing, background. "Where to buy crayfish ' +
-        'in Berlin" is research. Give `sources` where you have them. Each ' +
+        'in Berlin" is research. A `research` note must carry at least one ' +
+        'source, because research is the kind that records where something ' +
+        'came from. With nothing to cite it is an `observation` or an ' +
+        '`idea` instead. Each ' +
         'source needs a `url`, a `title` or a `citation`. One of the three ' +
-        'is enough. An `accessedAt` on its own is not a source.\n\n' +
+        'is enough. An `accessedAt` on its own is not a source. The other ' +
+        'kinds may carry sources; none of them has to.\n\n' +
         'The rest: `observation` for what was noticed, `result` for how it ' +
         'turned out, `substitution` for what was swapped and why, `warning` ' +
         'for a trap worth flagging, `idea` for something untried, ' +
@@ -713,20 +768,29 @@ export function registerTools(server: McpServer): void {
   );
 
   /**
-   * The two tools below reach a record that is already stored. Every other
+   * The three tools below reach a record that is already stored. Every other
    * write tool either makes a new record or appends one, because that is the
-   * whole shape of this repository — so these two need their reason written
-   * down beside them.
+   * whole shape of this repository — so these three need their reason
+   * written down beside them.
    *
-   * Each fills a field that could not exist when the record was written.
-   * D-02 added `notes.conditions` and D-12 added the mass flow tables, and
-   * every recipe and every science note in the archive predates both. No
-   * other path reaches them: `pnpm ingest` skips a recipe that exists, and a
-   * revision whose only change is a diagram has no reason to exist and would
-   * move a number that is in URLs and in the ticked-ingredient keys.
+   * The first two fill a field that could not exist when the record was
+   * written. D-02 added `notes.conditions` and D-12 added the mass flow
+   * tables, and every recipe and every science note in the archive predates
+   * both. No other path reaches them: `pnpm ingest` skips a recipe that
+   * exists, and a revision whose only change is a diagram has no reason to
+   * exist and would move a number that is in URLs and in the
+   * ticked-ingredient keys. Neither is an edit. Both refuse a second write,
+   * so a value goes from absent to present exactly once and can never be
+   * quietly replaced.
    *
-   * Neither is an edit. Both refuse a second write, so a value goes from
-   * absent to present exactly once and can never be quietly replaced.
+   * The third, `reattach_note`, is a different shape and is D-13. It changes
+   * no field a reader reads: the note's kind, title, body, conditions,
+   * sources and date all stay exactly as they were, and only which record
+   * the note hangs off changes. A note's text being fixed does not make its
+   * location fixed — the choice of parent is usually forced by what happens
+   * to exist yet, and a note written against a batch because the recipe did
+   * not exist was stranded there for good. The move is recorded on the note
+   * rather than performed silently.
    */
   server.registerTool(
     'add_mass_flow',
@@ -820,6 +884,56 @@ export function registerTools(server: McpServer): void {
               `The mechanism now states ${count} ` +
               `${count === 1 ? 'condition' : 'conditions'}. ` +
               'They cannot be changed.',
+          };
+        },
+      ),
+  );
+
+  server.registerTool(
+    'reattach_note',
+    {
+      title: 'Move a note to another record',
+      description:
+        'Move a note from the record it is on to a different one. Give the ' +
+        'note id and exactly one of `recipeSlug`, `ingredientSlug` or ' +
+        '`experimentSlug`.\n\n' +
+        'The note does not change. Its kind, its title, its text, its ' +
+        'conditions, its sources and its date all stay as they are. Only ' +
+        'the record it hangs off changes.\n\n' +
+        'Use it when a note went somewhere because its real subject did ' +
+        'not exist yet. A note about a dish often goes on a run, because ' +
+        'the recipe is not written. When you write the recipe, move the ' +
+        'note to it. Do not write the note a second time. Two copies of ' +
+        'one note drift apart and nothing can tell them apart later.\n\n' +
+        'The store keeps each record the note was on before. A reader can ' +
+        'see that the note was written somewhere else first.\n\n' +
+        'A note on one version of a recipe cannot be moved. That note says ' +
+        'something about that version. Write the note again where it ' +
+        'belongs.\n\n' +
+        'get_recipe, get_ingredient and get_experiment give the id of ' +
+        'every note they return. So does search_notes. A moved note takes ' +
+        'the last place in the list of its new record.',
+      inputSchema: reattachNoteShape,
+    },
+    async (args, extra) =>
+      runTool(
+        extra as AuthCtx,
+        'reattach_note',
+        {
+          noteId: args.noteId,
+          recipeSlug: args.recipeSlug,
+          ingredientSlug: args.ingredientSlug,
+          experimentSlug: args.experimentSlug,
+        },
+        async (principal) => {
+          requireWrite(principal);
+          const input = reattachNoteSchema.parse(args);
+          const result = await reattachNote(input);
+          return {
+            ...result,
+            message:
+              `The note moved from ${result.from} to ${result.to}. Its ` +
+              'text did not change. The store keeps where it was before.',
           };
         },
       ),
@@ -955,7 +1069,10 @@ export function registerTools(server: McpServer): void {
         'that version, so a later call that names the same recipe again does ' +
         'not move the run onto the newest version. Send `revisionNumber` ' +
         'only to correct it, and always with `recipeSlug`. Send ' +
-        '`recipeSlug: null` to unlink the run from every recipe.',
+        '`recipeSlug: null` to unlink the run from every recipe.\n\n' +
+        'After you write the run it is on /batch-logs at once. The website ' +
+        'calls a run a batch log. A run with no `recipeSlug` keeps its own ' +
+        'address at /batch-logs/<slug>.',
       inputSchema: logExperimentShape,
     },
     async (args, extra) =>

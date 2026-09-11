@@ -52,6 +52,10 @@ a record that is already stored. Call add_mass_flow to say what a dish
 weighs at each stage. Call describe_mechanism to give a science note its
 conditions. Each field is written once. Neither tool changes a value.
 
+A note can move to another record. Call reattach_note. The text of the
+note does not change. Only the record that holds it changes. Use it when
+you wrote a note before the record it belongs to existed.
+
 Units come from a fixed list. A unit outside it is refused.
 
 After a write, read needsDescription in the result. It names the tags and
@@ -67,6 +71,10 @@ that tells you what to send instead is not a fault.
 
 const INSTRUCTIONS_TAIL = `
 Before you make anything, call search_recipes.
+
+The website calls a run a batch log. Every run is at /batch-logs.
+
+Before you write a note, call search_notes. It finds notes on every record.
 
 Call get_started to read the full guide.
 `.trim();
@@ -90,7 +98,7 @@ export function serverInstructions(
 }
 
 const SCOPES_WITHOUT_REPORTING =
-  'The read tools need the scope noble-notations:read. The nine write ' +
+  'The read tools need the scope noble-notations:read. The ten write ' +
   'tools also need noble-notations:write. The system checks the scope on ' +
   'each call.';
 
@@ -125,9 +133,11 @@ const GUIDE = {
     'If the dish is not here, call create_recipe.',
     'If you find a version that is older than every stored version, call backfill_revision.',
     'Call upsert_category for each new tag. This gives the tag an explanation.',
+    'Call search_notes before you write a note. Find out if the store already says it.',
     'Call add_note for each thing that you learned that is not an instruction.',
     'Call log_experiment after you cook a batch and measure it.',
     'Call add_mass_flow or describe_mechanism only for a record that is already stored.',
+    'If a note sits on the wrong record, call reattach_note. Do not write the note again.',
     'If a tool does the wrong thing, call report_issue. Send the payload and the response, copied exactly.',
   ],
 
@@ -139,7 +149,10 @@ const GUIDE = {
     research:
       'What you learned about the dish after you made it. Other methods, ' +
       'small improvements, where to buy things, background. Example: ' +
-      '"Where to buy crayfish in Berlin." Add sources if you have them.',
+      '"Where to buy crayfish in Berlin." A research note must have at ' +
+      'least one source. Research records where a fact came from. If you ' +
+      'have no source, write the note as an observation or an idea. The ' +
+      'other kinds can have sources, but they do not need them.',
     observation: 'What you saw during one cook.',
     result: 'How the dish was at the end.',
     substitution: 'What you used in place of something, and why.',
@@ -241,6 +254,20 @@ const GUIDE = {
    * to say when NOT to send one as clearly as it says how — a mass flow on
    * every recipe is worse than none, because it stops meaning anything.
    */
+  movingANote:
+    'A note hangs off one record. You choose the record when you write the ' +
+    'note. Sometimes the right record does not exist yet. A note about a ' +
+    'dish goes on a run, because nobody wrote the recipe. Call ' +
+    'reattach_note to move the note later. Give the id of the note and one ' +
+    'record. The text of the note does not change. The kind, the title, ' +
+    'the body, the sources and the date stay the same. Only the record ' +
+    'changes.\n\n' +
+    'Do not write the note a second time. Two copies of one note become ' +
+    'different over time, and no reader can tell which one is right.\n\n' +
+    'The store keeps each record that the note was on before. A note on a ' +
+    'version of a recipe cannot move. That note says something about that ' +
+    'version. Write a new note where it belongs.',
+
   massFlow:
     'A dish can lose or gain a lot of weight while it is made. Biltong of ' +
     '10 kg raw becomes 4.5 kg dried. The mass flow figure shows what the ' +
@@ -269,14 +296,42 @@ const GUIDE = {
     'invent an amount.',
 
   /**
+   * WHY THE GUIDE NAMES THE WEBSITE AT ALL.
+   *
+   * The tools say "experiment". The website says "batch log". They are the
+   * same record — the reader's word won the URL and the database kept its
+   * own — and nothing told an agent so. One then wrote a run, could not
+   * find it on the site, and reported the page as missing. It had existed
+   * since the rename, seventh in the navigation.
+   *
+   * The addresses are relative on purpose. `NEXT_PUBLIC_SITE_URL` is set
+   * nowhere in this repository, so `site.url` falls back to the production
+   * host — which on a preview deployment or in the e2e suite would be a
+   * lie. `getPublicOrigin()` is no better here: `registerTools` has no
+   * request to read an origin from.
+   */
+  theWebsite:
+    'This store is also a website. The website calls a run a batch log. ' +
+    'Every run is on the page /batch-logs. This includes a run that names ' +
+    'no recipe. One run is at /batch-logs/<slug>. A run that names a ' +
+    'recipe is also at /recipes/<recipe>/batch-logs/<slug>. The address ' +
+    '/batch-logs/<slug> always answers. It sends you on when the run has ' +
+    'a recipe.',
+
+  /**
    * The count was "six" and the registry held seven, because
-   * `backfill_revision` was added and this line was not. It is nine now —
-   * `add_mass_flow` and `describe_mechanism` — and the number is worth
-   * keeping true: an agent that reads "six" and counts nine has no way to
-   * tell which three it must not trust.
+   * `backfill_revision` was added and this line was not. It is ten now —
+   * `add_mass_flow`, `describe_mechanism` and `reattach_note` — and the
+   * number is worth keeping true: an agent that reads "six" and counts ten
+   * has no way to tell which four it must not trust.
+   *
+   * SEVEN OTHER PLACES STATE A COUNT and must move together: this string,
+   * `SCOPES_WITHOUT_REPORTING` above, four docs in `src/app/connect/page.tsx`
+   * and the total in `docs/mcp-connector.md`. The registry holds twenty-two
+   * tools: eleven read, ten write, and `report_issue` in neither scope.
    */
   scopes:
-    'The read tools need the scope noble-notations:read. The nine write ' +
+    'The read tools need the scope noble-notations:read. The ten write ' +
     'tools also need noble-notations:write. The system checks the scope on ' +
     'each call. report_issue needs no extra scope. Each connector can file ' +
     'a report.',

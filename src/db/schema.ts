@@ -631,6 +631,66 @@ export const notes = pgTable(
       .default(sql`ARRAY[]::text[]`),
 
     /**
+     * Every subject this note has hung off before the one it hangs off now,
+     * oldest first, as `recipe:<slug>`, `ingredient:<slug>` or
+     * `experiment:<slug>`. Empty for a note that has never moved, which is
+     * almost all of them. This is D-13.
+     *
+     * **Why a note may move at all.** A note is bound to one subject chosen
+     * at write time, and that choice is often forced. Five notes about
+     * stock were attached to a batch because no demi-glace recipe existed
+     * yet to attach them to; when the recipe arrives, the notes belong on
+     * it. Before `reattachNote` the only repair was to write them again on
+     * the recipe, which duplicates the text and lets the two copies drift.
+     * A note's CONTENT being fixed and its LOCATION being fixed are
+     * different decisions: moving one changes nothing about what it says or
+     * when it was written. `logExperiment` already re-homes a run this way.
+     *
+     * **Why the move is recorded rather than silent.** `mcp_audit_log` is
+     * written from the arguments a tool was CALLED with, so an audit row
+     * for a move can name where the note went and never where it came from.
+     * Without this column that fact exists nowhere, and a reader looking at
+     * a note on a recipe could not tell it was written against a batch.
+     * That is the kind of loss the whole repository is built to refuse.
+     *
+     * A text array rather than a child table, following `conditions` and
+     * `ingredients.aliases`: nothing joins on these and no screen filters
+     * by them. The slug is stored rather than a foreign key on purpose — a
+     * subject that is later deleted takes its row with it, and the point of
+     * this column is to survive that.
+     */
+    previousSubjects: text('previous_subjects')
+      .array()
+      .notNull()
+      .default(sql`ARRAY[]::text[]`),
+
+    /**
+     * Where this note sorts among the notes of its subject. Part of D-13.
+     *
+     * **Why `created_at` could not keep doing this job.** It was the primary
+     * sort key, and `position` its tiebreak, because until `reattachNote`
+     * every note was written where it stays: a note's write time and its
+     * arrival at its subject were the same instant, so one column meant
+     * both things. A move breaks that. The note keeps the date it was
+     * written — deliberately, since rewriting it would falsify when the
+     * claim was made — but it arrives at its new subject today.
+     *
+     * With `created_at` sorting, a note written against a batch in 2024 and
+     * moved onto a recipe in 2026 lands FIRST among that recipe's notes,
+     * not last. That is not merely untidy: `listScienceIndex` and
+     * `getScienceStudy` number a study's mechanisms `M1…Mn` by position in
+     * this list, so moving one science note renumbers every mechanism below
+     * it — codes that are already published. That is the exact fault D-02
+     * records, arriving by a new route.
+     *
+     * So the two meanings are separated. `created_at` says when the note was
+     * written and never changes. This says where it sits, and only a move
+     * changes it. Backfilled to `created_at`, so no stored note moved and
+     * `pnpm export` writes the same bytes it did before.
+     */
+    sortAt: timestamp('sort_at', { withTimezone: true }).defaultNow().notNull(),
+
+    /**
      * Where this note sits among the notes on the same subject. 1-based,
      * assigned by `writeNotes` as `MAX(position) + 1` for the subject.
      *

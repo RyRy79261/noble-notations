@@ -9,7 +9,7 @@ import { mcpClient, tokens, type AdvertisedTool } from './helpers';
  * the guide behind `get_started`. AGENTS.md says they live in one file "so
  * they cannot drift" — but nothing checked that either of them agrees with
  * the registry, the schemas or the scope rules underneath. `serverInstructions()`
- * had no assertion at all, and eleven of the guide's sixteen sections had
+ * had no assertion at all, and eleven of the guide's eighteen sections had
  * none.
  *
  * The tests here are not about wording. They are about the three ways this
@@ -151,6 +151,26 @@ test('the guide and the instructions name only tools that exist', async () => {
   }
 });
 
+test('the guide and the instructions name the website and its word', async () => {
+  // THE FAILURE THIS CATCHES is the one that produced issue #19. The
+  // connector's word is "experiment" and the site's word is "batch log".
+  // An agent that is never told the mapping writes a run, is asked where it
+  // went, and reports a page as missing that has existed since the rename —
+  // seventh in the navigation, with `/experiments` already redirecting to
+  // it. Nothing in the sixteen sections mentioned the website at all.
+  //
+  // Only the relative route is asserted. `NEXT_PUBLIC_SITE_URL` is set
+  // nowhere in this repository, so `site.url` falls back to the production
+  // host and an absolute address here would pin a lie.
+  const instructions = await serverInstructions();
+  const guide = JSON.stringify(await agent().call('get_started', {}));
+
+  for (const text of [instructions, guide]) {
+    expect(text.toLowerCase()).toContain('batch log');
+    expect(text).toContain('/batch-logs');
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────────────
 // 2. The guide agrees with the schemas
 // ─────────────────────────────────────────────────────────────────────────
@@ -159,7 +179,7 @@ test('every section of the guide is present and says something', async () => {
   // The guide is one object and a client reads all of it. A section that
   // became an empty string, or lost its key in a refactor, disappears in
   // silence — and the sections most likely to go are the ones no other test
-  // touches, which until now was eleven of the sixteen.
+  // touches, which until now was eleven of the eighteen.
   const guide = await agent().call<Record<string, unknown>>('get_started', {});
 
   const SECTIONS = [
@@ -174,6 +194,8 @@ test('every section of the guide is present and says something', async () => {
     'massFlow',
     'images',
     'shoppingList',
+    'theWebsite',
+    'movingANote',
     'scopes',
     'reportingAFault',
     'rules',
@@ -225,6 +247,40 @@ test('the note kinds the guide explains are the note kinds add_note accepts', as
   // repository uses for them.
   expect(guide.noteKinds.science).toMatch(/happens in the dish/i);
   expect(guide.noteKinds.research).toMatch(/after you made it/i);
+});
+
+test('the guide and add_note state the source rule the schema enforces', async () => {
+  // Failure 2 from this file's header: the prose names a value the schema
+  // then refuses. The guide said "Add sources if you have them" and the
+  // tool said "Give `sources` where you have them", but a research note
+  // with no source is rejected outright — and the rejection fails the whole
+  // call, so an agent that believed either sentence re-sends its payload.
+  const mcp = agent();
+  const addNote = (await mcp.listToolSchemas()).find(
+    (tool) => tool.name === 'add_note',
+  );
+  expect(addNote).toBeTruthy();
+  const guide = await mcp.call<{ noteKinds: Record<string, string> }>(
+    'get_started',
+    {},
+  );
+
+  // The guide states the requirement, and still tells the two kinds apart.
+  expect(guide.noteKinds.research).toMatch(/must/i);
+  expect(guide.noteKinds.research).toMatch(/source/i);
+  expect(guide.noteKinds.research).toMatch(/after you made it/i);
+
+  // So does the tool description.
+  expect(addNote!.description).toMatch(/at least one source/i);
+
+  // And so does the advertised field, which is the one an agent reads when
+  // it reads nothing else.
+  const sources = (
+    addNote!.inputSchema as
+      { properties?: Record<string, { description?: string }> } | undefined
+  )?.properties?.sources?.description;
+  expect(sources).toBeTruthy();
+  expect(sources!).toMatch(/research/i);
 });
 
 test('the category types the guide lists are the ones upsert_category accepts', async () => {
@@ -295,6 +351,7 @@ const CALLS: Record<string, Record<string, unknown>> = {
   get_ingredient: { slug: 'bay-leaf' },
   list_experiments: {},
   get_experiment: { slug: 'biltong-batch-3' },
+  search_notes: { query: 'biltong' },
   build_shopping_list: { slugs: ['baumy-biltong'] },
   get_repository_stats: {},
 
@@ -337,10 +394,15 @@ const CALLS: Record<string, Record<string, unknown>> = {
     parentSlug: 'no-such-parent-for-the-scope-sweep',
   },
   log_experiment: { title: 'A scope sweep', revisionNumber: 1 },
+  reattach_note: {
+    noteId: '00000000-0000-0000-0000-000000000000',
+    recipeSlug: GHOST,
+  },
 };
 
 const WRITE_TOOLS = [
   'create_recipe',
+  'reattach_note',
   'revise_recipe',
   'backfill_revision',
   'add_note',

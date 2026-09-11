@@ -49,17 +49,27 @@ test.describe('search says which of its four states it is in', () => {
     await expect(page.getByText(/nothing matched/i)).toHaveCount(0);
   });
 
-  test('with nothing found it says so, and says the filters combine', async ({
+  test('with nothing found it says so, and says how to widen the search', async ({
     page,
   }) => {
-    // R-STA-04. The remedy is the point: the filters are ANDed, so the way
-    // out of an empty result is to drop one, and the screen has to say that
-    // rather than leave a reader retyping the same query.
+    // R-STA-04. The remedy is the point: an empty result must offer a way
+    // out rather than leave a reader retyping the same query. The screen
+    // used to spell out that the filters are ANDed; R-SCR-18 states that as
+    // BEHAVIOUR, not as required copy, so the remedy is now carried by
+    // "Each field makes the search narrower. Remove one and try again."
     await page.goto('/search?q=zzzzqqq');
 
     await expect(page.getByText(/nothing matched/i)).toBeVisible();
     await expect(page.getByText(/drop|remove/i).first()).toBeVisible();
     await expect(page.locator('main article')).toHaveCount(0);
+
+    // And the sentence reports the finding in English. This is the
+    // assertion that pins issue #21's grammar fix: the count used to be
+    // rendered against a hardcoded plural, so exactly one filled field
+    // produced "zero answer all one condition". It cannot come back.
+    await expect(page.locator('main [data-search-summary]')).toHaveText(
+      'No recipes mention “zzzzqqq”.',
+    );
   });
 
   test('with matches it states the filters in words, not as a query string', async ({
@@ -74,17 +84,24 @@ test.describe('search says which of its four states it is in', () => {
      */
     await page.goto('/search?q=biltong&cuisine=south-african');
 
-    /* The sentence, not the panel head above it — "What you are asking for,
-       in words" is the title and would match a looser pattern. */
-    const notice = page
-      .locator('main')
-      .getByText(/^You are asking for recipes/);
-    await expect(notice).toBeVisible();
+    /* The sentence, not the panel head above it. `Notice` renders its title
+       as a sibling inside the same root, so a text regex here would have to
+       dodge the title; `[data-search-summary]` wraps the sentence alone. */
+    const summary = page.locator('main [data-search-summary]');
+    await expect(summary).toBeVisible();
 
-    const sentence = await notice.evaluate((el) => el.textContent ?? '');
+    const sentence = (await summary.textContent()) ?? '';
     expect(sentence).toContain('biltong');
     expect(sentence).toContain('South African');
     expect(sentence).not.toContain('south-african');
+
+    /* And it reads as a sentence a person would write: the count is the
+       subject and it agrees with its verb. `cardinal` returns bare digits
+       above ninety-nine, hence the numeric alternative. */
+    expect(sentence).toMatch(
+      /^(No|One|[A-Z][a-z-]+|\d+) recipes? (mention|mentions|is|are) /,
+    );
+    expect(sentence.endsWith('.')).toBe(true);
 
     // And the cards are really there, so the sentence is not describing an
     // empty result.
@@ -92,11 +109,100 @@ test.describe('search says which of its four states it is in', () => {
   });
 });
 
+test.describe('search reaches the halves that are not recipes', () => {
+  /*
+   * ISSUE #18. Search covered recipes and nothing else, so everything
+   * recorded on a run or in a note was invisible to it. An agent wrote a
+   * batch log, the reader searched the site for its exact slug, and the
+   * screen answered "zero of six recipes" — accurate, and it left them
+   * concluding the work had never been saved.
+   *
+   * The slug half is the sharp edge and is asserted first. A generated
+   * tsvector weighted with the 'simple' configuration looks like the right
+   * build and silently fails here: websearch_to_tsquery('english', …)
+   * STEMS its input, so `biltong-batch-3` becomes a phrase query holding
+   * `mix`-style stems that a 'simple' vector never carries. Both sides
+   * stem or neither does; the ILIKE half is what makes a slug pasted out
+   * of an MCP response find its record.
+   */
+  test('an exact batch-log slug finds the run', async ({ page }) => {
+    await page.goto('/search?q=biltong-batch-3');
+
+    const runs = page.locator('[data-search-runs]');
+    await expect(runs).toBeVisible();
+    await expect(runs.getByRole('link').first()).toBeVisible();
+
+    // And the reader is told the other halves were looked at, which is the
+    // fact whose absence produced the wrong conclusion in the report.
+    await expect(page.locator('[data-search-elsewhere]')).toContainText(
+      /batch log/i,
+    );
+  });
+
+  test('a word in a note body finds the note and links to its record', async ({
+    page,
+  }) => {
+    // "dry" is in the seeded archive's note bodies. The assertion is not
+    // which note comes back but that the section exists, is populated, and
+    // every row offers a way to the record the note hangs off — a hit with
+    // nowhere to go is the same dead end as not finding it.
+    await page.goto('/search?q=dry');
+
+    const notes = page.locator('[data-search-notes]');
+    await expect(notes).toBeVisible();
+    expect(await notes.getByRole('link').count()).toBeGreaterThan(0);
+  });
+
+  test('recipes, runs and notes are counted apart', async ({ page }) => {
+    await page.goto('/search?q=biltong');
+
+    // Three sections, each with its own count. The recipe cards keep the
+    // `article` element; the other two deliberately do not, so a count of
+    // `main article` still means "recipes came back".
+    await expect(page.getByRole('heading', { name: 'Results' })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Batch logs' }),
+    ).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Notes' })).toBeVisible();
+
+    const articles = await page.locator('main article').count();
+    const runRows = await page.locator('[data-search-runs] > li').count();
+    expect(articles).toBeGreaterThan(0);
+    expect(runRows).toBeGreaterThan(0);
+  });
+
+  test('with no free text the other two sections are not drawn', async ({
+    page,
+  }) => {
+    // They are matched on the text alone. A cuisine filter cannot select a
+    // note, so drawing an empty Notes section under one would report
+    // "none" where the truthful answer is "not asked".
+    await page.goto('/search?cuisine=south-african');
+
+    // ASSERT ON THE HEADINGS, not on the row lists. The `[data-search-runs]`
+    // list is only rendered when that section HAS rows, so its absence is
+    // also what an empty-but-drawn section looks like — a test built on it
+    // cannot tell "not asked" from "asked and found none", which is exactly
+    // the distinction this test exists for.
+    await expect(page.getByRole('heading', { name: 'Batch logs' })).toHaveCount(
+      0,
+    );
+    await expect(page.getByRole('heading', { name: 'Notes' })).toHaveCount(0);
+    await expect(page.locator('[data-search-elsewhere]')).toHaveCount(0);
+
+    // The recipe half still answered, so this is a drawn page and not an
+    // error state that would make the assertions above vacuous.
+    await expect(page.getByRole('heading', { name: 'Results' })).toBeVisible();
+  });
+});
+
 test.describe('the form works with no JavaScript', () => {
   // R-SCR-17 — "the form MUST be a plain GET form. It MUST work when the
-  // browser has no JavaScript." Nothing in the suite has ever turned
-  // JavaScript off, so the guarantee the screen prints on itself
-  // ("Submits with GET · Works without JavaScript") was never once checked.
+  // browser has no JavaScript." The screen used to print that guarantee on
+  // itself ("Submits with GET · Works without JavaScript") and nothing ever
+  // checked it. Issue #21 deleted the caption — a cook has no use for the
+  // HTTP method — so this block is now the whole record of R-SCR-17, which
+  // is the right way round: the behaviour is asserted, not advertised.
   test.use({ javaScriptEnabled: false });
 
   test('a search submits, lands in the address bar and answers', async ({

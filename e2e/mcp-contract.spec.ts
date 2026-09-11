@@ -81,8 +81,10 @@ const TOOLS = [
   'list_experiments',
   'list_ingredients',
   'log_experiment',
+  'reattach_note',
   'report_issue',
   'revise_recipe',
+  'search_notes',
   'search_recipes',
   'upsert_category',
   'upsert_ingredient',
@@ -204,6 +206,16 @@ interface ExperimentResult {
   recipe: { slug: string; title: string } | null;
   items: { label: string; note: string | null }[];
   observations: { metric: string; value: number | null }[];
+  notes: {
+    kind: string;
+    title: string | null;
+    body: string;
+    sources: {
+      url: string | null;
+      title: string | null;
+      citation: string | null;
+    }[];
+  }[];
 }
 
 /**
@@ -2215,7 +2227,10 @@ test.describe('MCP contract', () => {
     ).resolves.toBeTruthy();
   });
 
-  test('other note kinds still take no sources', async () => {
+  // The title said "take no sources", which reads as a prohibition. The body
+  // proves the opposite rule: an observation with no sources is ACCEPTED, so
+  // the other kinds NEED no source — they are not refused one.
+  test('other note kinds need no sources', async () => {
     const mcp = rw();
     await expect(
       mcp.call('add_note', {
@@ -2677,6 +2692,9 @@ test.describe('MCP contract', () => {
     expect(sources.description).toMatch(/url/);
     expect(sources.description).toMatch(/title/);
     expect(sources.description).toMatch(/citation/);
+    // And the field itself says which kind is made to cite, so a caller
+    // reading only the schema meets the rule before the refusal does.
+    expect(sources.description).toMatch(/research/i);
     // And the advertised shape still carries all four properties, so the
     // refinement did not narrow what a caller may send.
     expect(Object.keys(sources.items?.properties ?? {}).sort()).toEqual([
@@ -3497,6 +3515,17 @@ test.describe('MCP contract', () => {
         ],
       }),
     ).resolves.toBeTruthy();
+
+    // And the citation comes back. `getExperiment` hardcoded `sources: []`,
+    // so the one thing a research note is REQUIRED to carry was the one
+    // thing the reader dropped: the tool refused the note without a source,
+    // stored the source, and then served the note as though it had none.
+    const sourced = await mcp.call<ExperimentResult>('get_experiment', {
+      slug: 'mcp-contract-sourced-run',
+    });
+    const research = sourced.notes.find((note) => note.kind === 'research');
+    expect(research, 'the sourced research note is missing').toBeTruthy();
+    expect(research!.sources[0]?.title).toBe('Kruger, Biltong and Droëwors');
   });
 
   test('a scope denial is an error result, not an auth challenge', async () => {
