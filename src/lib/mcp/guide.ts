@@ -60,6 +60,12 @@ Units come from a fixed list. A unit outside it is refused.
 
 After a write, read needsDescription in the result. It names the tags and
 ingredients that are still bare. Describe them in the same session.
+
+Write every word that a person reads in simple technical English. Use
+short sentences. Put one idea in each sentence. Use the active voice.
+Write a step as an instruction to the cook. Use the same word for the
+same thing each time. A cook reads this text, and many cooks do not read
+English as a first language. Call get_started for the full rule.
 `.trim();
 
 const INSTRUCTIONS_REPORTING = `
@@ -115,6 +121,49 @@ const GUIDE = {
     'revise_recipe and give a reason. Do not make a second recipe for the ' +
     'same dish. You cannot delete a recipe. You cannot edit ingredients or ' +
     'steps.',
+
+  /**
+   * WHY THE GUIDE TELLS AN AGENT HOW TO WRITE.
+   *
+   * A model writes the way it was asked to write, and asked for a recipe it
+   * writes food prose: a step that carries three actions and a metaphor, a
+   * rationale that reads as a paragraph of praise. A cook reading that on a
+   * phone, with wet hands, has to decode it before doing anything — and a
+   * reader who does not have English as a first language may not decode it
+   * at all. The site's own copy has followed ASD Simplified Technical
+   * English since M2; everything an agent writes THROUGH the connector is
+   * the same reader-facing text and was governed by nothing.
+   *
+   * This is a writing rule and not a schema rule on purpose. Sentence
+   * length is not something the write layer can refuse without refusing
+   * good text with the bad, so it is stated where an agent reads it and
+   * left to the agent. AGENTS.md § Words and writing style is the same rule
+   * for the humans.
+   */
+  howToWrite:
+    'Write every word that a person reads in simple technical English. ' +
+    'This is the ASD Simplified Technical English style. A cook reads this ' +
+    'store, often while cooking. Many cooks do not read English as a first ' +
+    'language.\n\n' +
+    'Use short sentences. Keep a step to 20 words or fewer. Put one idea ' +
+    'in each sentence, and one action in each step. Use the active voice: ' +
+    'write "Cut the beef into strips of 10 mm", not "the beef is then cut ' +
+    'into strips".\n\n' +
+    'Use the simple word. Write "cut", not "butterfly". Write "add", not ' +
+    '"incorporate". Use the same word for the same thing each time: a pan ' +
+    'that becomes a skillet in the next step reads as a second pan. If a ' +
+    'technical word is the only correct word, use it and explain it one ' +
+    'time in plain words.\n\n' +
+    'Give a number and a unit for each amount, each time and each ' +
+    'temperature. Do not write "a good glug" or "until it looks right". If ' +
+    'nobody measured it, say so in a note.\n\n' +
+    'Do not write a metaphor, a joke, or a sentence that praises the dish. ' +
+    'A rationale says what changed and why, in the words a cook can act ' +
+    'on.\n\n' +
+    'This rule holds for the title, the subtitle, the summary, every step, ' +
+    'every note, every rationale, and the explanation of a tag or an ' +
+    'ingredient. It does not hold for a quotation from a source: copy that ' +
+    'exactly, and say who wrote it.',
 
   olderVersions:
     'You can add a version that is older than every version in the store. ' +
@@ -387,6 +436,7 @@ const GUIDE = {
     'fault tells a person nothing new.',
 
   rules: [
+    'Write in simple technical English. Short sentences. One idea in each sentence. Active voice.',
     'Write a reason that says what you changed and why. Do not write "updated recipe".',
     'Do not invent a measurement. If nobody recorded it, say this in a note.',
     'Do not make a version that only changes the text format.',

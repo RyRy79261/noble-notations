@@ -299,6 +299,34 @@ another word to explain it. This applies to page copy, MCP tool
 descriptions and the agent guide — not to code comments, which explain
 _why_ and need their full vocabulary.
 
+**It applies to the recipes too, not only to the shell around them.** A
+title, a summary, a step, a rationale, a note and the explanation on a tag
+or an ingredient are all read by a cook, usually on a phone and usually
+mid-task. Write a step as one instruction: "Cut the beef into strips of
+10 mm", not "the beef is then butterflied and cut down". Give a number and
+a unit for every amount, time and temperature; if nobody measured it, say
+so in a note rather than writing "a good glug". The one exception is a
+quotation from a source, which is copied exactly.
+
+Most recipes arrive through the connector, so the rule is stated where an
+agent reads it: `howToWrite` in `src/lib/mcp/guide.ts` is the long version,
+`PLAIN_ENGLISH` in `src/lib/mcp/tools.ts` is the reminder appended to every
+write tool that stores prose, and the short instructions carry a paragraph
+of it. Those three move together, and `e2e/auth-guide.spec.ts` fails if one
+of them loses it; `/llms.txt` states it once more, for an agent that only
+ever scrapes the site. This is D-14.
+
+**A screen says what it found, not how it works.** Issue #21 is the record:
+`/search` printed its HTTP method, the query string its form produced and
+how many fields there were to clear, and read as a debug view of itself. A
+reader came to cook. Copy that explains the build — the transport, the
+revision machinery, how to connect an agent — belongs on `/connect`, in
+`AGENTS.md` or in a code comment, not in a lede or a band. `/connect` is
+the one exempt screen, because the protocol is its subject.
+`e2e/site.spec.ts` sweeps every other screen for the jargon. D-14 took the
+home page's HOW THIS WORKS band out under this rule, and cut each lede back
+to what a reader can act on.
+
 The word "taxonomy" is not used anywhere a person or an agent reads. The
 vocabulary is:
 

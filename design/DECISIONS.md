@@ -8,20 +8,22 @@ Each entry says what I chose, why, and what to do to change it.
 The build is complete. This table is the state of each decision after M7.
 An entry that a later milestone settled says so in place.
 
-| ID   | Decision                                                | State after M7                                                                       |
-| ---- | ------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| D-01 | The address of a batch log with no recipe               | Built in M2. Two routes, one canonical address for each run.                         |
-| D-02 | The conditions on a mechanism block                     | Option A built in M5.5. M6 fixed the drawing and seeded 9 notes. **Met, and drawn.** |
-| D-03 | The old stylesheet stays until M7                       | **Done. M7 deleted the file, the layer and the bridge, and turned preflight on.**    |
-| D-04 | The rename reaches the page copy in M2                  | Built in M2.                                                                         |
-| D-05 | What "Applied in" means, and what counts as a study     | Built in M2. M6 seeded the 4 missing demi-glace mechanisms.                          |
-| D-06 | One file per design component, or one file per family   | Held for the whole build. 25 files carry 36 design names.                            |
-| D-07 | The page foot's left slot is a document issue           | Built in M3. M6 gave each screen its own effectivity through `src/app/@foot/`.       |
-| D-08 | An explanation on a tag requires a term page            | Built in M3. The unreachable shape is not representable.                             |
-| D-09 | The bridge carries colour, not the faces or the radius  | **Done. The bridge is gone. M7 deleted it with the stylesheet it fed.**              |
-| D-10 | The body link is an underline                           | Built in M4.                                                                         |
-| D-11 | A card summary is not cut at 160 characters             | Built in M4. C-05 of the specification is corrected in §20.7.                        |
-| D-12 | Three things the design draws that the data cannot fill | The figure is built. The other two stay out. **The 360 readout is still open.**      |
+| ID   | Decision                                                    | State after M7                                                                             |
+| ---- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| D-01 | The address of a batch log with no recipe                   | Built in M2. Two routes, one canonical address for each run.                               |
+| D-02 | The conditions on a mechanism block                         | Option A built in M5.5. M6 fixed the drawing and seeded 9 notes. **Met, and drawn.**       |
+| D-03 | The old stylesheet stays until M7                           | **Done. M7 deleted the file, the layer and the bridge, and turned preflight on.**          |
+| D-04 | The rename reaches the page copy in M2                      | Built in M2.                                                                               |
+| D-05 | What "Applied in" means, and what counts as a study         | Built in M2. M6 seeded the 4 missing demi-glace mechanisms.                                |
+| D-06 | One file per design component, or one file per family       | Held for the whole build. 25 files carry 36 design names.                                  |
+| D-07 | The page foot's left slot is a document issue               | Built in M3. M6 gave each screen its own effectivity through `src/app/@foot/`.             |
+| D-08 | An explanation on a tag requires a term page                | Built in M3. The unreachable shape is not representable.                                   |
+| D-09 | The bridge carries colour, not the faces or the radius      | **Done. The bridge is gone. M7 deleted it with the stylesheet it fed.**                    |
+| D-10 | The body link is an underline                               | Built in M4.                                                                               |
+| D-11 | A card summary is not cut at 160 characters                 | Built in M4. C-05 of the specification is corrected in §20.7.                              |
+| D-12 | Three things the design draws that the data cannot fill     | The figure is built. The other two stay out. **The 360 readout is still open.**            |
+| D-13 | A note's location is not covered by the immutability rule   | Built after M7. `reattach_note` moves a note; `notes.previous_subjects` keeps each move.   |
+| D-14 | The site does not explain itself, and neither does a recipe | Built after M7. The home page's fifth band is gone; the connector states the writing rule. |
 
 Two things are still open at the end of the build, and
 `design/BUILD-PLAN.md` §6 carries both:
@@ -865,3 +867,75 @@ was written and never changes; `sort_at` says where it sits and only a move
 changes it. It is backfilled to `created_at` in migration 0008, so no stored
 note reordered, no mechanism was renumbered, and `pnpm export` writes the same
 bytes for an unchanged database.
+
+---
+
+## D-14 — The site does not explain itself, and neither does a recipe
+
+**Status:** Decided. **Built.**
+**Date:** 2026-09-11
+**Touches:** §10.1 block 5, issue #21, `src/lib/mcp/guide.ts`, AGENTS.md § Words and writing style
+
+### The problem
+
+Two halves of one fault, reported together by the owner of the repository.
+
+**The screens explain the build.** Issue #21 took the worst of it off
+`/search` — the HTTP method, the query string the form produced, the count
+of fields to clear. What it did not touch was the home page's fifth band,
+HOW THIS WORKS: four columns teaching the revision model, the fourth of them
+telling a reader how an agent connects to the repository. That band is on
+the screen every reader lands on, and one card of it sells a connector to
+people who will never wire one up. The same habit ran through the ledes: a
+`/cuisines` lede ending "the name and the origin outlive any single
+revision", a `/list` lede explaining that the address holds the selection, a
+`/search` lede saying that a search is a link. None of it helps anyone cook.
+
+**The recipes read like prose.** Everything a reader sees on this site is
+written in ASD Simplified Technical English, and has been since M2 — except
+the recipes themselves, which are written by an agent through the connector
+and were governed by nothing at all. A model asked for a recipe writes food
+writing: a step carrying three actions, an amount given as "a good glug", a
+rationale that praises the dish. The reader is a cook, on a phone, mid-task,
+and not always a first-language English reader.
+
+### What I chose
+
+The band is gone, with the SCIENCE band's closing sentence, and each lede is
+cut back to what a reader can act on. The rule the four cards taught is not
+lost: the home lede states it in two sentences, every revision on a recipe
+carries its own reason next to it, and `/connect` — reachable from the foot
+of every screen and from nowhere louder, which `e2e/site.spec.ts` already
+pins — is where the connector is explained to the one person who sets it up.
+
+And the writing rule is now stated where a recipe is actually written: in
+the server instructions a client reads at connect time, in `howToWrite`
+behind `get_started`, and in `PLAIN_ENGLISH`, appended to the description of
+every write tool that stores prose. Three places, because an agent that
+skips the first two still reads the third.
+
+### The other option
+
+Keep the cards and rewrite them shorter. Rejected: the fault is not their
+length. A card that says "Agents read and write it" is addressed to somebody
+who is not reading the page, and no wording fixes that.
+
+Enforcing the writing rule in the schema was the other one. Rejected:
+sentence length is not something `src/lib/domain/schemas.ts` can refuse
+without refusing good text along with the bad, and a write that fails on
+prose style would cost an agent a recipe it had already worked out.
+
+### What this costs
+
+§10.1 of `design/FUNCTIONAL-SPEC.md` lists five blocks for `/` and the
+design draws all five, so this is a departure from both. BUILD-PLAN §2 makes
+the design the source of truth for how a screen READS, which is exactly what
+is overruled here — so it is recorded rather than quietly done, the same way
+D-07 settled the page foot's copy. §10.1 is annotated in place. Neither
+R-SCR-01 nor R-SCR-02 is touched: both are about blocks 2 to 4.
+
+### To change it
+
+Put `HOW_THIS_WORKS` back in `src/app/page.tsx` — it is four titles and four
+sentences in one `const` — and drop `howToWrite` from the guide. Nothing
+else depends on either.

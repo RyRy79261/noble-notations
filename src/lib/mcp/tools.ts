@@ -275,6 +275,21 @@ function auditToolName(raw: unknown): string | undefined {
   return redact(raw).text.slice(0, 64);
 }
 
+/**
+ * The writing rule, appended to every tool that stores text a cook reads.
+ *
+ * It is one constant and not seven copies, because seven copies drift and
+ * the rule is the same rule everywhere. The long version is `howToWrite` in
+ * `src/lib/mcp/guide.ts`; this is the reminder at the point of the call,
+ * for an agent that never read the guide. AGENTS.md § Words and writing
+ * style states it for the humans.
+ */
+const PLAIN_ENGLISH =
+  '\n\nWrite the text in simple technical English (ASD STE): short ' +
+  'sentences, one idea in each, active voice, and the same word for the ' +
+  'same thing. Write a step as an instruction to the cook. A cook reads ' +
+  'this, often while cooking. Call get_started for the full rule.';
+
 export function registerTools(server: McpServer): void {
   // ───────────────────────────────────────────────────────────────────────
   // Read
@@ -585,7 +600,8 @@ export function registerTools(server: McpServer): void {
         'figure shows what the food weighs at each stage. Most dishes do ' +
         'not need it.\n\n' +
         'Give `conditions` to a science note in `notes`. Conditions are ' +
-        'the values the note holds under, such as a temperature and a time.',
+        'the values the note holds under, such as a temperature and a time.' +
+        PLAIN_ENGLISH,
       inputSchema: createRecipeShape,
     },
     async (args, extra) =>
@@ -643,7 +659,8 @@ export function registerTools(server: McpServer): void {
         '`massFlow` does NOT carry forward. Ingredients and steps say what a ' +
         'cook intends, so an unchanged intent stays true. A mass flow says ' +
         'what one batch weighed. Send it again only when you weighed this ' +
-        'version. To give a stored version its figure, call add_mass_flow.',
+        'version. To give a stored version its figure, call add_mass_flow.' +
+        PLAIN_ENGLISH,
       inputSchema: reviseRecipeShape,
     },
     async (args, extra) =>
@@ -692,7 +709,8 @@ export function registerTools(server: McpServer): void {
         'a version recorded years late is only worth having with its source.\n\n' +
         'Send `massFlow` only if you know what that batch weighed at each ' +
         'stage. Do not copy the figure from a later version. That would ' +
-        'record a measurement that nobody took.',
+        'record a measurement that nobody took.' +
+        PLAIN_ENGLISH,
       inputSchema: backfillRevisionShape,
     },
     async (args, extra) =>
@@ -746,7 +764,8 @@ export function registerTools(server: McpServer): void {
         'when the mechanism holds under set values: a temperature, a time, ' +
         'a depth. Write each condition as a separate value. Do not write ' +
         'them into a sentence. To add conditions to a note that is already ' +
-        'stored, call describe_mechanism.',
+        'stored, call describe_mechanism.' +
+        PLAIN_ENGLISH,
       inputSchema: addNoteShape,
     },
     async (args, extra) =>
@@ -974,7 +993,8 @@ export function registerTools(server: McpServer): void {
         'name here that is not an ingredient makes a new ingredient record. ' +
         'Call list_ingredients first, and use the name that is there.\n\n' +
         '`densityGPerMl` lets you compare a volume in one recipe with grams ' +
-        'in another.',
+        'in another.' +
+        PLAIN_ENGLISH,
       inputSchema: upsertIngredientShape,
     },
     async (args, extra) =>
@@ -1027,7 +1047,8 @@ export function registerTools(server: McpServer): void {
         'names is an accident. To keep such a word as the label a reader ' +
         'sees, send your own `slug` beside it.\n\n' +
         'Use this after creating a recipe that introduced new tags, so the ' +
-        'repository does not accumulate bare, unexplained labels.',
+        'repository does not accumulate bare, unexplained labels.' +
+        PLAIN_ENGLISH,
       inputSchema: upsertCategoryShape,
     },
     async (args, extra) =>
@@ -1072,7 +1093,8 @@ export function registerTools(server: McpServer): void {
         '`recipeSlug: null` to unlink the run from every recipe.\n\n' +
         'After you write the run it is on /batch-logs at once. The website ' +
         'calls a run a batch log. A run with no `recipeSlug` keeps its own ' +
-        'address at /batch-logs/<slug>.',
+        'address at /batch-logs/<slug>.' +
+        PLAIN_ENGLISH,
       inputSchema: logExperimentShape,
     },
     async (args, extra) =>
