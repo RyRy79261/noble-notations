@@ -38,6 +38,7 @@ interface NoteView {
   kind: string;
   title: string | null;
   body: string;
+  movedFrom?: string[];
   sources: {
     url: string | null;
     title: string | null;
@@ -549,5 +550,220 @@ test.describe('finding a note across every record', () => {
     });
     expect(everything.total).toBeGreaterThan(3);
     expect(everything.results).toHaveLength(1);
+  });
+});
+
+/**
+ * Moving a note, and what a move must not touch.
+ *
+ * Issue #23. A note was bound to one record at write time, for good, so a
+ * note written before its natural parent existed was stranded there. The
+ * repair available was to write it again on the right record, which
+ * duplicates the text and lets the two copies drift.
+ *
+ * The tests below assert the two halves that make this a move and not an
+ * edit: nothing a reader reads changes, and the store remembers where the
+ * note used to be. The refusals matter as much — a note on a VERSION is a
+ * statement about that version, and moving it would make a stored version
+ * say something it never said.
+ */
+test.describe('moving a note to another record', () => {
+  interface Moved {
+    noteId: string;
+    from: string;
+    to: string;
+    previousSubjects: string[];
+  }
+  interface MovableNote extends NoteView {
+    movedFrom: string[];
+  }
+
+  test('a note moves off a run onto a recipe, and says so', async () => {
+    const mcp = rw();
+
+    // The reported shape exactly: a note that belongs to a dish, written
+    // against a batch because the dish had no record yet.
+    const { noteId } = await mcp.call<NoteResult>('add_note', {
+      experimentSlug: RUN_SLUG,
+      kind: 'warning',
+      title: 'Bitter stock is a roasting fault',
+      body: 'Garlic roasted as long as the bones turns the whole pot bitter.',
+      sources: [],
+    });
+
+    const run = await mcp.call<ExperimentResult>('get_experiment', {
+      slug: RUN_SLUG,
+    });
+    const before = (run.notes as MovableNote[]).find((n) => n.id === noteId);
+    expect(before, 'the note did not land on the run').toBeTruthy();
+    expect(before!.movedFrom).toEqual([]);
+
+    const moved = await mcp.call<Moved>('reattach_note', {
+      noteId,
+      recipeSlug: RECIPE_SLUG,
+    });
+    expect(moved.from).toBe(`experiment:${RUN_SLUG}`);
+    expect(moved.to).toBe(`recipe:${RECIPE_SLUG}`);
+    expect(moved.previousSubjects).toEqual([`experiment:${RUN_SLUG}`]);
+
+    // It is on the recipe now, with its text untouched and its old home
+    // recorded — the assertion that makes this a move and not a rewrite.
+    const recipe = await mcp.call<RecipeResult>('get_recipe', {
+      slug: RECIPE_SLUG,
+    });
+    const after = (recipe.notes as MovableNote[]).find((n) => n.id === noteId);
+    expect(after, 'the note is not on the recipe').toBeTruthy();
+    expect(after!.kind).toBe(before!.kind);
+    expect(after!.title).toBe(before!.title);
+    expect(after!.body).toBe(before!.body);
+    expect(after!.movedFrom).toEqual([`experiment:${RUN_SLUG}`]);
+
+    // And it is gone from the run. A note hangs off exactly one record.
+    const runAfter = await mcp.call<ExperimentResult>('get_experiment', {
+      slug: RUN_SLUG,
+    });
+    expect(runAfter.notes.some((n) => n.id === noteId)).toBe(false);
+  });
+
+  test('a second move appends rather than replacing the first', async () => {
+    const mcp = rw();
+    const { noteId } = await mcp.call<NoteResult>('add_note', {
+      ingredientSlug: INGREDIENT_SLUG,
+      kind: 'observation',
+      body: 'Something that will be moved twice.',
+    });
+
+    await mcp.call('reattach_note', { noteId, experimentSlug: RUN_SLUG });
+    const second = await mcp.call<Moved>('reattach_note', {
+      noteId,
+      recipeSlug: RECIPE_SLUG,
+    });
+
+    // Oldest first, both homes kept. One place would be a worse answer
+    // than none, because it would read as the whole history.
+    expect(second.previousSubjects).toEqual([
+      `ingredient:${INGREDIENT_SLUG}`,
+      `experiment:${RUN_SLUG}`,
+    ]);
+  });
+
+  test('a note on a version is refused, and stays where it is', async () => {
+    const mcp = rw();
+    const { noteId } = await mcp.call<NoteResult>('add_note', {
+      recipeSlug: RECIPE_SLUG,
+      revisionNumber: 1,
+      kind: 'observation',
+      body: 'Pinned to the first version, and therefore about it.',
+    });
+
+    const message = await refusal(
+      mcp.call('reattach_note', { noteId, ingredientSlug: INGREDIENT_SLUG }),
+    );
+    // The refusal names the version and says what to do instead, because a
+    // caller has to decide its next move from this sentence alone.
+    expect(message).toMatch(/version 1/i);
+    expect(message).toMatch(new RegExp(RECIPE_SLUG));
+    expect(message).toMatch(/write the note again/i);
+
+    // And nothing moved.
+    const ingredient = await mcp.call<IngredientResult>('get_ingredient', {
+      slug: INGREDIENT_SLUG,
+    });
+    expect(ingredient.notes.some((n) => n.id === noteId)).toBe(false);
+  });
+
+  test('a destination that is not there is refused by name', async () => {
+    const mcp = rw();
+    const { noteId } = await mcp.call<NoteResult>('add_note', {
+      ingredientSlug: INGREDIENT_SLUG,
+      kind: 'observation',
+      body: 'A note whose move will be refused.',
+    });
+
+    // Named, for the same reason add_note names it: a call with three
+    // optional targets fails identically to a human eye otherwise.
+    expect(
+      await refusal(
+        mcp.call('reattach_note', { noteId, recipeSlug: 'no-such-recipe' }),
+      ),
+    ).toMatch(/no-such-recipe/);
+
+    expect(
+      await refusal(
+        mcp.call('reattach_note', {
+          noteId,
+          experimentSlug: 'no-such-run-at-all',
+        }),
+      ),
+    ).toMatch(/no-such-run-at-all/);
+  });
+
+  test('moving a note nowhere, or to two places, is refused', async () => {
+    const mcp = rw();
+    const { noteId } = await mcp.call<NoteResult>('add_note', {
+      ingredientSlug: INGREDIENT_SLUG,
+      kind: 'observation',
+      body: 'A note for the target-count refusals.',
+    });
+
+    expect(await refusal(mcp.call('reattach_note', { noteId }))).toMatch(
+      /exactly one/i,
+    );
+    expect(
+      await refusal(
+        mcp.call('reattach_note', {
+          noteId,
+          recipeSlug: RECIPE_SLUG,
+          ingredientSlug: INGREDIENT_SLUG,
+        }),
+      ),
+    ).toMatch(/exactly one/i);
+
+    // And a move to where it already is says so rather than pretending.
+    expect(
+      await refusal(
+        mcp.call('reattach_note', {
+          noteId,
+          ingredientSlug: INGREDIENT_SLUG,
+        }),
+      ),
+    ).toMatch(/already on/i);
+  });
+
+  test('a note id that does not exist is refused', async () => {
+    expect(
+      await refusal(
+        rw().call('reattach_note', {
+          noteId: '00000000-0000-0000-0000-000000000000',
+          recipeSlug: RECIPE_SLUG,
+        }),
+      ),
+    ).toMatch(/no note with id/i);
+  });
+
+  test('a moved note takes the last place in its new list', async () => {
+    const mcp = rw();
+    const { noteId } = await mcp.call<NoteResult>('add_note', {
+      experimentSlug: RUN_SLUG,
+      kind: 'observation',
+      title: 'Last in line',
+      body: 'This one should sort to the end of the ingredient.',
+    });
+
+    await mcp.call('reattach_note', {
+      noteId,
+      ingredientSlug: INGREDIENT_SLUG,
+    });
+
+    // `position` is an ordinal WITHIN a subject, so a move has to reassign
+    // it. Carrying the old one over drops the note into the middle of a
+    // list it has never been in — and on a recipe that renumbers the
+    // mechanisms /science draws, which is the fault D-02 records.
+    const ingredient = await mcp.call<IngredientResult>('get_ingredient', {
+      slug: INGREDIENT_SLUG,
+    });
+    const ids = ingredient.notes.map((n) => n.id);
+    expect(ids).toContain(noteId);
+    expect(ids[ids.length - 1]).toBe(noteId);
   });
 });

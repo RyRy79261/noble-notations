@@ -631,6 +631,40 @@ export const notes = pgTable(
       .default(sql`ARRAY[]::text[]`),
 
     /**
+     * Every subject this note has hung off before the one it hangs off now,
+     * oldest first, as `recipe:<slug>`, `ingredient:<slug>` or
+     * `experiment:<slug>`. Empty for a note that has never moved, which is
+     * almost all of them. This is D-13.
+     *
+     * **Why a note may move at all.** A note is bound to one subject chosen
+     * at write time, and that choice is often forced. Five notes about
+     * stock were attached to a batch because no demi-glace recipe existed
+     * yet to attach them to; when the recipe arrives, the notes belong on
+     * it. Before `reattachNote` the only repair was to write them again on
+     * the recipe, which duplicates the text and lets the two copies drift.
+     * A note's CONTENT being fixed and its LOCATION being fixed are
+     * different decisions: moving one changes nothing about what it says or
+     * when it was written. `logExperiment` already re-homes a run this way.
+     *
+     * **Why the move is recorded rather than silent.** `mcp_audit_log` is
+     * written from the arguments a tool was CALLED with, so an audit row
+     * for a move can name where the note went and never where it came from.
+     * Without this column that fact exists nowhere, and a reader looking at
+     * a note on a recipe could not tell it was written against a batch.
+     * That is the kind of loss the whole repository is built to refuse.
+     *
+     * A text array rather than a child table, following `conditions` and
+     * `ingredients.aliases`: nothing joins on these and no screen filters
+     * by them. The slug is stored rather than a foreign key on purpose — a
+     * subject that is later deleted takes its row with it, and the point of
+     * this column is to survive that.
+     */
+    previousSubjects: text('previous_subjects')
+      .array()
+      .notNull()
+      .default(sql`ARRAY[]::text[]`),
+
+    /**
      * Where this note sits among the notes on the same subject. 1-based,
      * assigned by `writeNotes` as `MAX(position) + 1` for the subject.
      *

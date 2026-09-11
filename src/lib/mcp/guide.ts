@@ -52,6 +52,10 @@ a record that is already stored. Call add_mass_flow to say what a dish
 weighs at each stage. Call describe_mechanism to give a science note its
 conditions. Each field is written once. Neither tool changes a value.
 
+A note can move to another record. Call reattach_note. The text of the
+note does not change. Only the record that holds it changes. Use it when
+you wrote a note before the record it belongs to existed.
+
 Units come from a fixed list. A unit outside it is refused.
 
 After a write, read needsDescription in the result. It names the tags and
@@ -94,7 +98,7 @@ export function serverInstructions(
 }
 
 const SCOPES_WITHOUT_REPORTING =
-  'The read tools need the scope noble-notations:read. The nine write ' +
+  'The read tools need the scope noble-notations:read. The ten write ' +
   'tools also need noble-notations:write. The system checks the scope on ' +
   'each call.';
 
@@ -133,6 +137,7 @@ const GUIDE = {
     'Call add_note for each thing that you learned that is not an instruction.',
     'Call log_experiment after you cook a batch and measure it.',
     'Call add_mass_flow or describe_mechanism only for a record that is already stored.',
+    'If a note sits on the wrong record, call reattach_note. Do not write the note again.',
     'If a tool does the wrong thing, call report_issue. Send the payload and the response, copied exactly.',
   ],
 
@@ -249,6 +254,20 @@ const GUIDE = {
    * to say when NOT to send one as clearly as it says how — a mass flow on
    * every recipe is worse than none, because it stops meaning anything.
    */
+  movingANote:
+    'A note hangs off one record. You choose the record when you write the ' +
+    'note. Sometimes the right record does not exist yet. A note about a ' +
+    'dish goes on a run, because nobody wrote the recipe. Call ' +
+    'reattach_note to move the note later. Give the id of the note and one ' +
+    'record. The text of the note does not change. The kind, the title, ' +
+    'the body, the sources and the date stay the same. Only the record ' +
+    'changes.\n\n' +
+    'Do not write the note a second time. Two copies of one note become ' +
+    'different over time, and no reader can tell which one is right.\n\n' +
+    'The store keeps each record that the note was on before. A note on a ' +
+    'version of a recipe cannot move. That note says something about that ' +
+    'version. Write a new note where it belongs.',
+
   massFlow:
     'A dish can lose or gain a lot of weight while it is made. Biltong of ' +
     '10 kg raw becomes 4.5 kg dried. The mass flow figure shows what the ' +
@@ -307,7 +326,7 @@ const GUIDE = {
    * tell which three it must not trust.
    */
   scopes:
-    'The read tools need the scope noble-notations:read. The nine write ' +
+    'The read tools need the scope noble-notations:read. The ten write ' +
     'tools also need noble-notations:write. The system checks the scope on ' +
     'each call. report_issue needs no extra scope. Each connector can file ' +
     'a report.',

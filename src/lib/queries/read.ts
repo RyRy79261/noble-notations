@@ -112,6 +112,16 @@ export interface NoteView {
    * been given any; a caller draws no row for an empty list.
    */
   conditions: string[];
+  /**
+   * Every record this note hung off before this one, oldest first, as
+   * `recipe:<slug>`, `ingredient:<slug>` or `experiment:<slug>`. Empty on a
+   * note that has never moved, which is nearly all of them. D-13.
+   *
+   * A note written before its natural parent existed can be re-homed with
+   * `reattachNote`, and this is what stops that being a silent rewrite of
+   * where a claim came from.
+   */
+  movedFrom: string[];
   createdAt: string;
   sources: {
     url: string | null;
@@ -729,6 +739,7 @@ export async function getRecipeBySlug(
           title: notes.title,
           body: notes.body,
           conditions: notes.conditions,
+          previousSubjects: notes.previousSubjects,
           createdAt: notes.createdAt,
         })
         .from(notes)
@@ -944,6 +955,7 @@ export async function getRecipeBySlug(
       title: row.title,
       body: row.body,
       conditions: row.conditions,
+      movedFrom: row.previousSubjects,
       createdAt: row.createdAt.toISOString(),
       sources: sourcesByNote.get(row.id) ?? [],
     })),
@@ -1295,6 +1307,7 @@ export async function getIngredient(slug: string): Promise<{
         title: notes.title,
         body: notes.body,
         conditions: notes.conditions,
+        previousSubjects: notes.previousSubjects,
         createdAt: notes.createdAt,
       })
       .from(notes)
@@ -1329,6 +1342,7 @@ export async function getIngredient(slug: string): Promise<{
       title: x.title,
       body: x.body,
       conditions: x.conditions,
+      movedFrom: x.previousSubjects,
       createdAt: x.createdAt.toISOString(),
       sources: sourcesByNote.get(x.id) ?? [],
     })),
@@ -1611,6 +1625,7 @@ export async function getExperiment(
         title: notes.title,
         body: notes.body,
         conditions: notes.conditions,
+        previousSubjects: notes.previousSubjects,
         createdAt: notes.createdAt,
       })
       .from(notes)
@@ -1644,6 +1659,7 @@ export async function getExperiment(
       title: x.title,
       body: x.body,
       conditions: x.conditions,
+      movedFrom: x.previousSubjects,
       createdAt: x.createdAt.toISOString(),
       sources: sourcesByNote.get(x.id) ?? [],
     })),

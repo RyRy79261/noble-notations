@@ -27,6 +27,8 @@ import {
   describeMechanismShape,
   logExperimentSchema,
   logExperimentShape,
+  reattachNoteSchema,
+  reattachNoteShape,
   reportIssueSchema,
   reportIssueShape,
   reviseRecipeSchema,
@@ -66,6 +68,7 @@ import {
   describeMechanism,
   logExperiment,
   NotFoundError,
+  reattachNote,
   reviseRecipe,
   backfillRevision,
   upsertIngredient,
@@ -765,20 +768,29 @@ export function registerTools(server: McpServer): void {
   );
 
   /**
-   * The two tools below reach a record that is already stored. Every other
+   * The three tools below reach a record that is already stored. Every other
    * write tool either makes a new record or appends one, because that is the
-   * whole shape of this repository — so these two need their reason written
-   * down beside them.
+   * whole shape of this repository — so these three need their reason
+   * written down beside them.
    *
-   * Each fills a field that could not exist when the record was written.
-   * D-02 added `notes.conditions` and D-12 added the mass flow tables, and
-   * every recipe and every science note in the archive predates both. No
-   * other path reaches them: `pnpm ingest` skips a recipe that exists, and a
-   * revision whose only change is a diagram has no reason to exist and would
-   * move a number that is in URLs and in the ticked-ingredient keys.
+   * The first two fill a field that could not exist when the record was
+   * written. D-02 added `notes.conditions` and D-12 added the mass flow
+   * tables, and every recipe and every science note in the archive predates
+   * both. No other path reaches them: `pnpm ingest` skips a recipe that
+   * exists, and a revision whose only change is a diagram has no reason to
+   * exist and would move a number that is in URLs and in the
+   * ticked-ingredient keys. Neither is an edit. Both refuse a second write,
+   * so a value goes from absent to present exactly once and can never be
+   * quietly replaced.
    *
-   * Neither is an edit. Both refuse a second write, so a value goes from
-   * absent to present exactly once and can never be quietly replaced.
+   * The third, `reattach_note`, is a different shape and is D-13. It changes
+   * no field a reader reads: the note's kind, title, body, conditions,
+   * sources and date all stay exactly as they were, and only which record
+   * the note hangs off changes. A note's text being fixed does not make its
+   * location fixed — the choice of parent is usually forced by what happens
+   * to exist yet, and a note written against a batch because the recipe did
+   * not exist was stranded there for good. The move is recorded on the note
+   * rather than performed silently.
    */
   server.registerTool(
     'add_mass_flow',
@@ -872,6 +884,56 @@ export function registerTools(server: McpServer): void {
               `The mechanism now states ${count} ` +
               `${count === 1 ? 'condition' : 'conditions'}. ` +
               'They cannot be changed.',
+          };
+        },
+      ),
+  );
+
+  server.registerTool(
+    'reattach_note',
+    {
+      title: 'Move a note to another record',
+      description:
+        'Move a note from the record it is on to a different one. Give the ' +
+        'note id and exactly one of `recipeSlug`, `ingredientSlug` or ' +
+        '`experimentSlug`.\n\n' +
+        'The note does not change. Its kind, its title, its text, its ' +
+        'conditions, its sources and its date all stay as they are. Only ' +
+        'the record it hangs off changes.\n\n' +
+        'Use it when a note went somewhere because its real subject did ' +
+        'not exist yet. A note about a dish often goes on a run, because ' +
+        'the recipe is not written. When you write the recipe, move the ' +
+        'note to it. Do not write the note a second time. Two copies of ' +
+        'one note drift apart and nothing can tell them apart later.\n\n' +
+        'The store keeps each record the note was on before. A reader can ' +
+        'see that the note was written somewhere else first.\n\n' +
+        'A note on one version of a recipe cannot be moved. That note says ' +
+        'something about that version. Write the note again where it ' +
+        'belongs.\n\n' +
+        'get_recipe, get_ingredient and get_experiment give the id of ' +
+        'every note they return. So does search_notes. A moved note takes ' +
+        'the last place in the list of its new record.',
+      inputSchema: reattachNoteShape,
+    },
+    async (args, extra) =>
+      runTool(
+        extra as AuthCtx,
+        'reattach_note',
+        {
+          noteId: args.noteId,
+          recipeSlug: args.recipeSlug,
+          ingredientSlug: args.ingredientSlug,
+          experimentSlug: args.experimentSlug,
+        },
+        async (principal) => {
+          requireWrite(principal);
+          const input = reattachNoteSchema.parse(args);
+          const result = await reattachNote(input);
+          return {
+            ...result,
+            message:
+              `The note moved from ${result.from} to ${result.to}. Its ` +
+              'text did not change. The store keeps where it was before.',
           };
         },
       ),

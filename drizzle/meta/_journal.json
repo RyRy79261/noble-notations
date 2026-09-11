@@ -50,6 +50,13 @@
       "when": 1788954783465,
       "tag": "0006_note_ordering",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789128058529,
+      "tag": "0007_note_reattachment",
+      "breakpoints": true
     }
   ]
 }

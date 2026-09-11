@@ -455,3 +455,129 @@ test.describe('what a stored record refuses', () => {
     expect(titles).toContain('The copper claim overstates it');
   });
 });
+
+/**
+ * A move changes where a note is, never what it says.
+ *
+ * `reattach_note` is the one write in this connector that reaches a stored
+ * note and changes which record holds it (D-13), so it sits in the file
+ * that guards the rule it looks like an exception to. It is not one: a
+ * note's TEXT being fixed and its LOCATION being fixed are two decisions,
+ * and only the first follows from the revision rule.
+ */
+test.describe('a note can move without being edited', () => {
+  const MOVE_A = 'data-immutable-move-from';
+  const MOVE_B = 'data-immutable-move-to';
+
+  interface MovedNote {
+    id: string;
+    kind: string;
+    title: string | null;
+    body: string;
+    createdAt: string;
+    movedFrom: string[];
+    sources: { title: string | null }[];
+  }
+  interface MoveResult {
+    noteId: string;
+    from: string;
+    to: string;
+    previousSubjects: string[];
+  }
+  interface RecipeNotes {
+    notes: MovedNote[];
+  }
+
+  test('sets up two recipes and a note on the first', async () => {
+    const mcp = rw();
+    for (const [slug, title] of [
+      [MOVE_A, 'The recipe the note starts on'],
+      [MOVE_B, 'The recipe the note moves to'],
+    ]) {
+      await mcp.call('create_recipe', {
+        title,
+        slug,
+        kind: 'recipe',
+        rationale: 'A destination for a note that moves.',
+        ingredients: [{ name: 'Water', quantity: 1, unit: 'l' }],
+        steps: [{ instruction: 'Wait.' }],
+      });
+    }
+  });
+
+  test('every field a reader reads survives the move unchanged', async () => {
+    const mcp = rw();
+
+    // A research note, because it is the kind that carries sources — the
+    // part of a note most likely to be dropped by a careless UPDATE.
+    const { noteId } = await mcp.call<{ noteId: string }>('add_note', {
+      recipeSlug: MOVE_A,
+      kind: 'research',
+      title: 'A sourced claim that will be moved',
+      body: 'The body, which must come back byte for byte.',
+      sources: [{ title: 'Shimizu, Dashi, 2019, p. 42.' }],
+    });
+
+    const before = (
+      await mcp.call<RecipeNotes>('get_recipe', { slug: MOVE_A })
+    ).notes.find((n) => n.id === noteId)!;
+
+    await mcp.call<MoveResult>('reattach_note', {
+      noteId,
+      recipeSlug: MOVE_B,
+    });
+
+    const after = (
+      await mcp.call<RecipeNotes>('get_recipe', { slug: MOVE_B })
+    ).notes.find((n) => n.id === noteId)!;
+
+    expect(after.kind).toBe(before.kind);
+    expect(after.title).toBe(before.title);
+    expect(after.body).toBe(before.body);
+    // The date the note was WRITTEN, not the date it was moved. A move that
+    // restamped this would rewrite when the claim was made.
+    expect(after.createdAt).toBe(before.createdAt);
+    expect(after.sources.map((s) => s.title)).toEqual(
+      before.sources.map((s) => s.title),
+    );
+    // The one thing that does change, and it only ever grows.
+    expect(before.movedFrom).toEqual([]);
+    expect(after.movedFrom).toEqual([`recipe:${MOVE_A}`]);
+  });
+
+  test('one move lands, however many callers send one at once', async () => {
+    const mcp = rw();
+    const { noteId } = await mcp.call<{ noteId: string }>('add_note', {
+      recipeSlug: MOVE_A,
+      kind: 'observation',
+      body: 'A note that several callers try to move at the same moment.',
+    });
+
+    // Every racer aims at the same destination, so they are told apart by
+    // which one is allowed to append to `previousSubjects`. Two winners
+    // would append twice and invent a home the note never had.
+    const racers = Array.from({ length: RACERS }, () =>
+      mcpClient(test.info().project.use.baseURL!, tokens().readWrite),
+    );
+
+    const settled = await Promise.allSettled(
+      racers.map((client) =>
+        client.call<MoveResult>('reattach_note', {
+          noteId,
+          recipeSlug: MOVE_B,
+        }),
+      ),
+    );
+    const winners = settled.filter(
+      (r): r is PromiseFulfilledResult<MoveResult> => r.status === 'fulfilled',
+    );
+    expect(winners).toHaveLength(1);
+
+    // And what is stored is what the winner was told it stored.
+    const stored = (
+      await mcp.call<RecipeNotes>('get_recipe', { slug: MOVE_B })
+    ).notes.find((n) => n.id === noteId)!;
+    expect(stored.movedFrom).toEqual(winners[0]!.value.previousSubjects);
+    expect(stored.movedFrom).toEqual([`recipe:${MOVE_A}`]);
+  });
+});

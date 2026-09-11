@@ -81,6 +81,7 @@ const TOOLS = [
   'list_experiments',
   'list_ingredients',
   'log_experiment',
+  'reattach_note',
   'report_issue',
   'revise_recipe',
   'search_notes',

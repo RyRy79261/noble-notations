@@ -761,3 +761,84 @@ Two things look absent on the seeded site and are correct:
 - **The literature block** on Baumy Biltong. That recipe cites nothing.
   R-SCR-38 says the block is absent then. Demi-Glace cites four works and
   draws it.
+
+---
+
+## D-13 — A note's location is not covered by the immutability rule
+
+**Status:** Decided. **Built.**
+**Date:** 2026-09-11
+**Touches:** issue #23, `notes.previous_subjects`, `reattach_note`
+
+### The problem
+
+A note is bound to exactly one record — a recipe, one of its revisions, a
+step, an ingredient or a run — and that binding is chosen at write time and
+was permanent. There was no tool to move a note, and none to edit or delete
+one.
+
+An agent filed #23 after hitting the consequence. It wrote five notes about
+stock — diagnosing and fixing bitter stock, holding stock below the boil,
+oven versus hob control, small-batch scorching, roasting sequence — and
+attached them to the batch `mixed-bone-demi-glace-batch-1`, because no
+demi-glace recipe existed yet and it had no way to create one. Those notes
+belong on the recipe. When the recipe is written, they cannot follow it.
+
+The only repair available was to write fresh notes on the recipe pointing at
+the batch. That duplicates the content and splits one piece of knowledge
+across two records that will drift apart.
+
+### The argument against fixing it
+
+Append-only is the core value of this repository, and the instinct is that a
+note is append-only too: the answer to a wrong note is a `correction`, never
+a rewrite. A tool that reaches into a stored note looks like the beginning of
+the end of that rule.
+
+### Why it is decided the other way
+
+**A note's CONTENT being fixed and a note's LOCATION being fixed are two
+decisions, and only the first follows from the revision rule.** Moving a note
+changes nothing about what it says or when it was written. The rule
+`src/lib/queries/write.ts` actually states at the top of the file is that a
+recipe's ingredients and steps are never edited in place, and `/connect`
+already records that the wider claim — "nothing is ever deleted or edited in
+place" — was removed from the screen because it was never true of the
+connector: `upsert_ingredient` and `upsert_category` write over a stored
+label, and `describe_mechanism` fills a field on a stored note.
+
+**There is already a precedent for exactly this move.** `log_experiment`
+accepts a different `recipeSlug` on a later call and re-homes a stored run;
+the contract suite unlinks a run and relinks it. Notes were the only record
+type that could not be re-homed.
+
+**The choice of parent is usually forced, not chosen.** An agent attaches a
+note to whatever exists at the time. Punishing it permanently for the order
+in which records happened to be created is not immutability, it is an
+accident.
+
+### What is refused
+
+A note pinned to one revision cannot be moved, and neither can a note on a
+step. Such a note is a statement about that version. Moving it would make a
+stored version say something it never said, which is the revision rule
+itself. The caller is told to write the note again where it belongs.
+
+### Why the move is recorded
+
+`notes.previous_subjects` keeps every record the note has hung off, oldest
+first, as `recipe:<slug>` / `ingredient:<slug>` / `experiment:<slug>`.
+
+The audit log cannot hold this. `runTool` builds its audit row from the
+arguments the tool was CALLED with, so a row for a move names where the note
+went and never where it came from. Without the column, the fact that a note
+was written against a batch and later moved to a recipe exists nowhere — and
+losing that is the kind of quiet erasure this whole repository is built to
+refuse. The slug is stored rather than a foreign key on purpose: a record
+that is later deleted takes its row with it, and this column's job is to
+survive that.
+
+A move also reassigns `notes.position`, because that column is an ordinal
+within one subject. Carrying the old ordinal across would drop the note into
+the middle of a list it has never been in — and on a recipe that renumbers
+the mechanisms `/science` draws, which is the fault D-02 records.

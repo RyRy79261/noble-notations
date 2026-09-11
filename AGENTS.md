@@ -133,6 +133,19 @@ observations. The biltong batch logs are experiments, not recipes.
   than everything stored — it cannot change what is current. Nothing carries
   forward into a backfill: inheriting a later version's ingredients would
   invent a history that never happened, so an old version states its own.
+- **A note's text is fixed; where it hangs is not.** `reattachNote` moves a
+  note to another record and touches nothing a reader reads — kind, title,
+  body, conditions, sources and `created_at` all survive byte for byte.
+  This is not a hole in the rule above: a note's content being immutable
+  and its location being immutable are two decisions, and only the first
+  follows from the revision rule. The choice of parent is usually forced by
+  what happens to exist yet, and a note written against a batch because the
+  recipe did not exist was otherwise stranded there for good. A note pinned
+  to a revision or a step is refused, because that one really is a
+  statement about a stored version. Every previous home is kept in
+  `notes.previous_subjects` — the audit log cannot hold it, since an audit
+  row is built from the arguments a call was made with and so names only
+  the destination. This is D-13.
 - **`src/lib/domain/schemas.ts` is the submission contract.** MCP tools, the
   ingest script and the exporter all derive from it. Tools take the raw
   _shape_ (for JSON Schema) and parse with the assembled _schema_ (for

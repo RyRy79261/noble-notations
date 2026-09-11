@@ -9,7 +9,7 @@ import { mcpClient, tokens, type AdvertisedTool } from './helpers';
  * the guide behind `get_started`. AGENTS.md says they live in one file "so
  * they cannot drift" — but nothing checked that either of them agrees with
  * the registry, the schemas or the scope rules underneath. `serverInstructions()`
- * had no assertion at all, and eleven of the guide's sixteen sections had
+ * had no assertion at all, and eleven of the guide's eighteen sections had
  * none.
  *
  * The tests here are not about wording. They are about the three ways this
@@ -179,7 +179,7 @@ test('every section of the guide is present and says something', async () => {
   // The guide is one object and a client reads all of it. A section that
   // became an empty string, or lost its key in a refactor, disappears in
   // silence — and the sections most likely to go are the ones no other test
-  // touches, which until now was eleven of the sixteen.
+  // touches, which until now was eleven of the eighteen.
   const guide = await agent().call<Record<string, unknown>>('get_started', {});
 
   const SECTIONS = [
@@ -195,6 +195,7 @@ test('every section of the guide is present and says something', async () => {
     'images',
     'shoppingList',
     'theWebsite',
+    'movingANote',
     'scopes',
     'reportingAFault',
     'rules',
@@ -393,10 +394,15 @@ const CALLS: Record<string, Record<string, unknown>> = {
     parentSlug: 'no-such-parent-for-the-scope-sweep',
   },
   log_experiment: { title: 'A scope sweep', revisionNumber: 1 },
+  reattach_note: {
+    noteId: '00000000-0000-0000-0000-000000000000',
+    recipeSlug: GHOST,
+  },
 };
 
 const WRITE_TOOLS = [
   'create_recipe',
+  'reattach_note',
   'revise_recipe',
   'backfill_revision',
   'add_note',

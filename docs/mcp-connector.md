@@ -88,10 +88,10 @@ string, so a `redirect_uri` still in flight survives the rename.
 
 ## Scopes
 
-| Scope                   | Grants                                                                                                                                                             |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `noble-notations:read`  | Every read tool                                                                                                                                                    |
-| `noble-notations:write` | `create_recipe`, `revise_recipe`, `backfill_revision`, `add_note`, `add_mass_flow`, `describe_mechanism`, `upsert_ingredient`, `upsert_category`, `log_experiment` |
+| Scope                   | Grants                                                                                                                                                                              |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `noble-notations:read`  | Every read tool                                                                                                                                                                     |
+| `noble-notations:write` | `create_recipe`, `revise_recipe`, `backfill_revision`, `add_note`, `add_mass_flow`, `describe_mechanism`, `upsert_ingredient`, `upsert_category`, `log_experiment`, `reattach_note` |
 
 `report_issue` is in neither scope. It needs authentication and nothing
 else, so a read-only connector can file a report — a read-only agent is
@@ -110,7 +110,7 @@ Read: `get_started`, `search_recipes`, `get_recipe`, `list_categories`,
 
 Write: `create_recipe`, `revise_recipe`, `backfill_revision`, `add_note`,
 `add_mass_flow`, `describe_mechanism`, `upsert_ingredient`,
-`upsert_category`, `log_experiment`.
+`upsert_category`, `log_experiment`, `reattach_note`.
 
 Neither: `report_issue`.
 
@@ -120,7 +120,7 @@ experiments; the website calls the same record a batch log and serves it at
 mapping, because one that knew only the tool word reported the page as
 missing.
 
-Twenty-one tools. `/connect` and `TOOLS` in `e2e/mcp-contract.spec.ts` name the
+Twenty-two tools. `/connect` and `TOOLS` in `e2e/mcp-contract.spec.ts` name the
 same set; a tool that appears or disappears without all three moving is
 drift, and that test is the line that says so.
 
@@ -128,7 +128,7 @@ Tool descriptions are the only instructions the model gets, and they are
 written to push toward revising rather than duplicating — `create_recipe`
 says to search first and reach for `revise_recipe` if the dish exists.
 
-### The two tools that reach a stored record
+### The three tools that reach a stored record
 
 `add_mass_flow` and `describe_mechanism` are the odd pair. Every other
 write tool makes a record or appends one; these two name a record that is
@@ -142,6 +142,29 @@ flow tables behind R-SCR-39. No other path reaches a stored revision:
 rather than filling columns on stored ones, and a revision whose only
 change is a diagram has no rationale and would move a number that is in
 URLs and in the `nn:checked:{slug}:{revision}` keys.
+
+`reattach_note` is the third, and a different shape: it moves a note from
+one record to another. Nothing a reader reads changes — the kind, title,
+body, conditions, sources and date are all left exactly as they were, and
+only which record holds the note is different. A note's TEXT being fixed
+does not make its LOCATION fixed, and the choice of parent is usually
+forced by what happens to exist yet: a note about a dish gets attached to a
+batch because no recipe for the dish has been written. Before this tool
+that note was stranded, and the only repair was to write it a second time
+on the recipe, which duplicates the text and lets the two copies drift.
+`log_experiment` has always re-homed a run the same way.
+
+A note pinned to one revision is refused rather than moved. That note is a
+statement about that version, and moving it would make a stored version say
+something it never said — which is the revision rule itself.
+
+The move is recorded, not silent. `notes.previous_subjects` keeps every
+record the note has hung off, oldest first. The audit log cannot carry that
+fact: `runTool` builds its audit row from the arguments the tool was called
+with, so it can name where a note went and never where it came from. The
+concurrency answer is `describe_mechanism`'s — lock the row, then repeat
+the guard in the UPDATE's own WHERE, so two callers racing cannot both
+believe they moved it.
 
 Neither is an update path in the sense the revision rule forbids. Each
 fills a field that has never held a value, so it can only turn absent into

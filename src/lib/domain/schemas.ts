@@ -1539,6 +1539,54 @@ export const describeMechanismSchema = z.object(describeMechanismShape);
 export type DescribeMechanismArgs = z.input<typeof describeMechanismSchema>;
 export type DescribeMechanismInput = z.infer<typeof describeMechanismSchema>;
 
+/**
+ * Move a note to a different record.
+ *
+ * This is NOT an edit, and the distinction is the whole argument for the
+ * tool. A note's text is fixed — the answer to a wrong note is a
+ * `correction`, never a rewrite — but a note's LOCATION being fixed does
+ * not follow from that. Moving a note changes nothing about what it says or
+ * when it was written, and the choice of parent is frequently forced: a
+ * note about a dish gets attached to a batch because no recipe for the dish
+ * exists yet. `logExperiment` already re-homes a run the same way.
+ *
+ * No `revisionNumber`. A note pinned to one version is a statement about
+ * that version, and moving it would make the version say something it never
+ * said — that IS the immutability rule, so a revision note is refused
+ * rather than moved.
+ */
+export const reattachNoteShape = {
+  /** `z.guid()` for the same reason `describeMechanismShape` uses it. */
+  noteId: z
+    .guid()
+    .describe(
+      'The id of the note. get_recipe, get_ingredient and get_experiment ' +
+        'give it for every note they return, and so does search_notes.',
+    ),
+  recipeSlug: z.string().max(120).optional(),
+  ingredientSlug: z.string().max(120).optional(),
+  experimentSlug: z.string().max(120).optional(),
+};
+
+export const reattachNoteSchema = z
+  .object(reattachNoteShape)
+  .superRefine((value, ctx) => {
+    const targets = [
+      value.recipeSlug,
+      value.ingredientSlug,
+      value.experimentSlug,
+    ].filter(Boolean);
+    if (targets.length !== 1) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'Give exactly one of recipeSlug, ingredientSlug or experimentSlug.',
+      });
+    }
+  });
+export type ReattachNoteArgs = z.input<typeof reattachNoteSchema>;
+export type ReattachNoteInput = z.infer<typeof reattachNoteSchema>;
+
 export const upsertIngredientShape = {
   name: plainName(z.string().min(1).max(200), 'name'),
   slug: z.string().max(120).optional(),
