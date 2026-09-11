@@ -114,6 +114,12 @@ Write: `create_recipe`, `revise_recipe`, `backfill_revision`, `add_note`,
 
 Neither: `report_issue`.
 
+`list_experiments`, `get_experiment` and `log_experiment` speak of
+experiments; the website calls the same record a batch log and serves it at
+`/batch-logs`. The guide's `theWebsite` section teaches an agent the
+mapping, because one that knew only the tool word reported the page as
+missing.
+
 Twenty tools. `/connect` and `TOOLS` in `e2e/mcp-contract.spec.ts` name the
 same set; a tool that appears or disappears without all three moving is
 drift, and that test is the line that says so.

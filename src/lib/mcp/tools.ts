@@ -426,7 +426,9 @@ export function registerTools(server: McpServer): void {
       description:
         'Recorded runs — an actual batch that was cooked, with its ' +
         'measurements. Distinct from a recipe: the recipe is the intent, an ' +
-        'experiment is what happened when it met reality.',
+        'experiment is what happened when it met reality.\n\n' +
+        'The website calls these batch logs. Every run is listed at ' +
+        '/batch-logs.',
       inputSchema: {},
     },
     async (_args, extra) =>
@@ -443,7 +445,11 @@ export function registerTools(server: McpServer): void {
         'One recorded run with every per-item observation (weights, dates, ' +
         'costs), its outcome, and the recipe revision it was cooking. Use it ' +
         'when a revision needs to be justified by measured results rather ' +
-        'than by taste memory.',
+        'than by taste memory.\n\n' +
+        'The website calls this a batch log. One run is at ' +
+        '/batch-logs/<slug>. A run that names a recipe is also at ' +
+        '/recipes/<recipe>/batch-logs/<slug>. The address /batch-logs/<slug> ' +
+        'always answers.',
       inputSchema: { slug: z.string().min(1).max(120) },
     },
     async (args, extra) =>
@@ -959,7 +965,10 @@ export function registerTools(server: McpServer): void {
         'that version, so a later call that names the same recipe again does ' +
         'not move the run onto the newest version. Send `revisionNumber` ' +
         'only to correct it, and always with `recipeSlug`. Send ' +
-        '`recipeSlug: null` to unlink the run from every recipe.',
+        '`recipeSlug: null` to unlink the run from every recipe.\n\n' +
+        'After you write the run it is on /batch-logs at once. The website ' +
+        'calls a run a batch log. A run with no `recipeSlug` keeps its own ' +
+        'address at /batch-logs/<slug>.',
       inputSchema: logExperimentShape,
     },
     async (args, extra) =>

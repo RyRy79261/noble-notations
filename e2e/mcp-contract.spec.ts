@@ -204,6 +204,16 @@ interface ExperimentResult {
   recipe: { slug: string; title: string } | null;
   items: { label: string; note: string | null }[];
   observations: { metric: string; value: number | null }[];
+  notes: {
+    kind: string;
+    title: string | null;
+    body: string;
+    sources: {
+      url: string | null;
+      title: string | null;
+      citation: string | null;
+    }[];
+  }[];
 }
 
 /**
@@ -3503,6 +3513,17 @@ test.describe('MCP contract', () => {
         ],
       }),
     ).resolves.toBeTruthy();
+
+    // And the citation comes back. `getExperiment` hardcoded `sources: []`,
+    // so the one thing a research note is REQUIRED to carry was the one
+    // thing the reader dropped: the tool refused the note without a source,
+    // stored the source, and then served the note as though it had none.
+    const sourced = await mcp.call<ExperimentResult>('get_experiment', {
+      slug: 'mcp-contract-sourced-run',
+    });
+    const research = sourced.notes.find((note) => note.kind === 'research');
+    expect(research, 'the sourced research note is missing').toBeTruthy();
+    expect(research!.sources[0]?.title).toBe('Kruger, Biltong and Droëwors');
   });
 
   test('a scope denial is an error result, not an auth challenge', async () => {

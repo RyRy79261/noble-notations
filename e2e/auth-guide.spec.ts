@@ -151,6 +151,26 @@ test('the guide and the instructions name only tools that exist', async () => {
   }
 });
 
+test('the guide and the instructions name the website and its word', async () => {
+  // THE FAILURE THIS CATCHES is the one that produced issue #19. The
+  // connector's word is "experiment" and the site's word is "batch log".
+  // An agent that is never told the mapping writes a run, is asked where it
+  // went, and reports a page as missing that has existed since the rename —
+  // seventh in the navigation, with `/experiments` already redirecting to
+  // it. Nothing in the sixteen sections mentioned the website at all.
+  //
+  // Only the relative route is asserted. `NEXT_PUBLIC_SITE_URL` is set
+  // nowhere in this repository, so `site.url` falls back to the production
+  // host and an absolute address here would pin a lie.
+  const instructions = await serverInstructions();
+  const guide = JSON.stringify(await agent().call('get_started', {}));
+
+  for (const text of [instructions, guide]) {
+    expect(text.toLowerCase()).toContain('batch log');
+    expect(text).toContain('/batch-logs');
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────────────
 // 2. The guide agrees with the schemas
 // ─────────────────────────────────────────────────────────────────────────
@@ -174,6 +194,7 @@ test('every section of the guide is present and says something', async () => {
     'massFlow',
     'images',
     'shoppingList',
+    'theWebsite',
     'scopes',
     'reportingAFault',
     'rules',

@@ -573,6 +573,53 @@ function formatMassFlowSummary(
   return summary;
 }
 
+/**
+ * The citations under a set of notes, grouped by note.
+ *
+ * WHY THIS IS A FUNCTION AND NOT THREE COPIES. It was one copy and two
+ * hardcoded `sources: []` — `getIngredient` and `getExperiment` each
+ * declared that notes on an ingredient and notes on a run carry no
+ * citations. They do: `writeNotes` stores `sources` for any kind, the
+ * schema *requires* one on a `research` note, and `NoteBlock` renders them
+ * on every screen that draws a note. So a sourced research note written
+ * through `log_experiment` — which is the documented way to record one —
+ * came back from `get_experiment` with its provenance silently dropped,
+ * and the run page drew the claim with nothing under it.
+ *
+ * The ORDER BY is the reason this must not be re-inlined a fourth time.
+ * This read had none at all once, so citations reshuffled between two
+ * loads of one seed and `pnpm export` produced a different `- Source:`
+ * block each time. Same three columns as every other ordered read here.
+ */
+async function noteSourcesByNote(
+  noteIds: string[],
+): Promise<Map<string, NoteView['sources']>> {
+  const byNote = new Map<string, NoteView['sources']>();
+  if (noteIds.length === 0) return byNote;
+
+  const rows = await db
+    .select()
+    .from(noteSources)
+    .where(inArray(noteSources.noteId, noteIds))
+    .orderBy(
+      asc(noteSources.createdAt),
+      asc(noteSources.position),
+      asc(noteSources.id),
+    );
+
+  for (const row of rows) {
+    const list = byNote.get(row.noteId) ?? [];
+    list.push({
+      url: row.url,
+      title: row.title,
+      citation: row.citation,
+      accessedAt: row.accessedAt,
+    });
+    byNote.set(row.noteId, list);
+  }
+  return byNote;
+}
+
 export async function getRecipeBySlug(
   slug: string,
   revisionNumber?: number,
@@ -769,38 +816,7 @@ export async function getRecipeBySlug(
     usesByStep.set(row.stepId, list);
   }
 
-  const sourceRows = noteRows.length
-    ? await db
-        .select()
-        .from(noteSources)
-        .where(
-          inArray(
-            noteSources.noteId,
-            noteRows.map((x) => x.id),
-          ),
-        )
-        // This read had no ORDER BY at all, so the citations under a note
-        // came back in whatever order the scan produced — visible on the
-        // recipe page and, worse, in `pnpm export`, where a `- Source:`
-        // block reshuffled between two loads of the same seed. Same three
-        // columns as everywhere else; the grouping below preserves them.
-        .orderBy(
-          asc(noteSources.createdAt),
-          asc(noteSources.position),
-          asc(noteSources.id),
-        )
-    : [];
-  const sourcesByNote = new Map<string, NoteView['sources']>();
-  for (const row of sourceRows) {
-    const list = sourcesByNote.get(row.noteId) ?? [];
-    list.push({
-      url: row.url,
-      title: row.title,
-      citation: row.citation,
-      accessedAt: row.accessedAt,
-    });
-    sourcesByNote.set(row.noteId, list);
-  }
+  const sourcesByNote = await noteSourcesByNote(noteRows.map((x) => x.id));
 
   const [linkRows, backlinkRows, experimentRows] = await Promise.all([
     db
@@ -1279,7 +1295,10 @@ export async function getIngredient(slug: string): Promise<{
       .orderBy(asc(notes.createdAt), asc(notes.position), asc(notes.id)),
   ]);
 
-  const terms = await attachTerms(usedIn);
+  const [terms, sourcesByNote] = await Promise.all([
+    attachTerms(usedIn),
+    noteSourcesByNote(noteRows.map((x) => x.id)),
+  ]);
 
   return {
     ingredient: {
@@ -1302,7 +1321,7 @@ export async function getIngredient(slug: string): Promise<{
       body: x.body,
       conditions: x.conditions,
       createdAt: x.createdAt.toISOString(),
-      sources: [],
+      sources: sourcesByNote.get(x.id) ?? [],
     })),
   };
 }
@@ -1593,6 +1612,8 @@ export async function getExperiment(
       .orderBy(asc(notes.createdAt), asc(notes.position), asc(notes.id)),
   ]);
 
+  const sourcesByNote = await noteSourcesByNote(noteRows.map((x) => x.id));
+
   return {
     slug: row.slug,
     title: row.title,
@@ -1615,7 +1636,7 @@ export async function getExperiment(
       body: x.body,
       conditions: x.conditions,
       createdAt: x.createdAt.toISOString(),
-      sources: [],
+      sources: sourcesByNote.get(x.id) ?? [],
     })),
   };
 }

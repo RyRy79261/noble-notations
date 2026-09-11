@@ -66,7 +66,7 @@ export async function GET() {
     `- [Cuisines](${site.url}/cuisines): recipes grouped by where the dish comes from.`,
     `- [Classes](${site.url}/classes): every tag, grouped by category type, each with an explanation.`,
     `- [Ingredients](${site.url}/ingredients): the canonical ingredient list, with aliases and substitutes.`,
-    `- [Batch logs](${site.url}/batch-logs): each batch that a person cooked, with the measurements.`,
+    `- [Batch logs](${site.url}/batch-logs): each batch that a person cooked, with the measurements. The MCP tools call these experiments.`,
     `- [Archive](${site.url}/archive): the notes that predate the database, verbatim.`,
     `- [Search](${site.url}/search?q=): free text, ingredient and tag search.`,
     `- [Sitemap](${site.url}/sitemap.xml): every URL.`,

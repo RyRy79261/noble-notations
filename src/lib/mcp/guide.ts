@@ -68,6 +68,8 @@ that tells you what to send instead is not a fault.
 const INSTRUCTIONS_TAIL = `
 Before you make anything, call search_recipes.
 
+The website calls a run a batch log. Every run is at /batch-logs.
+
 Call get_started to read the full guide.
 `.trim();
 
@@ -270,6 +272,29 @@ const GUIDE = {
     'units agree: 800 g and 1 kg become 1.8 kg. Three cloves and two heads ' +
     'stay on two lines. If an amount is not given, report this. Do not ' +
     'invent an amount.',
+
+  /**
+   * WHY THE GUIDE NAMES THE WEBSITE AT ALL.
+   *
+   * The tools say "experiment". The website says "batch log". They are the
+   * same record — the reader's word won the URL and the database kept its
+   * own — and nothing told an agent so. One then wrote a run, could not
+   * find it on the site, and reported the page as missing. It had existed
+   * since the rename, seventh in the navigation.
+   *
+   * The addresses are relative on purpose. `NEXT_PUBLIC_SITE_URL` is set
+   * nowhere in this repository, so `site.url` falls back to the production
+   * host — which on a preview deployment or in the e2e suite would be a
+   * lie. `getPublicOrigin()` is no better here: `registerTools` has no
+   * request to read an origin from.
+   */
+  theWebsite:
+    'This store is also a website. The website calls a run a batch log. ' +
+    'Every run is on the page /batch-logs. This includes a run that names ' +
+    'no recipe. One run is at /batch-logs/<slug>. A run that names a ' +
+    'recipe is also at /recipes/<recipe>/batch-logs/<slug>. The address ' +
+    '/batch-logs/<slug> always answers. It sends you on when the run has ' +
+    'a recipe.',
 
   /**
    * The count was "six" and the registry held seven, because

@@ -263,11 +263,12 @@ _why_ and need their full vocabulary.
 The word "taxonomy" is not used anywhere a person or an agent reads. The
 vocabulary is:
 
-| Say                                         | Not                      |
-| ------------------------------------------- | ------------------------ |
-| Categories                                  | Taxonomy, classification |
-| Category type (cuisine, course, technique…) | Facet                    |
-| Tag                                         | Term                     |
+| Say                                         | Not                             |
+| ------------------------------------------- | ------------------------------- |
+| Categories                                  | Taxonomy, classification        |
+| Category type (cuisine, course, technique…) | Facet                           |
+| Tag                                         | Term                            |
+| Batch log                                   | Experiment (reader-facing only) |
 
 **The database columns did not change.** `taxonomy_terms.facet` is still
 `facet`, and `CategoryType` is an alias over the same enum. Renaming those
@@ -279,6 +280,16 @@ MCP names follow the same vocabulary: `list_categories`,
 `upsert_category`, and the fields `categoryType` and `categories`. The
 reader-facing route is `/classes`; the old `/taxonomy` and `/categories`
 URLs both redirect permanently to it.
+
+**A batch log and an experiment are the same record.** The reader's word
+won the URL — `/batch-logs`, with `/experiments` redirecting permanently to
+it — and everything under the reader keeps the other word: the
+`experiments` table, `ExperimentView`, and the `list_experiments`,
+`get_experiment` and `log_experiment` tools. Unlike the categories rename,
+this split reaches an agent, because an agent reads the tool names and then
+looks at the site. That is what issue #19 was: a connector that only knew
+`experiment` could not find a page that had existed since the rename, and
+reported it as missing. So the guide names both words and the addresses.
 
 ## Note kinds
 
@@ -315,6 +326,15 @@ kind of its own rather than a filter over the existing one.
 the `get_started` tool (the full guide). They live together so they cannot
 drift. Tool descriptions explain one tool each; the guide explains how the
 pieces fit — most importantly that the repository is revision-first.
+
+**The guide must also name the website's words and its addresses.** An
+agent writes through the connector and is then asked about the result by
+someone looking at the site, so it needs to know what the site calls the
+thing it just wrote and where that thing now is. A connector that knows
+only `experiment` cannot answer "where is it" about `/batch-logs`. Keep the
+addresses in the guide relative: `NEXT_PUBLIC_SITE_URL` is set nowhere
+here, so `site.url` falls back to the production host and an absolute
+address would be wrong on every preview deployment.
 
 ## Shopping lists and filtering
 
