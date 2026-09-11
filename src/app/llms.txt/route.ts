@@ -68,7 +68,7 @@ export async function GET() {
     `- [Ingredients](${site.url}/ingredients): the canonical ingredient list, with aliases and substitutes.`,
     `- [Batch logs](${site.url}/batch-logs): each batch that a person cooked, with the measurements. The MCP tools call these experiments.`,
     `- [Archive](${site.url}/archive): the notes that predate the database, verbatim.`,
-    `- [Search](${site.url}/search?q=): free text, ingredient and tag search.`,
+    `- [Search](${site.url}/search?q=): free text, ingredient and tag search. Free text also reaches batch logs and notes.`,
     `- [Sitemap](${site.url}/sitemap.xml): every URL.`,
     '',
   );

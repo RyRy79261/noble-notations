@@ -480,9 +480,10 @@ test.describe('finding a note across every record', () => {
       body: long,
     });
 
+    /* No `kind` filter: the short note this compares against is a
+       `warning`, and narrowing to observations would drop it. */
     const found = await mcp.call<NoteSearch>('search_notes', {
       query: WORD,
-      kind: 'observation',
       ingredientSlug: INGREDIENT_SLUG,
       limit: 50,
     });

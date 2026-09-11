@@ -10,9 +10,23 @@ import { SectionHead } from '@/components/f/section-label';
 import { DatabaseNotice } from '@/components/database-notice';
 import { RecipeGrid } from '@/components/recipe-card';
 import { RECIPE_KINDS } from '@/lib/domain/schemas';
-import { getStats, listCategories, searchRecipes } from '@/lib/queries/read';
+import {
+  getStats,
+  listCategories,
+  searchExperiments,
+  searchNotes,
+  searchRecipes,
+} from '@/lib/queries/read';
 import { safeRead } from '@/lib/safe';
-import { Cardinal, cardinal, KIND_LABELS, KIND_NOUNS, site } from '@/lib/site';
+import {
+  batchLogPath,
+  Cardinal,
+  cardinal,
+  KIND_LABELS,
+  KIND_NOUNS,
+  NOTE_KIND_LABELS,
+  site,
+} from '@/lib/site';
 import { cn } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
@@ -20,7 +34,7 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = {
   title: 'Search',
   description:
-    'Search the repository by text, cuisine, technique and ingredient — including ingredients to exclude.',
+    'Search the repository by text, cuisine, technique and ingredient — including ingredients to exclude. Free text also reaches batch logs and notes.',
   alternates: { canonical: '/search' },
   robots: { index: true, follow: true },
 };
@@ -71,6 +85,42 @@ function list(value: string | undefined): string[] {
     .split(',')
     .map((part) => part.trim())
     .filter(Boolean);
+}
+
+/**
+ * Where to send a reader who found a note.
+ *
+ * A note is not a page and has no address of its own. It is read on the
+ * record it hangs off, which is the whole reason a result has to name that
+ * record — a hit with nowhere to go is the same dead end as not finding it.
+ * The five parent kinds collapse to three destinations: a note on a recipe,
+ * on one of its revisions or on a step of one all lead to the recipe; an
+ * ingredient and a run lead to their own pages.
+ *
+ * Route knowledge stays here and not in `read.ts`, so the MCP payload can
+ * keep returning slugs and a type rather than site addresses.
+ */
+function noteHref(note: {
+  attachedTo: { type: string; slug: string | null };
+}): string | null {
+  const { type, slug } = note.attachedTo;
+  if (!slug) return null;
+  switch (type) {
+    case 'recipe':
+    case 'revision':
+    case 'step':
+      return `/recipes/${slug}`;
+    case 'ingredient':
+      return `/ingredients/${slug}`;
+    case 'experiment':
+      /* The run's own live address, which depends on whether it names a
+         recipe — D-01. `searchNotes` does not carry that, and a link to
+         `/batch-logs/<slug>` is correct either way: it answers for both and
+         redirects when the run has a recipe. */
+      return `/batch-logs/${slug}`;
+    default:
+      return null;
+  }
 }
 
 /** `a`, `a and b`, `a, b and c` — the design's own prose joins. */
@@ -138,7 +188,7 @@ export default async function SearchPage({
     exclude.length > 0 ||
     Boolean(kind);
 
-  const [results, categories, stats] = await Promise.all([
+  const [results, categories, stats, runs, noteHits] = await Promise.all([
     hasFilters
       ? safeRead(
           () =>
@@ -170,6 +220,31 @@ export default async function SearchPage({
       notes: 0,
       experiments: 0,
     }),
+    /* THE OTHER TWO HALVES ARE MATCHED ON THE TEXT ALONE, and only when
+       there is text. The cuisine, technique, ingredient and kind filters
+       are properties of a recipe — a note has no cuisine — so applying
+       them here would silently return nothing rather than everything, and
+       a reader would read that as "there are none". */
+    query
+      ? safeRead(() => searchExperiments({ query, limit: 20 }), {
+          results: [],
+          total: 0,
+        })
+      : Promise.resolve({
+          data: { results: [], total: 0 },
+          configured: true,
+          failed: false,
+        }),
+    query
+      ? safeRead(() => searchNotes({ query, limit: 20, offset: 0 }), {
+          results: [],
+          total: 0,
+        })
+      : Promise.resolve({
+          data: { results: [], total: 0 },
+          configured: true,
+          failed: false,
+        }),
   ]);
 
   const cuisines = categories.data.filter((t) => t.categoryType === 'cuisine');
@@ -225,7 +300,13 @@ export default async function SearchPage({
     many: 'recipes',
   };
   const one = total === 1;
-  const subject = `${Cardinal(total)} ${one ? noun.one : noun.many}`;
+  /* "No recipes mention X" rather than "Zero recipes mention X". `Cardinal`
+     is right everywhere else on this page, but an empty result is the one
+     sentence a reader is most likely to read closely, and "zero" is a
+     figure where "no" is English. */
+  const subject = `${total === 0 ? 'No' : Cardinal(total)} ${
+    one ? noun.one : noun.many
+  }`;
 
   const clauses = [
     query ? `${one ? 'mentions' : 'mention'} “${query}”` : null,
@@ -240,6 +321,27 @@ export default async function SearchPage({
   const found = clauses.length
     ? `${subject} ${series(clauses)}.`
     : `${subject} ${one ? 'is' : 'are'} in the catalogue.`;
+
+  /*
+   * AND THE SENTENCE SAYS WHAT ELSE WAS LOOKED AT.
+   *
+   * This is the other half of issue #18, and the more important half. A
+   * reader searched for a batch log that existed, was told "zero of six
+   * recipes", and concluded the work had never been saved. The screen was
+   * accurate and still produced the wrong conclusion, because the one fact
+   * that mattered — that batch logs and notes were not searched at all —
+   * was not among the many facts it printed. Now they are searched, and
+   * the sentence says so whenever a free-text query ran, including when
+   * the answer is none.
+   */
+  const runTotal = runs.data.total;
+  const noteTotal = noteHits.data.total;
+  const otherHalves = query
+    ? ` ${runTotal === 0 ? 'No' : Cardinal(runTotal)} batch log` +
+      `${runTotal === 1 ? '' : 's'} and ${
+        noteTotal === 0 ? 'no' : cardinal(noteTotal)
+      } note${noteTotal === 1 ? '' : 's'} also mention it.`
+    : '';
 
   /* The crumb takes the same labels, for the same reason. */
   const crumb =
@@ -394,6 +496,9 @@ export default async function SearchPage({
                 for" as well, and the test asserting the exact sentence
                 would read the title with it. */}
             <span data-search-summary="">{found}</span>
+            {otherHalves ? (
+              <span data-search-elsewhere="">{otherHalves}</span>
+            ) : null}
           </Notice>
         ) : null}
 
@@ -441,6 +546,95 @@ export default async function SearchPage({
             </>
           )}
         </div>
+
+        {/*
+          III and IV. Only drawn when there is free text, because that is
+          the only field these two are matched on — see the read above.
+          NOT `<article>`: `RecipeGrid` draws one per recipe and several
+          tests count `main article` to mean "recipes came back". A batch
+          log row that answered to that count would make an empty recipe
+          result look full.
+        */}
+        {query && runs.configured && !runs.failed ? (
+          <div className="flex w-full shrink-0 flex-col items-start gap-6">
+            <SectionHead
+              ordinal="III"
+              title="Batch logs"
+              meta={
+                runTotal === 0
+                  ? 'Nothing found'
+                  : `${cardinal(runTotal)} run${runTotal === 1 ? '' : 's'}`
+              }
+            />
+            {runTotal === 0 ? (
+              <Empty>No batch log mentions it.</Empty>
+            ) : (
+              <ul
+                data-search-runs=""
+                className="m-0 flex w-full list-none flex-col items-start gap-4 p-0"
+              >
+                {runs.data.results.map((run) => (
+                  <li key={run.slug} className="w-full">
+                    <Link
+                      href={batchLogPath(run)}
+                      className={cn('text-16 font-sans', PROSE_LINK)}
+                    >
+                      {run.title}
+                    </Link>
+                    {run.summary ? (
+                      <p className="m-0 text-14 leading-170 font-sans text-ink-2">
+                        {run.summary}
+                      </p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : null}
+
+        {query && noteHits.configured && !noteHits.failed ? (
+          <div className="flex w-full shrink-0 flex-col items-start gap-6">
+            <SectionHead
+              ordinal="IV"
+              title="Notes"
+              meta={
+                noteTotal === 0
+                  ? 'Nothing found'
+                  : `${cardinal(noteTotal)} note${noteTotal === 1 ? '' : 's'}`
+              }
+            />
+            {noteTotal === 0 ? (
+              <Empty>No note mentions it.</Empty>
+            ) : (
+              <ul
+                data-search-notes=""
+                className="m-0 flex w-full list-none flex-col items-start gap-4 p-0"
+              >
+                {noteHits.data.results.map((note) => (
+                  <li key={note.id} className="w-full">
+                    <p className="m-0 text-14 leading-170 font-sans text-ink">
+                      <span className="text-09 font-mono tracking-label uppercase text-ink-3">
+                        {NOTE_KIND_LABELS[note.kind] ?? note.kind}
+                      </span>{' '}
+                      {note.title ? <strong>{note.title}. </strong> : null}
+                      {note.excerpt}
+                      {note.truncated ? '…' : ''}
+                    </p>
+                    {/* A note is not a page. The link goes to the record it
+                        hangs off, which is where a reader can actually read
+                        it — the whole point of returning notes at all. */}
+                    {noteHref(note) ? (
+                      <Link href={noteHref(note)!} className={PROSE_LINK}>
+                        {note.attachedTo.title ?? note.attachedTo.slug}
+                      </Link>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : null}
       </div>
     </>
   );

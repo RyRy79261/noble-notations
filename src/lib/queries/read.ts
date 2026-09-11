@@ -1651,6 +1651,110 @@ export async function getExperiment(
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Searching the halves that are not recipes
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface ExperimentSearchResult {
+  slug: string;
+  title: string;
+  summary: string | null;
+  outcome: string | null;
+  startedAt: string | null;
+  recipe: { slug: string; title: string } | null;
+  rank: number;
+}
+
+/**
+ * Runs, by free text.
+ *
+ * WHY THERE IS NO GENERATED COLUMN HERE, and why that is not laziness. The
+ * obvious build is a `tsvector` column on `experiments`, `GENERATED ALWAYS
+ * AS … STORED`, weighting the slug with the `'simple'` configuration so it
+ * is kept as typed. That is wrong, and it fails silently on the exact case
+ * issue #18 reports. `websearch_to_tsquery('english', …)` STEMS its input:
+ * `mixed-bone-demi-glace-batch-1` becomes a phrase query containing `mix`,
+ * not `mixed`. A `'simple'` vector holds `mixed`, so the two never meet and
+ * the slug that prompted the report would still return nothing. Checked on
+ * the Postgres this runs against: `'simple'` is false, `'english'` is true.
+ * Both sides must stem or neither may.
+ *
+ * So the matching is the same two-part clause `searchNotes` uses: a tsquery
+ * half that stems and ranks, and an ILIKE half that catches the literal
+ * substring a slug or a part-word would otherwise miss. It needs no column,
+ * no trigger and no migration, and the ILIKE half is what makes an exact
+ * slug pasted out of an MCP response find its record. When these tables are
+ * big enough that a sequential scan hurts, the answer is one hand-authored
+ * expression-index migration — drizzle-kit cannot emit those, which is why
+ * `0001_search_indexes.sql` was hand-written too.
+ */
+export async function searchExperiments(input: {
+  query?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{ results: ExperimentSearchResult[]; total: number }> {
+  const conditions = [sql`TRUE`];
+  const q = input.query?.trim();
+
+  if (q) {
+    conditions.push(sql`(
+      to_tsvector('english',
+        coalesce(e.title, '') || ' ' ||
+        coalesce(e.summary, '') || ' ' ||
+        coalesce(e.outcome, ''))
+        @@ websearch_to_tsquery('english', ${q})
+      OR e.slug ILIKE ${'%' + q + '%'}
+      OR e.title ILIKE ${'%' + q + '%'}
+      OR e.summary ILIKE ${'%' + q + '%'}
+      OR e.outcome ILIKE ${'%' + q + '%'}
+    )`);
+  }
+
+  const where = sql.join(conditions, sql` AND `);
+  const rank = q
+    ? sql`ts_rank_cd(
+        to_tsvector('english',
+          coalesce(e.title, '') || ' ' ||
+          coalesce(e.summary, '') || ' ' ||
+          coalesce(e.outcome, '')),
+        websearch_to_tsquery('english', ${q})
+      )`
+    : sql`0::float4`;
+  /* Newest first, the order `listExperiments` uses, for the same reason. */
+  const ordering = q
+    ? sql`${rank} DESC, e.started_at DESC NULLS LAST, e.slug ASC`
+    : sql`e.started_at DESC NULLS LAST, e.slug ASC`;
+
+  const result = await db.execute<Record<string, unknown>>(sql`
+    SELECT e.slug, e.title, e.summary, e.outcome, e.started_at,
+           r.slug AS recipe_slug, r.title AS recipe_title,
+           ${rank} AS rank,
+           COUNT(*) OVER () AS total
+      FROM experiments e
+      LEFT JOIN recipes r ON r.id = e.recipe_id
+     WHERE ${where}
+     ORDER BY ${ordering}
+     LIMIT ${input.limit ?? 20}
+    OFFSET ${input.offset ?? 0}
+  `);
+
+  const rows = result.rows as unknown as Record<string, unknown>[];
+  return {
+    total: rows.length > 0 ? Number(rows[0]!.total) : 0,
+    results: rows.map((row) => ({
+      slug: String(row.slug),
+      title: String(row.title),
+      summary: row.summary == null ? null : String(row.summary),
+      outcome: row.outcome == null ? null : String(row.outcome),
+      startedAt: row.started_at == null ? null : String(row.started_at),
+      recipe: row.recipe_slug
+        ? { slug: String(row.recipe_slug), title: String(row.recipe_title) }
+        : null,
+      rank: Number(row.rank ?? 0),
+    })),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Notes, as a set
 // ─────────────────────────────────────────────────────────────────────────
 

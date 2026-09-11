@@ -109,6 +109,82 @@ test.describe('search says which of its four states it is in', () => {
   });
 });
 
+test.describe('search reaches the halves that are not recipes', () => {
+  /*
+   * ISSUE #18. Search covered recipes and nothing else, so everything
+   * recorded on a run or in a note was invisible to it. An agent wrote a
+   * batch log, the reader searched the site for its exact slug, and the
+   * screen answered "zero of six recipes" — accurate, and it left them
+   * concluding the work had never been saved.
+   *
+   * The slug half is the sharp edge and is asserted first. A generated
+   * tsvector weighted with the 'simple' configuration looks like the right
+   * build and silently fails here: websearch_to_tsquery('english', …)
+   * STEMS its input, so `biltong-batch-3` becomes a phrase query holding
+   * `mix`-style stems that a 'simple' vector never carries. Both sides
+   * stem or neither does; the ILIKE half is what makes a slug pasted out
+   * of an MCP response find its record.
+   */
+  test('an exact batch-log slug finds the run', async ({ page }) => {
+    await page.goto('/search?q=biltong-batch-3');
+
+    const runs = page.locator('[data-search-runs]');
+    await expect(runs).toBeVisible();
+    await expect(runs.getByRole('link').first()).toBeVisible();
+
+    // And the reader is told the other halves were looked at, which is the
+    // fact whose absence produced the wrong conclusion in the report.
+    await expect(page.locator('[data-search-elsewhere]')).toContainText(
+      /batch log/i,
+    );
+  });
+
+  test('a word in a note body finds the note and links to its record', async ({
+    page,
+  }) => {
+    // "dry" is in the seeded archive's note bodies. The assertion is not
+    // which note comes back but that the section exists, is populated, and
+    // every row offers a way to the record the note hangs off — a hit with
+    // nowhere to go is the same dead end as not finding it.
+    await page.goto('/search?q=dry');
+
+    const notes = page.locator('[data-search-notes]');
+    await expect(notes).toBeVisible();
+    expect(await notes.getByRole('link').count()).toBeGreaterThan(0);
+  });
+
+  test('recipes, runs and notes are counted apart', async ({ page }) => {
+    await page.goto('/search?q=biltong');
+
+    // Three sections, each with its own count. The recipe cards keep the
+    // `article` element; the other two deliberately do not, so a count of
+    // `main article` still means "recipes came back".
+    await expect(page.getByRole('heading', { name: 'Results' })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Batch logs' }),
+    ).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Notes' })).toBeVisible();
+
+    const articles = await page.locator('main article').count();
+    const runRows = await page.locator('[data-search-runs] > li').count();
+    expect(articles).toBeGreaterThan(0);
+    expect(runRows).toBeGreaterThan(0);
+  });
+
+  test('with no free text the other two sections are not drawn', async ({
+    page,
+  }) => {
+    // They are matched on the text alone. A cuisine filter cannot select a
+    // note, so drawing an empty Notes section under one would report
+    // "none" where the truthful answer is "not asked".
+    await page.goto('/search?cuisine=south-african');
+
+    await expect(page.locator('[data-search-runs]')).toHaveCount(0);
+    await expect(page.locator('[data-search-notes]')).toHaveCount(0);
+    await expect(page.locator('[data-search-elsewhere]')).toHaveCount(0);
+  });
+});
+
 test.describe('the form works with no JavaScript', () => {
   // R-SCR-17 — "the form MUST be a plain GET form. It MUST work when the
   // browser has no JavaScript." The screen used to print that guarantee on

@@ -89,6 +89,29 @@ export function categoryRank(category: string): number {
   return index === -1 ? CATEGORY_ORDER.length : index;
 }
 
+/**
+ * D-01 — the one live address of a run.
+ *
+ * A run that names a recipe belongs under that recipe; a run that names none
+ * has no recipe slug to put in that shape and stays at the top level. Both
+ * indexes link straight at whichever of the two the run's own address is, so
+ * the reader never pays for the redirect in `/batch-logs/[log]`.
+ *
+ * It lived in `src/app/batch-logs/batch-log-parts.tsx` and the rule was
+ * written out again inline in `src/app/sitemap.ts`, which is how a sitemap
+ * comes to disagree with the pages it lists. `/search` now links runs too,
+ * from a file with no business importing a page component, so the rule
+ * moved here — beside the other addresses — and is stated once.
+ */
+export function batchLogPath(log: {
+  slug: string;
+  recipe: { slug: string } | null;
+}): string {
+  return log.recipe
+    ? `/recipes/${log.recipe.slug}/batch-logs/${log.slug}`
+    : `/batch-logs/${log.slug}`;
+}
+
 export const KIND_LABELS: Record<string, string> = {
   recipe: 'Recipe',
   preparation: 'Preparation',
