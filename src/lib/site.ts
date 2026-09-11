@@ -97,6 +97,24 @@ export const KIND_LABELS: Record<string, string> = {
   science: 'Science',
 };
 
+/**
+ * The same five kinds as nouns, for running prose.
+ *
+ * `KIND_LABELS` is a label: it sits in a `<select>`, a tag and a table
+ * head, where a capitalised singular is right. A sentence needs neither —
+ * "Six Recipe mention biltong" — and the plurals are not all `+ s`:
+ * `/recipes` already hand-writes "research write-ups" rather than
+ * "researches". Kept beside the labels so a sixth kind cannot be given one
+ * and not the other.
+ */
+export const KIND_NOUNS: Record<string, { one: string; many: string }> = {
+  recipe: { one: 'recipe', many: 'recipes' },
+  preparation: { one: 'preparation', many: 'preparations' },
+  process: { one: 'process', many: 'processes' },
+  research: { one: 'research write-up', many: 'research write-ups' },
+  science: { one: 'science study', many: 'science studies' },
+};
+
 export const NOTE_KIND_LABELS: Record<string, string> = {
   observation: 'Observation',
   research: 'Research',

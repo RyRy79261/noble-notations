@@ -12,7 +12,7 @@ import { RecipeGrid } from '@/components/recipe-card';
 import { RECIPE_KINDS } from '@/lib/domain/schemas';
 import { getStats, listCategories, searchRecipes } from '@/lib/queries/read';
 import { safeRead } from '@/lib/safe';
-import { Cardinal, cardinal, KIND_LABELS, site } from '@/lib/site';
+import { Cardinal, cardinal, KIND_LABELS, KIND_NOUNS, site } from '@/lib/site';
 import { cn } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
@@ -55,9 +55,6 @@ const FIELD_CELL = 'shell:w-auto shell:shrink shell:grow shell:basis-0';
  */
 const ISSUE_NUMBER = site.issue.split('·')[0]?.trim() ?? site.issue;
 
-/** The 9px mono micro-labels around the form. */
-const NOTE = 'text-09 font-mono tracking-label uppercase text-ink-3';
-
 type SearchParams = Promise<{
   q?: string;
   cuisine?: string;
@@ -88,14 +85,24 @@ function series(values: string[]): string {
  *
  * A PLAIN GET FORM AND NOTHING ELSE. No `"use client"`, no `onChange`, no
  * submit handler: the browser serialises the six fields into the address bar
- * and asks the server again. That is what makes every search a link, and it
- * is why the design gives the screen a block that prints the address the
- * form produces — the URL is the API, so the screen shows it.
+ * and asks the server again. That is what makes every search a link.
+ *
+ * THE SCREEN NO LONGER SAYS ANY OF THAT. It used to. The design's reading
+ * was "the URL is the API, so the screen shows it", and the page carried a
+ * block printing the address the form produces, an accent line reading
+ * `SUBMITS WITH GET · WORKS WITHOUT JAVASCRIPT`, a note explaining how the
+ * dropdowns were populated, and a clear link that counted its own fields.
+ * Issue #21 is an agent reporting that a cook has no use for the HTTP
+ * method, and that the screen read as a debug view of itself. The
+ * guarantees are unchanged and R-CON-03 still holds — the form is still a
+ * bare GET and still works with scripting off. What went is the screen
+ * boasting about it. `e2e/screen-states.spec.ts` turns JavaScript off and
+ * drives the form, which is a better record of R-SCR-17 than a caption
+ * that was never once checked against the behaviour it claimed.
  *
  * The design draws two numbered sections and no spine: `I Query` over the
- * fields, `II Results` over the cards. Between them sit the two things that
- * make the query legible — the address, and R-SCR-18's sentence saying in
- * English what the filters add up to.
+ * fields, `II Results` over the cards. Between them sits R-SCR-18's
+ * sentence saying in English what the filters add up to.
  *
  * THE FIELD NAMES ARE THE BUILD'S, NOT THE DESIGN'S. The drawn address
  * reads `?q=…&with=…&without=…`; this build has answered to
@@ -119,18 +126,17 @@ export default async function SearchPage({
     ? (params.kind as 'recipe')
     : undefined;
 
-  /* R-SCR-18. A condition is a FIELD that was filled in, which is how the
-     design counts them: "one answers all six conditions" on a screen with
-     six of the six filled. */
-  const conditions = [
-    Boolean(query),
-    cuisine.length > 0,
-    technique.length > 0,
-    ingredient.length > 0,
-    exclude.length > 0,
-    Boolean(kind),
-  ].filter(Boolean).length;
-  const hasFilters = conditions > 0;
+  /* The screen counted filled fields and printed the number — "zero answer
+     all six conditions". It only ever needed to know whether ANY field was
+     filled, and the count produced "all one condition" whenever exactly one
+     was, which is issue #21's grammar complaint. */
+  const hasFilters =
+    Boolean(query) ||
+    cuisine.length > 0 ||
+    technique.length > 0 ||
+    ingredient.length > 0 ||
+    exclude.length > 0 ||
+    Boolean(kind);
 
   const [results, categories, stats] = await Promise.all([
     hasFilters
@@ -179,18 +185,6 @@ export default async function SearchPage({
   const counted = stats.configured && !stats.failed;
   const tagsKnown = categories.configured && !categories.failed;
 
-  /* The design's own address block. It prints what the form produces, in
-     the order the fields are drawn, so the reader can copy the query
-     rather than reverse-engineer it. */
-  const address = new URLSearchParams();
-  if (query) address.set('q', query);
-  if (ingredient.length) address.set('ingredient', ingredient.join(','));
-  if (exclude.length) address.set('exclude', exclude.join(','));
-  if (cuisine.length) address.set('cuisine', cuisine.join(','));
-  if (technique.length) address.set('technique', technique.join(','));
-  if (kind) address.set('kind', kind);
-  const addressText = address.size > 0 ? `/search?${address}` : '/search';
-
   /* R-SCR-18's sentence. Each clause is only written when its field was
      filled in, so the sentence is always true of the query that produced
      it. */
@@ -210,16 +204,42 @@ export default async function SearchPage({
   const cuisineLabels = cuisine.map((slug) => label(cuisines, slug));
   const techniqueLabels = technique.map((slug) => label(techniques, slug));
 
+  /*
+   * THE SENTENCE NOW REPORTS, RATHER THAN RESTATING THE FORM.
+   *
+   * It read "You are asking for recipes that mention X. Six recipes were
+   * considered and zero answer all one condition." Three faults in one
+   * breath: it told the reader what they had just typed, it published the
+   * size of the catalogue and the number of predicates evaluated, and
+   * "all one condition" is not English — the plural agreement was
+   * hardcoded against a design mock that happened to draw six filled
+   * fields. Issue #21 quotes all three.
+   *
+   * What a reader wants is the answer, so the count is now the subject:
+   * "No recipes mention “demi-glace”." The clauses are kept — they are the
+   * honest half, and they are what makes an empty result legible — but
+   * they now hang off the finding rather than off the asking.
+   */
+  const noun = KIND_NOUNS[kind ?? 'recipe'] ?? {
+    one: 'recipe',
+    many: 'recipes',
+  };
+  const one = total === 1;
+  const subject = `${Cardinal(total)} ${one ? noun.one : noun.many}`;
+
   const clauses = [
-    query ? `that mention “${query}” somewhere in their text` : null,
-    ingredient.length ? `that contain ${series(ingredient)}` : null,
-    exclude.length ? `that do not contain ${series(exclude)}` : null,
-    cuisine.length ? `whose cuisine is ${series(cuisineLabels)}` : null,
-    technique.length ? `whose technique is ${series(techniqueLabels)}` : null,
+    query ? `${one ? 'mentions' : 'mention'} “${query}”` : null,
+    ingredient.length
+      ? `${one ? 'contains' : 'contain'} ${series(ingredient)}`
+      : null,
+    exclude.length ? `leave${one ? 's' : ''} out ${series(exclude)}` : null,
+    cuisine.length ? `${one ? 'is' : 'are'} ${series(cuisineLabels)}` : null,
+    technique.length ? `use${one ? 's' : ''} ${series(techniqueLabels)}` : null,
   ].filter(Boolean) as string[];
-  const asked = `You are asking for ${
-    kind ? `recipes of the kind ${kind}` : 'recipes'
-  }${clauses.length ? ` ${series(clauses)}` : ''}.`;
+
+  const found = clauses.length
+    ? `${subject} ${series(clauses)}.`
+    : `${subject} ${one ? 'is' : 'are'} in the catalogue.`;
 
   /* The crumb takes the same labels, for the same reason. */
   const crumb =
@@ -246,21 +266,29 @@ export default async function SearchPage({
         <PageHero
           kicker="Section VI · Search"
           title="Search"
-          lede="A plain form. It submits with GET, so the whole query lives in the address and every search you run is a link you can keep, send or bookmark. Nothing on this page needs scripting."
+          lede="Every search you run is a link you can keep, send or bookmark."
           ledeClassName="shell:max-w-205"
         />
 
         {/* R-CON-03. A plain GET form: shareable URLs, works without
-            JavaScript, and the query string is the whole state. */}
+            JavaScript, and the query string is the whole state. The screen
+            no longer says so — see the note at the top of this file. */}
         <form
           method="GET"
           action="/search"
           className="flex w-full shrink-0 flex-col items-start gap-5"
         >
+          {/* The design draws a meta on this head too, so the slot is kept
+              and filled with what the reader can act on — how much there is
+              to filter by — rather than with the form's method and action. */}
           <SectionHead
             ordinal="I"
             title="Query"
-            meta="Method GET · Action /search"
+            meta={
+              tagsKnown
+                ? `${cardinal(cuisines.length)} cuisines · ${cardinal(techniques.length)} techniques`
+                : undefined
+            }
           />
 
           <div className={FIELD_ROW}>
@@ -338,20 +366,13 @@ export default async function SearchPage({
             </Field>
           </div>
 
-          {tagsKnown ? (
-            <p className={cn('m-0', NOTE)}>
-              Each list shows how many recipes carry the tag · {cuisines.length}{' '}
-              cuisines · {techniques.length} techniques · {RECIPE_KINDS.length}{' '}
-              kinds
-            </p>
-          ) : null}
-
           <div className="flex w-full shrink-0 flex-row flex-wrap items-center gap-4">
             <Button type="submit">Search</Button>
             {/* The design's bare text control — 10px mono on no ground at
                 all, and explicitly NOT F/Button (see `button.tsx`). A link
-                back to the empty address clears all six fields with no
-                script, which is the only way that works under R-CON-03. */}
+                back to the empty address clears the form with no script,
+                which is the only way that works under R-CON-03. The label
+                counted the fields; the reader does not need the number. */}
             <Link
               href="/search"
               className={cn(
@@ -360,39 +381,19 @@ export default async function SearchPage({
                 FOCUS_RING,
               )}
             >
-              Clear all six fields
+              Clear the search
             </Link>
-            <span
-              className={cn(
-                'ml-auto text-09 font-mono tracking-label uppercase text-accent',
-              )}
-            >
-              Submits with GET · Works without JavaScript
-            </span>
-          </div>
-
-          <div className="flex w-full shrink-0 flex-col items-start gap-2 bg-desk px-3.25 py-2.75">
-            <span className={NOTE}>The address this form produces</span>
-            {/* 12 over 18 is `leading-150`, and the size travels with it in
-                ONE argument — TOKEN-MAP §4.3. `break-all` is this build's:
-                a query with six filled fields is longer than the column and
-                has no space in it to break at. */}
-            <code className="w-full text-12 leading-150 font-mono break-all text-ink">
-              {addressText}
-            </code>
           </div>
         </form>
 
         {hasFilters && results.configured && !results.failed ? (
-          <Notice title="What you are asking for, in words">
-            {/* `asked` ends in a full stop, so the count that follows it
-                opens a sentence and takes sentence case. */}
-            {asked}{' '}
-            {counted
-              ? `${Cardinal(indexed)} recipe${indexed === 1 ? '' : 's'} were considered and `
-              : ''}
-            {cardinal(total)} {total === 1 ? 'answers' : 'answer'} all{' '}
-            {cardinal(conditions)} condition{conditions === 1 ? '' : 's'}.
+          <Notice title="What you asked for">
+            {/* The hook is on the sentence, not on the Notice. `Notice`
+                spreads props onto its root, and that root also holds the
+                title span — so a hook there would capture "What you asked
+                for" as well, and the test asserting the exact sentence
+                would read the title with it. */}
+            <span data-search-summary="">{found}</span>
           </Notice>
         ) : null}
 
@@ -405,9 +406,9 @@ export default async function SearchPage({
                 ? 'Repository unavailable'
                 : !hasFilters
                   ? 'Nothing asked for yet'
-                  : counted
-                    ? `${cardinal(total)} of ${cardinal(indexed)} recipe${indexed === 1 ? '' : 's'}`
-                    : `${cardinal(total)} recipe${total === 1 ? '' : 's'}`
+                  : total === 0
+                    ? 'Nothing found'
+                    : `${cardinal(total)} ${total === 1 ? noun.one : noun.many}`
             }
           />
 
@@ -423,8 +424,8 @@ export default async function SearchPage({
             </Empty>
           ) : results.data.results.length === 0 ? (
             <Empty>
-              Nothing matched. Try dropping a filter — they are combined with
-              AND.
+              Nothing matched. Each field makes the search narrower. Remove one
+              and try again.
             </Empty>
           ) : (
             <>
@@ -434,8 +435,7 @@ export default async function SearchPage({
               <RecipeGrid recipes={results.data.results} columns={1} />
               {counted && total < indexed ? (
                 <Empty>
-                  Nothing else answered all {cardinal(conditions)} condition
-                  {conditions === 1 ? '' : 's'}. Drop one and more appear.
+                  Nothing else matched. Remove a filter and more recipes appear.
                 </Empty>
               ) : null}
             </>

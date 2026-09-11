@@ -49,17 +49,27 @@ test.describe('search says which of its four states it is in', () => {
     await expect(page.getByText(/nothing matched/i)).toHaveCount(0);
   });
 
-  test('with nothing found it says so, and says the filters combine', async ({
+  test('with nothing found it says so, and says how to widen the search', async ({
     page,
   }) => {
-    // R-STA-04. The remedy is the point: the filters are ANDed, so the way
-    // out of an empty result is to drop one, and the screen has to say that
-    // rather than leave a reader retyping the same query.
+    // R-STA-04. The remedy is the point: an empty result must offer a way
+    // out rather than leave a reader retyping the same query. The screen
+    // used to spell out that the filters are ANDed; R-SCR-18 states that as
+    // BEHAVIOUR, not as required copy, so the remedy is now carried by
+    // "Each field makes the search narrower. Remove one and try again."
     await page.goto('/search?q=zzzzqqq');
 
     await expect(page.getByText(/nothing matched/i)).toBeVisible();
     await expect(page.getByText(/drop|remove/i).first()).toBeVisible();
     await expect(page.locator('main article')).toHaveCount(0);
+
+    // And the sentence reports the finding in English. This is the
+    // assertion that pins issue #21's grammar fix: the count used to be
+    // rendered against a hardcoded plural, so exactly one filled field
+    // produced "zero answer all one condition". It cannot come back.
+    await expect(page.locator('main [data-search-summary]')).toHaveText(
+      'No recipes mention “zzzzqqq”.',
+    );
   });
 
   test('with matches it states the filters in words, not as a query string', async ({
@@ -74,17 +84,24 @@ test.describe('search says which of its four states it is in', () => {
      */
     await page.goto('/search?q=biltong&cuisine=south-african');
 
-    /* The sentence, not the panel head above it — "What you are asking for,
-       in words" is the title and would match a looser pattern. */
-    const notice = page
-      .locator('main')
-      .getByText(/^You are asking for recipes/);
-    await expect(notice).toBeVisible();
+    /* The sentence, not the panel head above it. `Notice` renders its title
+       as a sibling inside the same root, so a text regex here would have to
+       dodge the title; `[data-search-summary]` wraps the sentence alone. */
+    const summary = page.locator('main [data-search-summary]');
+    await expect(summary).toBeVisible();
 
-    const sentence = await notice.evaluate((el) => el.textContent ?? '');
+    const sentence = (await summary.textContent()) ?? '';
     expect(sentence).toContain('biltong');
     expect(sentence).toContain('South African');
     expect(sentence).not.toContain('south-african');
+
+    /* And it reads as a sentence a person would write: the count is the
+       subject and it agrees with its verb. `cardinal` returns bare digits
+       above ninety-nine, hence the numeric alternative. */
+    expect(sentence).toMatch(
+      /^(No|One|[A-Z][a-z-]+|\d+) recipes? (mention|mentions|is|are) /,
+    );
+    expect(sentence.endsWith('.')).toBe(true);
 
     // And the cards are really there, so the sentence is not describing an
     // empty result.
@@ -94,9 +111,11 @@ test.describe('search says which of its four states it is in', () => {
 
 test.describe('the form works with no JavaScript', () => {
   // R-SCR-17 — "the form MUST be a plain GET form. It MUST work when the
-  // browser has no JavaScript." Nothing in the suite has ever turned
-  // JavaScript off, so the guarantee the screen prints on itself
-  // ("Submits with GET · Works without JavaScript") was never once checked.
+  // browser has no JavaScript." The screen used to print that guarantee on
+  // itself ("Submits with GET · Works without JavaScript") and nothing ever
+  // checked it. Issue #21 deleted the caption — a cook has no use for the
+  // HTTP method — so this block is now the whole record of R-SCR-17, which
+  // is the right way round: the behaviour is asserted, not advertised.
   test.use({ javaScriptEnabled: false });
 
   test('a search submits, lands in the address bar and answers', async ({

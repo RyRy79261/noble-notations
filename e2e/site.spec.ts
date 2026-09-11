@@ -274,3 +274,76 @@ test('the 360 drawer hides the rest of the page from a screen reader', async ({
 
   expect(exposed).toEqual([]);
 });
+
+/**
+ * The site does not explain how it is built.
+ *
+ * Issue #21: an agent reported that `/search` showed the user its own
+ * mechanics rather than what it found — the HTTP method, a note that the
+ * page needs no scripting, the query string the form produces, how the
+ * dropdowns were populated, and how many fields there were to clear. None
+ * of it helps anyone search, and together they made a simple screen read
+ * as a debug view.
+ *
+ * The issue asked for the whole site, not one page, so this sweeps every
+ * screen that renders reader copy. `ROUTES` above is deliberately not
+ * reused: it holds no detail screen, so a guard built on it could not see
+ * most of the site.
+ *
+ * `/connect` is exempt. The protocol IS its subject — it exists to explain
+ * a transport to somebody wiring up a client — so "a server whose transport
+ * is HTTP" is that page's content, not a description of its build.
+ */
+const SWEEP = [
+  '/',
+  '/recipes',
+  '/recipes/baumy-biltong',
+  '/recipes/baumy-biltong/revisions/1',
+  '/recipes/baumy-biltong/batch-logs',
+  '/recipes/baumy-biltong/batch-logs/biltong-batch-3',
+  '/science',
+  '/science/demi-glace',
+  '/cuisines',
+  '/cuisines/south-african',
+  '/classes',
+  '/classes/technique/air-drying',
+  '/ingredients',
+  '/ingredients/salt',
+  '/list',
+  '/batch-logs',
+  '/batch-logs/biltong-batch-3',
+  '/archive',
+  '/archive/biltong/batch-03',
+  '/search',
+  '/search?q=biltong',
+  '/sign-in',
+];
+
+const JARGON: RegExp[] = [
+  // Case-sensitive, and that matters: every 9px mono micro-label is
+  // uppercased in CSS, and `innerText` returns text as rendered. A
+  // lower-case "get" in a sentence is ordinary English — the archive has
+  // one — and must not trip this.
+  /\bGET\b/,
+  /\bPOST\b/,
+  /JavaScript/i,
+  /query string/i,
+  /this form produces/i,
+  // "zero answer all one condition" — the count of predicates evaluated,
+  // with the plural agreement hardcoded against a six-field mock.
+  /\ball (one|two|three|four|five|six) conditions?\b/i,
+];
+
+test('no screen describes its own plumbing', async ({ page }) => {
+  // One width only: none of these strings is width-dependent, and this
+  // would otherwise double the slowest loop in the suite.
+  for (const route of SWEEP) {
+    const response = await page.goto(route);
+    expect(response?.status(), route).toBe(200);
+
+    const text = await page.locator('main').innerText();
+    for (const rule of JARGON) {
+      expect(text, `${route} matches ${rule}`).not.toMatch(rule);
+    }
+  }
+});
