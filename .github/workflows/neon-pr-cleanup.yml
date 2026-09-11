@@ -1,0 +1,113 @@
+name: Delete Neon branch for closed PR
+
+# When a PR closes (merged or not), delete the Neon branch that was
+# created for its preview deployment. The Vercel Neon integration names
+# preview branches after the git head branch:
+#
+#   preview/<head-branch-name>
+#
+# We look up by `preview/<head-branch-name>` prefix rather than
+# reconstructing the full name from event data — head-ref slugging can
+# differ between Vercel, the Neon integration, and tj-actions/branch-names,
+# so a prefix match is more robust and is still narrowly scoped to this PR.
+
+# Runs on `pull_request_target` (not `pull_request`) so the base-repo Actions
+# secret store is available even when the PR was opened/closed by Dependabot or
+# a fork. Under `pull_request`, a Dependabot-actor close gets the (empty)
+# Dependabot secret store, so NEON_API_KEY resolves empty and the job fails
+# before it can delete anything (leaking the branch). `pull_request_target` is
+# safe here because this job checks out NO PR code and only reads event
+# metadata + calls the Neon REST API — there is no untrusted-code surface.
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  delete-neon-branch:
+    # Only same-repo PRs (including Dependabot's own branches) get a
+    # `preview/<head-branch>` Neon branch from the Vercel integration, so scope
+    # cleanup to those. Fork PRs have nothing to delete, and skipping them
+    # keeps the pull_request_target blast radius minimal.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete Neon branch for this PR
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${NEON_API_KEY:-}" ] || [ -z "${NEON_PROJECT_ID:-}" ]; then
+            echo "::error::NEON_API_KEY or NEON_PROJECT_ID is empty"
+            exit 1
+          fi
+
+          prefix="preview/${HEAD_REF}"
+          echo "Looking up Neon branches with prefix: $prefix"
+
+          api="https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}"
+          auth="Authorization: Bearer ${NEON_API_KEY}"
+
+          # Bounded timeouts + bounded retries: transient hangs/5xx get
+          # retried, but client errors are not (avoids --retry-all-errors).
+          curl_opts=(--connect-timeout 10 --max-time 30 --retry 3 --retry-delay 5)
+
+          # Page through ALL branches (cursor-based; limit max is 10000, follow
+          # response.pagination.next). Without this, an over-quota project with
+          # enough branches to span multiple pages could hide the target beyond
+          # the first page → a false "nothing to delete" and a silent leak.
+          all_branches='[]'
+          cursor=""
+          while :; do
+            url="$api/branches?limit=10000"
+            if [ -n "$cursor" ]; then
+              url="${url}&cursor=${cursor}"
+            fi
+            resp=$(curl -sS "${curl_opts[@]}" -w "\n%{http_code}" -H "$auth" -H "Accept: application/json" "$url")
+            body=$(printf '%s' "$resp" | sed '$d')
+            status=$(printf '%s' "$resp" | tail -n1)
+            if [ "$status" != "200" ]; then
+              echo "::error::Neon API returned HTTP $status when listing branches"
+              echo "$body"
+              exit 1
+            fi
+            all_branches=$(jq -n --argjson acc "$all_branches" --argjson page "$body" '$acc + ($page.branches // [])')
+            cursor=$(printf '%s' "$body" | jq -r '.pagination.next // empty')
+            if [ -z "$cursor" ]; then
+              break
+            fi
+          done
+
+          # Find non-primary branches matching this PR's prefix. jq emits
+          # one "id<TAB>name" record per match.
+          targets=$(printf '%s' "$all_branches" | jq -r --arg prefix "$prefix" '
+            .[]
+            | select(.primary != true)
+            | select(.name | startswith($prefix))
+            | [.id, .name] | @tsv
+          ')
+
+          if [ -z "$targets" ]; then
+            echo "No Neon branch found for PR #${PR_NUMBER} (prefix: $prefix). Nothing to delete."
+            exit 0
+          fi
+
+          # In practice there should be exactly one match per PR; loop is
+          # defensive in case a previous run left duplicates behind.
+          while IFS=$'\t' read -r id name; do
+            [ -z "$id" ] && continue
+            echo "Deleting branch: $name (id=$id)"
+            del_status=$(curl -sS "${curl_opts[@]}" -o /dev/null -w "%{http_code}" -X DELETE -H "$auth" "$api/branches/$id")
+            if [ "$del_status" = "200" ] || [ "$del_status" = "202" ]; then
+              echo "  ok"
+            else
+              echo "::error::Failed to delete $name (HTTP $del_status)"
+              exit 1
+            fi
+          done <<< "$targets"
