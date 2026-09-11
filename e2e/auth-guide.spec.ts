@@ -227,6 +227,40 @@ test('the note kinds the guide explains are the note kinds add_note accepts', as
   expect(guide.noteKinds.research).toMatch(/after you made it/i);
 });
 
+test('the guide and add_note state the source rule the schema enforces', async () => {
+  // Failure 2 from this file's header: the prose names a value the schema
+  // then refuses. The guide said "Add sources if you have them" and the
+  // tool said "Give `sources` where you have them", but a research note
+  // with no source is rejected outright — and the rejection fails the whole
+  // call, so an agent that believed either sentence re-sends its payload.
+  const mcp = agent();
+  const addNote = (await mcp.listToolSchemas()).find(
+    (tool) => tool.name === 'add_note',
+  );
+  expect(addNote).toBeTruthy();
+  const guide = await mcp.call<{ noteKinds: Record<string, string> }>(
+    'get_started',
+    {},
+  );
+
+  // The guide states the requirement, and still tells the two kinds apart.
+  expect(guide.noteKinds.research).toMatch(/must/i);
+  expect(guide.noteKinds.research).toMatch(/source/i);
+  expect(guide.noteKinds.research).toMatch(/after you made it/i);
+
+  // So does the tool description.
+  expect(addNote!.description).toMatch(/at least one source/i);
+
+  // And so does the advertised field, which is the one an agent reads when
+  // it reads nothing else.
+  const sources = (
+    addNote!.inputSchema as
+      { properties?: Record<string, { description?: string }> } | undefined
+  )?.properties?.sources?.description;
+  expect(sources).toBeTruthy();
+  expect(sources!).toMatch(/research/i);
+});
+
 test('the category types the guide lists are the ones upsert_category accepts', async () => {
   const mcp = agent();
   const upsertCategory = (await mcp.listToolSchemas()).find(

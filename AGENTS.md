@@ -292,6 +292,19 @@ deliberate:
   alternatives, hacks, sourcing, background. "Where to buy crayfish in
   Berlin."
 
+A `research` note must carry at least one source.
+`requireSourcesForResearch` in `src/lib/domain/schemas.ts` enforces it on
+all five note paths — `add_note`, and the `notes` array on `create_recipe`,
+`revise_recipe`, `backfill_revision` and `log_experiment`. No other kind
+requires one and no kind forbids one: `writeNotes` stores `sources` for
+every kind, and the study reader filters citations by subject rather than
+by kind (see the comment in `src/lib/queries/read.ts`, which notes that the
+Wellington's one source hangs off a `warning`). A note with nothing to cite
+is an `observation` or an `idea`, not an unsourced `research`. A source
+entry must itself name something — `noteSourceSchema` refuses `{}`, a blank
+string and a bare `accessedAt` — so one empty object does not satisfy the
+count.
+
 `research` originally carried both, which is why "The science" needed a
 kind of its own rather than a filter over the existing one.
 

@@ -2215,7 +2215,10 @@ test.describe('MCP contract', () => {
     ).resolves.toBeTruthy();
   });
 
-  test('other note kinds still take no sources', async () => {
+  // The title said "take no sources", which reads as a prohibition. The body
+  // proves the opposite rule: an observation with no sources is ACCEPTED, so
+  // the other kinds NEED no source — they are not refused one.
+  test('other note kinds need no sources', async () => {
     const mcp = rw();
     await expect(
       mcp.call('add_note', {
@@ -2677,6 +2680,9 @@ test.describe('MCP contract', () => {
     expect(sources.description).toMatch(/url/);
     expect(sources.description).toMatch(/title/);
     expect(sources.description).toMatch(/citation/);
+    // And the field itself says which kind is made to cite, so a caller
+    // reading only the schema meets the rule before the refusal does.
+    expect(sources.description).toMatch(/research/i);
     // And the advertised shape still carries all four properties, so the
     // refinement did not narrow what a caller may send.
     expect(Object.keys(sources.items?.properties ?? {}).sort()).toEqual([

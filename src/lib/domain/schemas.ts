@@ -370,8 +370,9 @@ export const noteSchema = z.object({
     .describe(
       'science = what is physically or chemically happening in the dish, ' +
         'and why a technique works; research = what was learned after ' +
-        'making it — alternatives, hacks, sourcing, background (give ' +
-        '`sources`); observation = what happened; substitution = what was ' +
+        'making it — alternatives, hacks, sourcing, background (must give ' +
+        'at least one entry in `sources`); observation = what happened; ' +
+        'substitution = what was ' +
         'swapped and why; warning = a trap; result = how it turned out; ' +
         'idea = untried; correction = fixes an earlier claim',
     ),
@@ -389,7 +390,9 @@ export const noteSchema = z.object({
     .max(100)
     .optional()
     .describe(
-      'Each source needs a `url`, a `title` or a `citation`. One of the ' +
+      'A `research` note must have at least one source. The other kinds do ' +
+        'not need a source, but they can have one. ' +
+        'Each source needs a `url`, a `title` or a `citation`. One of the ' +
         'three is enough. An `accessedAt` on its own is not a source.',
     ),
 });
@@ -432,6 +435,13 @@ export type NoteInput = z.infer<typeof noteSchema>;
  * from. Accepting one with no provenance produced exactly the thing the
  * kind was invented to prevent. Every other kind is a first-hand
  * observation and stays optional.
+ *
+ * The message says the other two kinds "need no source" rather than "take
+ * no sources", because the seven non-research kinds MAY carry one and the
+ * earlier wording read as a prohibition. `writeNotes` stores `sources` for
+ * any kind, `notes.tsx` renders them for any kind, and the study reader in
+ * `read.ts` records the standing counterexample: the Wellington's one
+ * source hangs off a `warning`. Only `research` is made to cite.
  */
 export function requireSourcesForResearch(
   value: { kind: string; sources?: unknown[] | null },
@@ -444,9 +454,9 @@ export function requireSourcesForResearch(
     path: ['sources'],
     message:
       'A research note must cite at least one source in `sources` — give a ' +
-      'url, or a title and citation. Research is the kind that records ' +
+      '`url`, a `title` or a `citation`. Research is the kind that records ' +
       'where something came from; without that it is an `observation` or ' +
-      'an `idea`, which take no sources.',
+      'an `idea`, which need no source.',
   });
 }
 

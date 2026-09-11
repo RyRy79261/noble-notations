@@ -678,9 +678,13 @@ export function registerTools(server: McpServer): void {
         'barrier, not a flavour layer" is science.\n' +
         '- `research` is what was learned around it afterwards: ' +
         'alternatives, hacks, sourcing, background. "Where to buy crayfish ' +
-        'in Berlin" is research. Give `sources` where you have them. Each ' +
+        'in Berlin" is research. A `research` note must carry at least one ' +
+        'source, because research is the kind that records where something ' +
+        'came from. With nothing to cite it is an `observation` or an ' +
+        '`idea` instead. Each ' +
         'source needs a `url`, a `title` or a `citation`. One of the three ' +
-        'is enough. An `accessedAt` on its own is not a source.\n\n' +
+        'is enough. An `accessedAt` on its own is not a source. The other ' +
+        'kinds may carry sources; none of them has to.\n\n' +
         'The rest: `observation` for what was noticed, `result` for how it ' +
         'turned out, `substitution` for what was swapped and why, `warning` ' +
         'for a trap worth flagging, `idea` for something untried, ' +

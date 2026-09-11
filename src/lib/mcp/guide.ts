@@ -139,7 +139,10 @@ const GUIDE = {
     research:
       'What you learned about the dish after you made it. Other methods, ' +
       'small improvements, where to buy things, background. Example: ' +
-      '"Where to buy crayfish in Berlin." Add sources if you have them.',
+      '"Where to buy crayfish in Berlin." A research note must have at ' +
+      'least one source. Research records where a fact came from. If you ' +
+      'have no source, write the note as an observation or an idea. The ' +
+      'other kinds can have sources, but they do not need them.',
     observation: 'What you saw during one cook.',
     result: 'How the dish was at the end.',
     substitution: 'What you used in place of something, and why.',
