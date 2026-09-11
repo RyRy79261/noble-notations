@@ -665,6 +665,32 @@ export const notes = pgTable(
       .default(sql`ARRAY[]::text[]`),
 
     /**
+     * Where this note sorts among the notes of its subject. Part of D-13.
+     *
+     * **Why `created_at` could not keep doing this job.** It was the primary
+     * sort key, and `position` its tiebreak, because until `reattachNote`
+     * every note was written where it stays: a note's write time and its
+     * arrival at its subject were the same instant, so one column meant
+     * both things. A move breaks that. The note keeps the date it was
+     * written — deliberately, since rewriting it would falsify when the
+     * claim was made — but it arrives at its new subject today.
+     *
+     * With `created_at` sorting, a note written against a batch in 2024 and
+     * moved onto a recipe in 2026 lands FIRST among that recipe's notes,
+     * not last. That is not merely untidy: `listScienceIndex` and
+     * `getScienceStudy` number a study's mechanisms `M1…Mn` by position in
+     * this list, so moving one science note renumbers every mechanism below
+     * it — codes that are already published. That is the exact fault D-02
+     * records, arriving by a new route.
+     *
+     * So the two meanings are separated. `created_at` says when the note was
+     * written and never changes. This says where it sits, and only a move
+     * changes it. Backfilled to `created_at`, so no stored note moved and
+     * `pnpm export` writes the same bytes it did before.
+     */
+    sortAt: timestamp('sort_at', { withTimezone: true }).defaultNow().notNull(),
+
+    /**
      * Where this note sits among the notes on the same subject. 1-based,
      * assigned by `writeNotes` as `MAX(position) + 1` for the subject.
      *

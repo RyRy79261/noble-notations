@@ -93,23 +93,41 @@ function list(value: string | undefined): string[] {
  * A note is not a page and has no address of its own. It is read on the
  * record it hangs off, which is the whole reason a result has to name that
  * record — a hit with nowhere to go is the same dead end as not finding it.
- * The five parent kinds collapse to three destinations: a note on a recipe,
- * on one of its revisions or on a step of one all lead to the recipe; an
- * ingredient and a run lead to their own pages.
+ * The five parent kinds collapse to four destinations. A note on the recipe
+ * itself goes to the recipe; a note on a REVISION or a step of one goes to
+ * that revision's page, because the recipe page only draws the current
+ * version's notes; an ingredient and a run go to their own pages.
  *
  * Route knowledge stays here and not in `read.ts`, so the MCP payload can
  * keep returning slugs and a type rather than site addresses.
  */
 function noteHref(note: {
-  attachedTo: { type: string; slug: string | null };
+  attachedTo: {
+    type: string;
+    slug: string | null;
+    revisionNumber: number | null;
+  };
 }): string | null {
-  const { type, slug } = note.attachedTo;
+  const { type, slug, revisionNumber } = note.attachedTo;
   if (!slug) return null;
   switch (type) {
     case 'recipe':
+      return `/recipes/${slug}`;
     case 'revision':
     case 'step':
-      return `/recipes/${slug}`;
+      /*
+       * A REVISION NOTE DOES NOT GO TO THE RECIPE PAGE. `searchNotes`
+       * resolves a note through ANY revision — that is the whole reason it
+       * cannot reuse `noteBelongsToRecipe` — but `getRecipeBySlug` reads
+       * only `recipe_id = <recipe> OR revision_id = <CURRENT revision>`. So
+       * a note on a superseded version, which is everything
+       * `backfillRevision` writes, is findable here and absent from
+       * `/recipes/<slug>`. Sending a reader there would answer a search hit
+       * with a page that does not contain it.
+       */
+      return revisionNumber != null
+        ? `/recipes/${slug}/revisions/${revisionNumber}`
+        : `/recipes/${slug}`;
     case 'ingredient':
       return `/ingredients/${slug}`;
     case 'experiment':
@@ -336,12 +354,19 @@ export default async function SearchPage({
    */
   const runTotal = runs.data.total;
   const noteTotal = noteHits.data.total;
-  const otherHalves = query
-    ? ` ${runTotal === 0 ? 'No' : Cardinal(runTotal)} batch log` +
-      `${runTotal === 1 ? '' : 's'} and ${
-        noteTotal === 0 ? 'no' : cardinal(noteTotal)
-      } note${noteTotal === 1 ? '' : 's'} also mention it.`
-    : '';
+  /* R-STA-01, the same rule `counted` applies above: a failed read reports
+     zero, and "No batch logs mention it" is a claim about the repository
+     rather than about the connection. When either read did not happen, the
+     sentence drops the clause instead of stating a figure it does not have. */
+  const otherHalvesKnown =
+    runs.configured && !runs.failed && noteHits.configured && !noteHits.failed;
+  const otherHalves =
+    query && otherHalvesKnown
+      ? ` ${runTotal === 0 ? 'No' : Cardinal(runTotal)} batch log` +
+        `${runTotal === 1 ? '' : 's'} and ${
+          noteTotal === 0 ? 'no' : cardinal(noteTotal)
+        } note${noteTotal === 1 ? '' : 's'} also mention it.`
+      : '';
 
   /* The crumb takes the same labels, for the same reason. */
   const crumb =

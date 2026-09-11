@@ -838,7 +838,30 @@ refuse. The slug is stored rather than a foreign key on purpose: a record
 that is later deleted takes its row with it, and this column's job is to
 survive that.
 
-A move also reassigns `notes.position`, because that column is an ordinal
-within one subject. Carrying the old ordinal across would drop the note into
-the middle of a list it has never been in — and on a recipe that renumbers
-the mechanisms `/science` draws, which is the fault D-02 records.
+### Where a moved note sorts
+
+A move reassigns `notes.position`, because that column is an ordinal within
+one subject and the old value means nothing at the destination. That alone is
+not enough, and the first implementation of this decision got it wrong.
+
+`position` is only the TIEBREAK. The primary sort key for a subject's notes
+was `created_at`, and that worked because until this tool every note was read
+where it was written — its write time and its arrival at its subject were the
+same instant, so one column carried both meanings. A move separates them. The
+note keeps the date it was written, deliberately, since rewriting that would
+falsify when the claim was made; but it arrives at its new subject today.
+
+Sorting on `created_at`, a note written against a batch in 2024 and moved onto
+a recipe in 2026 therefore lands FIRST among that recipe's notes rather than
+last — the canonical case for this tool, inverted. Worse, `listScienceIndex`
+and `getScienceStudy` number a study's mechanisms `M1…Mn` by position in that
+list, so one moved science note renumbers every mechanism below it, including
+codes already published. That is the fault D-02 records, arriving by a new
+route. Measured against the seeded archive before the fix: the moved note came
+back at index 0 of 7.
+
+So `notes.sort_at` splits the two meanings. `created_at` says when the note
+was written and never changes; `sort_at` says where it sits and only a move
+changes it. It is backfilled to `created_at` in migration 0008, so no stored
+note reordered, no mechanism was renumbered, and `pnpm export` writes the same
+bytes for an unchanged database.

@@ -179,9 +179,20 @@ test.describe('search reaches the halves that are not recipes', () => {
     // "none" where the truthful answer is "not asked".
     await page.goto('/search?cuisine=south-african');
 
-    await expect(page.locator('[data-search-runs]')).toHaveCount(0);
-    await expect(page.locator('[data-search-notes]')).toHaveCount(0);
+    // ASSERT ON THE HEADINGS, not on the row lists. The `[data-search-runs]`
+    // list is only rendered when that section HAS rows, so its absence is
+    // also what an empty-but-drawn section looks like — a test built on it
+    // cannot tell "not asked" from "asked and found none", which is exactly
+    // the distinction this test exists for.
+    await expect(page.getByRole('heading', { name: 'Batch logs' })).toHaveCount(
+      0,
+    );
+    await expect(page.getByRole('heading', { name: 'Notes' })).toHaveCount(0);
     await expect(page.locator('[data-search-elsewhere]')).toHaveCount(0);
+
+    // The recipe half still answered, so this is a drawn page and not an
+    // error state that would make the assertions above vacuous.
+    await expect(page.getByRole('heading', { name: 'Results' })).toBeVisible();
   });
 });
 

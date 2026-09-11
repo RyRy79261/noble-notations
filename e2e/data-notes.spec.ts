@@ -38,6 +38,7 @@ interface NoteView {
   kind: string;
   title: string | null;
   body: string;
+  createdAt?: string;
   movedFrom?: string[];
   sources: {
     url: string | null;
@@ -527,8 +528,15 @@ test.describe('finding a note across every record', () => {
     expect(second.total).toBe(all.total);
     expect(first.results).toHaveLength(2);
 
-    const ids = [...first.results, ...second.results].map((hit) => hit.id);
-    expect(new Set(ids).size).toBe(ids.length);
+    // Not repeated…
+    const paged = [...first.results, ...second.results].map((hit) => hit.id);
+    expect(new Set(paged).size).toBe(paged.length);
+
+    // …and not SKIPPED, which distinctness alone cannot show: two pages
+    // that both dropped the same row would still hold no duplicate. The
+    // first four of the unpaged answer are the ones the two pages must
+    // between them contain, in that order.
+    expect(paged).toEqual(all.results.slice(0, paged.length).map((h) => h.id));
   });
 
   test('two target filters are refused, and none means everywhere', async () => {
@@ -741,13 +749,34 @@ test.describe('moving a note to another record', () => {
     ).toMatch(/no note with id/i);
   });
 
-  test('a moved note takes the last place in its new list', async () => {
+  test('a note older than its destination still lands last', async () => {
     const mcp = rw();
+
+    // THE ORDER OF THESE TWO WRITES IS THE WHOLE TEST. The note is written
+    // FIRST, against the run, and the destination's own note is written
+    // after it — which is the real case this tool exists for: a note goes
+    // on a batch because the record it belongs to does not exist yet, so
+    // that record's notes are necessarily newer.
+    //
+    // Sorting on `created_at`, as the five note reads did before D-13, this
+    // note lands FIRST at its destination. `sort_at` is what makes it land
+    // last, and without it a moved `science` note becomes M1 on a recipe
+    // and renumbers every mechanism /science has already published below
+    // it. Written the other way round — destination note first — this test
+    // passes whether or not the move reassigns anything, which is what the
+    // version it replaced did.
     const { noteId } = await mcp.call<NoteResult>('add_note', {
       experimentSlug: RUN_SLUG,
       kind: 'observation',
-      title: 'Last in line',
-      body: 'This one should sort to the end of the ingredient.',
+      title: 'Written first, moved later',
+      body: 'Older than everything it will end up sitting beside.',
+    });
+
+    await mcp.call('add_note', {
+      ingredientSlug: INGREDIENT_SLUG,
+      kind: 'observation',
+      title: 'Already at the destination',
+      body: 'Written after the note that will be moved here.',
     });
 
     await mcp.call('reattach_note', {
@@ -755,15 +784,22 @@ test.describe('moving a note to another record', () => {
       ingredientSlug: INGREDIENT_SLUG,
     });
 
-    // `position` is an ordinal WITHIN a subject, so a move has to reassign
-    // it. Carrying the old one over drops the note into the middle of a
-    // list it has never been in — and on a recipe that renumbers the
-    // mechanisms /science draws, which is the fault D-02 records.
     const ingredient = await mcp.call<IngredientResult>('get_ingredient', {
       slug: INGREDIENT_SLUG,
     });
     const ids = ingredient.notes.map((n) => n.id);
     expect(ids).toContain(noteId);
     expect(ids[ids.length - 1]).toBe(noteId);
+
+    // And the date the note was WRITTEN is untouched. Only where it sorts
+    // changed, which is the distinction D-13 turns on.
+    const moved = ingredient.notes.find((n) => n.id === noteId)!;
+    const neighbour = ingredient.notes.find(
+      (n) => n.title === 'Already at the destination',
+    )!;
+    expect(
+      new Date(moved.createdAt!).getTime(),
+      'the moved note must still be the older of the two',
+    ).toBeLessThan(new Date(neighbour.createdAt!).getTime());
   });
 });

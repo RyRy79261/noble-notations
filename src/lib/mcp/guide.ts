@@ -320,10 +320,15 @@ const GUIDE = {
 
   /**
    * The count was "six" and the registry held seven, because
-   * `backfill_revision` was added and this line was not. It is nine now —
-   * `add_mass_flow` and `describe_mechanism` — and the number is worth
-   * keeping true: an agent that reads "six" and counts nine has no way to
-   * tell which three it must not trust.
+   * `backfill_revision` was added and this line was not. It is ten now —
+   * `add_mass_flow`, `describe_mechanism` and `reattach_note` — and the
+   * number is worth keeping true: an agent that reads "six" and counts ten
+   * has no way to tell which four it must not trust.
+   *
+   * SEVEN OTHER PLACES STATE A COUNT and must move together: this string,
+   * `SCOPES_WITHOUT_REPORTING` above, four docs in `src/app/connect/page.tsx`
+   * and the total in `docs/mcp-connector.md`. The registry holds twenty-two
+   * tools: eleven read, ten write, and `report_issue` in neither scope.
    */
   scopes:
     'The read tools need the scope noble-notations:read. The ten write ' +

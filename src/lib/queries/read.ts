@@ -746,7 +746,7 @@ export async function getRecipeBySlug(
         .where(
           sql`${notes.recipeId} = ${recipe.id} OR ${notes.revisionId} = ${revision.id}`,
         )
-        // THE NOTE ORDER. `created_at` first, `position` second, `id` last —
+        // THE NOTE ORDER. `sort_at` first, `position` second, `id` last —
         // the same three columns in the same order in all five reads that
         // return the notes of ONE SUBJECT, so a note holds one place in one
         // list wherever it is drawn.
@@ -756,7 +756,13 @@ export async function getRecipeBySlug(
         // `listRecipes` and `listExperiments` answer newest first. It keeps
         // these same two columns as its tiebreaks, for the reason below.
         //
-        // `created_at` defaults to `now()`, which Postgres holds fixed for a
+        // `sort_at` was `created_at` until a note could move between
+        // subjects (D-13). A moved note keeps the date it was written and
+        // arrives at its new subject today, and those are two different
+        // facts; `created_at` holds the first and this holds the second.
+        // Backfilled equal, so nothing stored reordered.
+        //
+        // `sort_at` defaults to `now()`, which Postgres holds fixed for a
         // transaction, so every note written by one call carries the SAME
         // timestamp. It sequences the *groups* exactly — one transaction
         // only ever writes notes against one subject, and this query reads
@@ -766,7 +772,7 @@ export async function getRecipeBySlug(
         // `writeNotes`. Before it, the tiebreak was `asc(notes.id)`, a random
         // uuid, so the Wellington's four mechanisms were renumbered on every
         // ingest. `id` stays on the end so the sort is total.
-        .orderBy(asc(notes.createdAt), asc(notes.position), asc(notes.id)),
+        .orderBy(asc(notes.sortAt), asc(notes.position), asc(notes.id)),
       // One flow at most — `uq_mass_flow_revision` — so the head repeats on
       // every stage row and a left join costs one statement instead of two.
       db
@@ -1314,7 +1320,7 @@ export async function getIngredient(slug: string): Promise<{
       .where(eq(notes.ingredientId, row.id))
       // The note order — see `getRecipeBySlug`. `created_at` alone left
       // several notes written against one ingredient in planner order.
-      .orderBy(asc(notes.createdAt), asc(notes.position), asc(notes.id)),
+      .orderBy(asc(notes.sortAt), asc(notes.position), asc(notes.id)),
   ]);
 
   const [terms, sourcesByNote] = await Promise.all([
@@ -1633,7 +1639,7 @@ export async function getExperiment(
       // The note order — see `getRecipeBySlug`. `logExperiment` writes every
       // note on a run in one transaction, so this list was the one most
       // exposed to the tie: batch 2 carries three.
-      .orderBy(asc(notes.createdAt), asc(notes.position), asc(notes.id)),
+      .orderBy(asc(notes.sortAt), asc(notes.position), asc(notes.id)),
   ]);
 
   const sourcesByNote = await noteSourcesByNote(noteRows.map((x) => x.id));
@@ -1985,10 +1991,11 @@ export async function searchNotes(
         /* The only signal that an ingredient or a run note carries a
            citation at all. */
         sourceCount: Number(row.source_count ?? 0),
-        createdAt:
-          row.created_at instanceof Date
-            ? row.created_at.toISOString()
-            : String(row.created_at),
+        /* ISO, whichever driver answered. node-postgres parses a
+           timestamptz into a Date; Neon's serverless driver can hand back
+           the raw Postgres text. Returning whichever arrived would make
+           this field's format depend on where the app is deployed. */
+        createdAt: new Date(row.created_at as string | Date).toISOString(),
         attachedTo,
         rank: Number(row.rank ?? 0),
       };
@@ -2208,7 +2215,7 @@ export async function listScienceIndex(): Promise<ScienceIndexView> {
       // two different things to a reader.
       .orderBy(
         asc(recipes.title),
-        asc(notes.createdAt),
+        asc(notes.sortAt),
         asc(notes.position),
         asc(notes.id),
       ),
@@ -2335,7 +2342,7 @@ export async function getScienceStudy(
     // (the recipe, its current revision, its steps and its runs), which is
     // why `created_at` leads: it is what puts the groups in the order they
     // were written, and `position` orders inside each one.
-    .orderBy(asc(notes.createdAt), asc(notes.position), asc(notes.id));
+    .orderBy(asc(notes.sortAt), asc(notes.position), asc(notes.id));
 
   const mechanisms: MechanismView[] = noteRows
     .filter((row) => row.kind === 'science')

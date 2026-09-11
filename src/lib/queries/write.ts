@@ -1774,10 +1774,14 @@ export async function reattachNote(input: ReattachNoteInput): Promise<{
       );
     }
 
-    /* A new home means a new place in that home's list. `position` is an
-       ordinal WITHIN a subject, so carrying the old one over would drop the
-       note into the middle of a list it has never been in — and on a recipe
-       that renumbers the mechanisms `/science` draws. */
+    /* A new home means a new place in that home's list, and it takes TWO
+       columns to say that. `position` is an ordinal within a subject, so the
+       old one is meaningless here. And `sort_at` is the primary sort key: it
+       was `created_at` until a note could move, and leaving it alone would
+       land a note written in 2024 at the FRONT of a recipe written in 2026
+       — which on a science note renumbers every mechanism `/science` draws
+       below it, the fault D-02 records. `created_at` is untouched, because
+       when the note was written is not what changed. */
     const position = await nextNotePosition(tx, subject);
 
     const written = await tx
@@ -1789,6 +1793,7 @@ export async function reattachNote(input: ReattachNoteInput): Promise<{
         ingredientId: subject.ingredientId ?? null,
         experimentId: subject.experimentId ?? null,
         position,
+        sortAt: new Date(),
         previousSubjects: sql`array_append(${notes.previousSubjects}, ${from}::text)`,
         updatedAt: new Date(),
       })
