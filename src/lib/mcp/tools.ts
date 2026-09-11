@@ -35,6 +35,8 @@ import {
   backfillRevisionShape,
   buildShoppingListSchema,
   buildShoppingListShape,
+  searchNotesSchema,
+  searchNotesShape,
   searchRecipesSchema,
   searchRecipesShape,
   CATEGORY_TYPES,
@@ -53,6 +55,7 @@ import {
   listExperiments,
   listIngredients,
   listCategories,
+  searchNotes,
   searchRecipes,
 } from '@/lib/queries/read';
 import {
@@ -461,6 +464,45 @@ export function registerTools(server: McpServer): void {
           const found = await getExperiment(args.slug);
           if (!found) throw new NotFoundError(`No experiment "${args.slug}".`);
           return found;
+        },
+      ),
+  );
+
+  server.registerTool(
+    'search_notes',
+    {
+      title: 'Search notes',
+      description:
+        'Find what the repository already knows. A note can hang off a ' +
+        'recipe, a version of a recipe, a step, an ingredient or a run, so ' +
+        'reading one record shows you only the notes on that record. This ' +
+        'searches all of them at once.\n\n' +
+        'Call it before add_note. A near-copy of a note that is already ' +
+        'here cannot be told apart from the original later, and nothing ' +
+        'removes either one.\n\n' +
+        'Free text matches the title and the body. Leave `query` out to ' +
+        'list notes, newest first. Use `kind` on its own to read a class of ' +
+        'note across the whole store: every warning, or every science note.' +
+        '\n\n' +
+        'Each result names the record it is attached to, so you can fetch ' +
+        'the whole thing with get_recipe, get_ingredient or get_experiment. ' +
+        '`recipeSlug` covers every version of that recipe, not only the ' +
+        'current one. It does not cover runs of it; ask for those with ' +
+        '`experimentSlug`.\n\n' +
+        'A body is cut to an excerpt. `truncated` says whether it was, and ' +
+        '`bodyLength` says how long the whole body is. `sourceCount` says ' +
+        'how many sources the note cites. The `id` on a result is the one ' +
+        'describe_mechanism asks for.',
+      inputSchema: searchNotesShape,
+    },
+    async (args, extra) =>
+      runTool(
+        extra as AuthCtx,
+        'search_notes',
+        { query: args.query, kind: args.kind },
+        async () => {
+          const input = searchNotesSchema.parse(args);
+          return searchNotes(input);
         },
       ),
   );

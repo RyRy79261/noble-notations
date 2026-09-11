@@ -83,6 +83,7 @@ const TOOLS = [
   'log_experiment',
   'report_issue',
   'revise_recipe',
+  'search_notes',
   'search_recipes',
   'upsert_category',
   'upsert_ingredient',

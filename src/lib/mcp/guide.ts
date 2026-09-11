@@ -70,6 +70,8 @@ Before you make anything, call search_recipes.
 
 The website calls a run a batch log. Every run is at /batch-logs.
 
+Before you write a note, call search_notes. It finds notes on every record.
+
 Call get_started to read the full guide.
 `.trim();
 
@@ -127,6 +129,7 @@ const GUIDE = {
     'If the dish is not here, call create_recipe.',
     'If you find a version that is older than every stored version, call backfill_revision.',
     'Call upsert_category for each new tag. This gives the tag an explanation.',
+    'Call search_notes before you write a note. Find out if the store already says it.',
     'Call add_note for each thing that you learned that is not an instruction.',
     'Call log_experiment after you cook a batch and measure it.',
     'Call add_mass_flow or describe_mechanism only for a record that is already stored.',

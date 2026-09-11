@@ -1686,6 +1686,79 @@ export const searchRecipesShape = {
 export const searchRecipesSchema = z.object(searchRecipesShape);
 export type SearchRecipesInput = z.infer<typeof searchRecipesSchema>;
 
+/**
+ * Finding a note.
+ *
+ * THE SLUGS ARE NOT `plainName()`. They look like the write-side fields and
+ * they must not borrow their validation. `plainName` appends a rule about
+ * how a name may be minted and, through `RESERVED_TAG_SLUGS`, refuses
+ * 'null', 'undefined' and 'none'. `search_recipes` once shared the write's
+ * category schema and so refused a query that named a reserved tag —
+ * blocking the only tool that could have found the junk tag in the first
+ * place. `e2e/mcp-boundary.spec.ts` records it. A filter is a lookup key,
+ * not a name being minted.
+ *
+ * `query` is optional, so the tool degrades to plain enumeration. That is
+ * deliberate: a second `list_notes` would be one more name to learn for a
+ * strictly smaller behaviour.
+ */
+export const searchNotesShape = {
+  query: z
+    .string()
+    .max(300)
+    .optional()
+    .describe(
+      'Free text. It matches the title and the body of a note. Leave it ' +
+        'out to list notes without searching.',
+    ),
+  kind: z
+    .enum(NOTE_KINDS)
+    .optional()
+    .describe('Return only notes of this kind.'),
+  recipeSlug: z
+    .string()
+    .max(120)
+    .optional()
+    .describe(
+      'Return only notes on this recipe. This includes notes on every ' +
+        'version of it, not only the current one. It does not include ' +
+        'notes on a run of it.',
+    ),
+  ingredientSlug: z
+    .string()
+    .max(120)
+    .optional()
+    .describe('Return only notes on this ingredient.'),
+  experimentSlug: z
+    .string()
+    .max(120)
+    .optional()
+    .describe('Return only notes on this run.'),
+  limit: z.number().int().min(1).max(100).default(20),
+  offset: z.number().int().min(0).max(10000).default(0),
+};
+
+export const searchNotesSchema = z
+  .object(searchNotesShape)
+  .superRefine((value, ctx) => {
+    const targets = [
+      value.recipeSlug,
+      value.ingredientSlug,
+      value.experimentSlug,
+    ].filter(Boolean);
+    /* `> 1`, not `!== 1`: none is the common case and means "everywhere". */
+    if (targets.length > 1) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'Give at most one of `recipeSlug`, `ingredientSlug` or ' +
+          '`experimentSlug`. A note hangs off one record, so two filters ' +
+          'can never both hold. Leave all three out to search everywhere.',
+      });
+    }
+  });
+export type SearchNotesInput = z.infer<typeof searchNotesSchema>;
+
 // ─────────────────────────────────────────────────────────────────────────
 // Reporting a fault in the connector
 // ─────────────────────────────────────────────────────────────────────────

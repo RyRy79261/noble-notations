@@ -41,7 +41,11 @@ import {
   type QuantityBucket,
 } from '@/lib/domain/units';
 import { categoryRank } from '@/lib/site';
-import type { CategoryType, SearchRecipesInput } from '@/lib/domain/schemas';
+import type {
+  CategoryType,
+  SearchNotesInput,
+  SearchRecipesInput,
+} from '@/lib/domain/schemas';
 
 const n = (v: string | null) => (v == null ? null : Number(v));
 
@@ -733,8 +737,13 @@ export async function getRecipeBySlug(
         )
         // THE NOTE ORDER. `created_at` first, `position` second, `id` last —
         // the same three columns in the same order in all five reads that
-        // return notes, so a note holds one place in one list wherever it is
-        // drawn.
+        // return the notes of ONE SUBJECT, so a note holds one place in one
+        // list wherever it is drawn.
+        //
+        // `searchNotes` is the deliberate exception, and the only one. It
+        // crosses subjects to answer "what is here", which is the question
+        // `listRecipes` and `listExperiments` answer newest first. It keeps
+        // these same two columns as its tiebreaks, for the reason below.
         //
         // `created_at` defaults to `now()`, which Postgres holds fixed for a
         // transaction, so every note written by one call carries the SAME
@@ -1638,6 +1647,232 @@ export async function getExperiment(
       createdAt: x.createdAt.toISOString(),
       sources: sourcesByNote.get(x.id) ?? [],
     })),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Notes, as a set
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * How much of a body a result carries.
+ *
+ * Long enough to tell two notes apart and to judge whether one already says
+ * what you were about to write; short enough that the default page of
+ * twenty is a few kilobytes rather than a few tens. `bodyLength` and
+ * `truncated` come back with it, so a caller knows when to fetch the whole
+ * note from its parent record.
+ */
+const NOTE_EXCERPT_CHARS = 240;
+
+export interface NoteSearchResult {
+  id: string;
+  kind: string;
+  title: string | null;
+  excerpt: string;
+  truncated: boolean;
+  bodyLength: number;
+  conditions: string[];
+  sourceCount: number;
+  createdAt: string;
+  attachedTo: {
+    type: 'recipe' | 'revision' | 'step' | 'ingredient' | 'experiment';
+    slug: string | null;
+    title: string | null;
+    revisionNumber: number | null;
+  };
+  rank: number;
+}
+
+/**
+ * Every note, searchable, whatever it hangs off.
+ *
+ * WHY THIS EXISTS. Every other record type could be enumerated —
+ * `list_ingredients`, `list_categories`, `list_experiments`,
+ * `search_recipes` — and notes could not. The only way to reach one was to
+ * call `get_recipe`, `get_ingredient` or `get_experiment` on whatever it
+ * happened to be attached to, so you had to know where a note was in order
+ * to find it. At the sizes this store already holds that is seventy-odd
+ * calls to answer "what do I know about collagen", which no agent will
+ * spend speculatively. The store accumulated judgement faster than it could
+ * retrieve it, and notes were the one record type with no duplicate check.
+ *
+ * NEITHER `noteBelongsToRecipe` NOR `noteRecipeId` MAY BE REUSED HERE, and
+ * this is the trap to avoid. Both resolve a revision note only through
+ * `recipes.current_revision_id`, so both silently drop every note on a
+ * superseded revision. That is correct for `/science`, which draws the
+ * recipe as it stands. It is wrong here: `reviseRecipe` and
+ * `backfillRevision` attach their notes to a REVISION, so on any recipe
+ * that has been revised once, the rule those two encode hides exactly the
+ * notes an agent is looking for. The eight joins below resolve a note to
+ * its recipe through ANY revision.
+ *
+ * NO STATUS FILTER, unlike `searchRecipes`, which opens with
+ * `r.status = 'active'`. `getStats` counts notes with no such predicate,
+ * and the suite pins `counts.notes` to this function's `total`. A status
+ * filter here would break that agreement the first time a recipe is
+ * archived, and it would hide a note whose lesson outlives its dish.
+ *
+ * THE ORDER RUNS OPPOSITE TO EVERY OTHER NOTE READ, deliberately. The five
+ * reads that return the notes of ONE subject order `created_at, position,
+ * id` ascending, because there a note holds a place in a list a reader goes
+ * through in order. This read crosses subjects and answers "what is here",
+ * which is the question `listRecipes` and `listExperiments` answer newest
+ * first. `position` and `id` stay as tiebreaks so that paging is stable —
+ * `created_at` is fixed for a whole transaction, so a call that wrote four
+ * notes gives all four the same timestamp.
+ */
+export async function searchNotes(
+  input: SearchNotesInput,
+): Promise<{ results: NoteSearchResult[]; total: number }> {
+  const conditions = [sql`TRUE`];
+
+  const q = input.query?.trim();
+  if (q) {
+    /* No tsvector on `notes`. A generated column and a GIN index are the
+       answer when this table is large enough to need one; at the sizes
+       here every join is on a primary key and the planner reads the table
+       either way. The tsquery half ranks and stems, the ILIKE half catches
+       the substring a slug or a part-word would miss. */
+    conditions.push(sql`(
+      to_tsvector('english', coalesce(n.title, '') || ' ' || n.body)
+        @@ websearch_to_tsquery('english', ${q})
+      OR n.title ILIKE ${'%' + q + '%'}
+      OR n.body ILIKE ${'%' + q + '%'}
+    )`);
+  }
+  if (input.kind) {
+    conditions.push(sql`n.kind = ${input.kind}`);
+  }
+  if (input.recipeSlug) {
+    /* Through any revision, not only the current one — see the note above.
+       A run of the recipe is NOT included: a note on a batch is about that
+       batch, and `experimentSlug` asks for those. */
+    conditions.push(
+      sql`COALESCE(rec.slug, rvr.slug, srv.slug) = ${input.recipeSlug}`,
+    );
+  }
+  if (input.ingredientSlug) {
+    conditions.push(sql`ing.slug = ${input.ingredientSlug}`);
+  }
+  if (input.experimentSlug) {
+    conditions.push(sql`exp.slug = ${input.experimentSlug}`);
+  }
+
+  const where = sql.join(conditions, sql` AND `);
+
+  /* A bare integer in ORDER BY is an ordinal position in Postgres, so the
+     no-query case drops the rank term rather than ordering by a constant.
+     The EXPRESSION is interpolated into ORDER BY, never the output alias:
+     `rank` is also a window-function name, and the house pattern in
+     `searchRecipes` sidesteps the question entirely. */
+  const rank = q
+    ? sql`ts_rank_cd(
+        to_tsvector('english', coalesce(n.title, '') || ' ' || n.body),
+        websearch_to_tsquery('english', ${q})
+      )`
+    : sql`0::float4`;
+  const ordering = q
+    ? sql`${rank} DESC, n.created_at DESC, n.position ASC, n.id ASC`
+    : sql`n.created_at DESC, n.position ASC, n.id ASC`;
+
+  const result = await db.execute<Record<string, unknown>>(sql`
+    SELECT n.id, n.kind, n.title, n.body, n.conditions, n.created_at,
+           n.recipe_id, n.revision_id, n.step_id, n.ingredient_id,
+           n.experiment_id,
+           rec.slug  AS recipe_slug,       rec.title  AS recipe_title,
+           rvr.slug  AS revision_recipe_slug,
+           rvr.title AS revision_recipe_title,
+           rv.revision_number AS revision_number,
+           srv.slug  AS step_recipe_slug,
+           srv.title AS step_recipe_title,
+           sr.revision_number AS step_revision_number,
+           ing.slug  AS ingredient_slug,   ing.name   AS ingredient_name,
+           exp.slug  AS experiment_slug,   exp.title  AS experiment_title,
+           (SELECT COUNT(*) FROM note_sources ns WHERE ns.note_id = n.id)
+             AS source_count,
+           ${rank} AS rank,
+           COUNT(*) OVER () AS total
+      FROM notes n
+      LEFT JOIN recipes rec ON rec.id = n.recipe_id
+      LEFT JOIN recipe_revisions rv ON rv.id = n.revision_id
+      LEFT JOIN recipes rvr ON rvr.id = rv.recipe_id
+      LEFT JOIN recipe_steps st ON st.id = n.step_id
+      LEFT JOIN recipe_revisions sr ON sr.id = st.revision_id
+      LEFT JOIN recipes srv ON srv.id = sr.recipe_id
+      LEFT JOIN ingredients ing ON ing.id = n.ingredient_id
+      LEFT JOIN experiments exp ON exp.id = n.experiment_id
+     WHERE ${where}
+     ORDER BY ${ordering}
+     LIMIT ${input.limit}
+    OFFSET ${input.offset}
+  `);
+
+  const rows = result.rows as unknown as Record<string, unknown>[];
+  const str = (value: unknown): string | null =>
+    value == null ? null : String(value);
+  const num = (value: unknown): number | null =>
+    value == null ? null : Number(value);
+
+  return {
+    total: rows.length > 0 ? Number(rows[0]!.total) : 0,
+    results: rows.map((row) => {
+      const body = String(row.body ?? '');
+      const attachedTo: NoteSearchResult['attachedTo'] = row.recipe_id
+        ? {
+            type: 'recipe',
+            slug: str(row.recipe_slug),
+            title: str(row.recipe_title),
+            revisionNumber: null,
+          }
+        : row.revision_id
+          ? {
+              type: 'revision',
+              slug: str(row.revision_recipe_slug),
+              title: str(row.revision_recipe_title),
+              revisionNumber: num(row.revision_number),
+            }
+          : row.step_id
+            ? {
+                type: 'step',
+                slug: str(row.step_recipe_slug),
+                title: str(row.step_recipe_title),
+                revisionNumber: num(row.step_revision_number),
+              }
+            : row.ingredient_id
+              ? {
+                  type: 'ingredient',
+                  slug: str(row.ingredient_slug),
+                  /* `ingredients` has no `title`; its name is the title. */
+                  title: str(row.ingredient_name),
+                  revisionNumber: null,
+                }
+              : {
+                  type: 'experiment',
+                  slug: str(row.experiment_slug),
+                  title: str(row.experiment_title),
+                  revisionNumber: null,
+                };
+
+      return {
+        id: String(row.id),
+        kind: String(row.kind),
+        title: str(row.title),
+        excerpt: body.slice(0, NOTE_EXCERPT_CHARS),
+        truncated: body.length > NOTE_EXCERPT_CHARS,
+        bodyLength: body.length,
+        conditions: (row.conditions as string[] | null) ?? [],
+        /* The only signal that an ingredient or a run note carries a
+           citation at all. */
+        sourceCount: Number(row.source_count ?? 0),
+        createdAt:
+          row.created_at instanceof Date
+            ? row.created_at.toISOString()
+            : String(row.created_at),
+        attachedTo,
+        rank: Number(row.rank ?? 0),
+      };
+    }),
   };
 }
 

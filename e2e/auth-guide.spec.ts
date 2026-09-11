@@ -350,6 +350,7 @@ const CALLS: Record<string, Record<string, unknown>> = {
   get_ingredient: { slug: 'bay-leaf' },
   list_experiments: {},
   get_experiment: { slug: 'biltong-batch-3' },
+  search_notes: { query: 'biltong' },
   build_shopping_list: { slugs: ['baumy-biltong'] },
   get_repository_stats: {},
 

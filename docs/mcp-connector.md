@@ -106,7 +106,7 @@ every tool call, not just at authorization.
 
 Read: `get_started`, `search_recipes`, `get_recipe`, `list_categories`,
 `list_ingredients`, `get_ingredient`, `list_experiments`, `get_experiment`,
-`build_shopping_list`, `get_repository_stats`.
+`search_notes`, `build_shopping_list`, `get_repository_stats`.
 
 Write: `create_recipe`, `revise_recipe`, `backfill_revision`, `add_note`,
 `add_mass_flow`, `describe_mechanism`, `upsert_ingredient`,
@@ -120,7 +120,7 @@ experiments; the website calls the same record a batch log and serves it at
 mapping, because one that knew only the tool word reported the page as
 missing.
 
-Twenty tools. `/connect` and `TOOLS` in `e2e/mcp-contract.spec.ts` name the
+Twenty-one tools. `/connect` and `TOOLS` in `e2e/mcp-contract.spec.ts` name the
 same set; a tool that appears or disappears without all three moving is
 drift, and that test is the line that says so.
 

@@ -214,8 +214,8 @@ export default function ConnectPage() {
 type Tool = { name: string; text: string };
 
 /**
- * The ten tools the read scope grants, in the order `registerTools` declares
- * them (`src/lib/mcp/tools.ts:241`).
+ * The eleven tools the read scope grants, in the order `registerTools`
+ * declares them (`src/lib/mcp/tools.ts`).
  */
 const READ_TOOLS: Tool[] = [
   {
@@ -249,6 +249,10 @@ const READ_TOOLS: Tool[] = [
   {
     name: 'get_experiment',
     text: 'One run: the date, the weights, what it cost and what happened.',
+  },
+  {
+    name: 'search_notes',
+    text: 'Every note, wherever it hangs: on a recipe, an ingredient or a run. Searchable by text and by kind.',
   },
   {
     name: 'build_shopping_list',

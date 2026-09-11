@@ -333,3 +333,220 @@ test.describe('where a note attaches', () => {
     );
   });
 });
+
+/**
+ * Finding a note without knowing where it is.
+ *
+ * This file's own fixtures are the proof that the problem was real: notes
+ * sit on `data-notes-subject`, on `data-notes-kombu` and on
+ * `data-notes-run`, and before `search_notes` the only way to see all three
+ * was to already know all three parents. The tests below assert the two
+ * things the query gets wrong if it is written the obvious way — resolving
+ * a recipe note through `recipes.current_revision_id`, which silently drops
+ * every superseded revision, and returning whole bodies.
+ */
+test.describe('finding a note across every record', () => {
+  /* A word that cannot occur anywhere else in the seeded database, so the
+     result set is exactly what this test wrote. */
+  const WORD = 'zarquith';
+
+  interface NoteHit {
+    id: string;
+    kind: string;
+    title: string | null;
+    excerpt: string;
+    truncated: boolean;
+    bodyLength: number;
+    sourceCount: number;
+    attachedTo: {
+      type: string;
+      slug: string | null;
+      title: string | null;
+      revisionNumber: number | null;
+    };
+  }
+  interface NoteSearch {
+    results: NoteHit[];
+    total: number;
+  }
+
+  test('a note on each kind of parent is reachable from one call', async () => {
+    const mcp = rw();
+
+    await mcp.call('add_note', {
+      recipeSlug: RECIPE_SLUG,
+      kind: 'observation',
+      title: 'On the recipe',
+      body: `A ${WORD} seen on the recipe itself.`,
+    });
+    await mcp.call('add_note', {
+      ingredientSlug: INGREDIENT_SLUG,
+      kind: 'warning',
+      title: 'On the ingredient',
+      body: `A ${WORD} seen on the ingredient.`,
+    });
+    await mcp.call('add_note', {
+      experimentSlug: RUN_SLUG,
+      kind: 'result',
+      title: 'On the run',
+      body: `A ${WORD} seen on the run.`,
+    });
+
+    const found = await mcp.call<NoteSearch>('search_notes', {
+      query: WORD,
+      limit: 50,
+    });
+    expect(found.total).toBe(3);
+
+    const byType = new Map(
+      found.results.map((hit) => [hit.attachedTo.type, hit.attachedTo.slug]),
+    );
+    expect(byType.get('recipe')).toBe(RECIPE_SLUG);
+    expect(byType.get('ingredient')).toBe(INGREDIENT_SLUG);
+    expect(byType.get('experiment')).toBe(RUN_SLUG);
+
+    // And `kind` narrows it to one, which is the "show me every warning"
+    // question that had no answer at all before.
+    const warnings = await mcp.call<NoteSearch>('search_notes', {
+      query: WORD,
+      kind: 'warning',
+      limit: 50,
+    });
+    expect(warnings.total).toBe(1);
+    expect(warnings.results[0]!.attachedTo.slug).toBe(INGREDIENT_SLUG);
+  });
+
+  test('a recipe filter finds notes on superseded revisions too', async () => {
+    // THE ASSERTION THAT MATTERS. `reviseRecipe` attaches its notes to the
+    // REVISION, and `noteBelongsToRecipe` — the existing helper, which
+    // `/science` uses correctly — resolves a revision note only through
+    // `recipes.current_revision_id`. Reusing it here would return the new
+    // revision's note and silently hide the old one, which is exactly the
+    // note an agent asking "what have we already learned" wants.
+    const mcp = rw();
+
+    await mcp.call('add_note', {
+      recipeSlug: RECIPE_SLUG,
+      revisionNumber: 1,
+      kind: 'observation',
+      title: 'Pinned to revision one',
+      body: `A ${WORD} recorded against the first version.`,
+    });
+
+    await mcp.call('revise_recipe', {
+      slug: RECIPE_SLUG,
+      rationale: 'A second version, so the first one is superseded.',
+      ingredients: [{ name: 'Notes kombu', quantity: 12, unit: 'g' }],
+      steps: [{ instruction: 'Steep the kombu at 65 °C.' }],
+      notes: [
+        {
+          kind: 'observation',
+          title: 'Pinned to revision two',
+          body: `A ${WORD} recorded against the second version.`,
+        },
+      ],
+    });
+
+    const found = await mcp.call<NoteSearch>('search_notes', {
+      query: WORD,
+      recipeSlug: RECIPE_SLUG,
+      limit: 50,
+    });
+
+    const revisions = found.results
+      .filter((hit) => hit.attachedTo.type === 'revision')
+      .map((hit) => hit.attachedTo.revisionNumber)
+      .sort();
+    expect(revisions).toEqual([1, 2]);
+
+    // The note on the recipe itself is in the same answer, and the run's
+    // note is NOT — a batch is its own record.
+    expect(found.results.some((hit) => hit.attachedTo.type === 'recipe')).toBe(
+      true,
+    );
+    expect(
+      found.results.some((hit) => hit.attachedTo.type === 'experiment'),
+    ).toBe(false);
+  });
+
+  test('a long body comes back as an excerpt that says it was cut', async () => {
+    const mcp = rw();
+    const long = `${WORD} `.repeat(120).trim();
+
+    await mcp.call('add_note', {
+      ingredientSlug: INGREDIENT_SLUG,
+      kind: 'observation',
+      title: 'A long one',
+      body: long,
+    });
+
+    const found = await mcp.call<NoteSearch>('search_notes', {
+      query: WORD,
+      kind: 'observation',
+      ingredientSlug: INGREDIENT_SLUG,
+      limit: 50,
+    });
+    const hit = found.results.find((note) => note.title === 'A long one');
+    expect(hit).toBeTruthy();
+    expect(hit!.truncated).toBe(true);
+    expect(hit!.bodyLength).toBe(long.length);
+    expect(hit!.excerpt.length).toBeLessThan(hit!.bodyLength);
+    expect(long.startsWith(hit!.excerpt)).toBe(true);
+
+    // A short one is not cut, and says so.
+    const short = found.results.find(
+      (note) => note.title === 'On the ingredient',
+    );
+    expect(short!.truncated).toBe(false);
+    expect(short!.bodyLength).toBe(short!.excerpt.length);
+  });
+
+  test('paging does not repeat or skip a note', async () => {
+    const mcp = rw();
+    const all = await mcp.call<NoteSearch>('search_notes', {
+      query: WORD,
+      limit: 50,
+    });
+    expect(all.total).toBeGreaterThan(2);
+
+    const first = await mcp.call<NoteSearch>('search_notes', {
+      query: WORD,
+      limit: 2,
+      offset: 0,
+    });
+    const second = await mcp.call<NoteSearch>('search_notes', {
+      query: WORD,
+      limit: 2,
+      offset: 2,
+    });
+
+    // `total` is the whole answer on every page, not the page size.
+    expect(first.total).toBe(all.total);
+    expect(second.total).toBe(all.total);
+    expect(first.results).toHaveLength(2);
+
+    const ids = [...first.results, ...second.results].map((hit) => hit.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  test('two target filters are refused, and none means everywhere', async () => {
+    const mcp = rw();
+
+    expect(
+      await refusal(
+        mcp.call('search_notes', {
+          recipeSlug: RECIPE_SLUG,
+          ingredientSlug: INGREDIENT_SLUG,
+        }),
+      ),
+    ).toMatch(/at most one/i);
+
+    // And the bare call enumerates rather than refusing, which is what
+    // makes a separate listing tool unnecessary.
+    const everything = await mcp.call<NoteSearch>('search_notes', {
+      limit: 1,
+    });
+    expect(everything.total).toBeGreaterThan(3);
+    expect(everything.results).toHaveLength(1);
+  });
+});
