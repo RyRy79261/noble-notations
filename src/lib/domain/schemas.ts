@@ -13,6 +13,7 @@
  */
 import { z } from 'zod';
 import { CANONICAL_UNITS, isKnownUnit } from '@/lib/domain/units';
+import { slugify } from '@/lib/domain/slug';
 
 /**
  * The kinds of category a tag can belong to.
@@ -37,6 +38,186 @@ export type CategoryType = (typeof CATEGORY_TYPES)[number];
 
 /** @deprecated Use CategoryType. Kept so the db layer reads naturally. */
 export type TaxonomyFacet = CategoryType;
+
+/**
+ * Slugs a tag may never take.
+ *
+ * Every entry is what a programming language prints when it turns an empty
+ * or non-string value into text: JavaScript's `String(null)`,
+ * `String(undefined)`, `String(true)` and `` `${{}}` ``, and Python's
+ * `str(None)`, `str(True)` and `str(False)`. None of them is a word a cook
+ * would choose for a tag, and all of them arrive the same way — a variable
+ * that held nothing was interpolated into a label.
+ *
+ * The rule exists because such a tag is not merely useless: it is usable.
+ * `slugify('null')` is `'null'`, so one accidental label makes a real term
+ * with a real slug, and `parentSlug: 'null'` — which a caller reaches for
+ * when it means "no parent" — then RESOLVES against it and silently
+ * reparents a tag onto the junk. Refusing the name is what stops the pair
+ * of mistakes meeting.
+ *
+ * THE TEST IS ON THE SLUG, NOT THE LABEL, and that is the escape hatch. A
+ * label is free text; only the slug is identity. `upsert_category` takes an
+ * explicit `slug`, so a tag that genuinely wants one of these words as its
+ * display label can still have it — `{ label: 'None', slug: 'no-diet' }` is
+ * accepted, and the reader sees "None".
+ *
+ * `nan` IS DELIBERATELY NOT IN THIS LIST, and a later reader should not add
+ * it. It is `String(NaN)`, so it fits the pattern — but this is a cooking
+ * repository, `nan` is bread, and `slugify('Nan')` is `'nan'`. NaN comes out
+ * of arithmetic, and no arithmetic produces a tag label, so the accident it
+ * would catch is rarer than the tag it would refuse.
+ */
+export const RESERVED_TAG_SLUGS = [
+  'null',
+  'undefined',
+  'none',
+  'true',
+  'false',
+  'object-object',
+] as const;
+
+/** Whether an already-slugified string is one of the reserved words. */
+export function isReservedTagSlug(slug: string): boolean {
+  return (RESERVED_TAG_SLUGS as readonly string[]).includes(slug);
+}
+
+/** The refusal, worded for the caller that is naming a tag. */
+export function reservedTagSlugMessage(slug: string): string {
+  return (
+    `"${slug}" is not a name a tag can have. It is what a program prints ` +
+    'when a value is empty, so a tag with that name is almost always an ' +
+    'accident. The reserved names are: ' +
+    `${RESERVED_TAG_SLUGS.join(', ')}. Give the tag the name of the thing ` +
+    'it groups. To keep one of these words as the label a reader sees, send ' +
+    'a `slug` of your own beside it.'
+  );
+}
+
+/**
+ * Text that a JSON encoder ran over two times.
+ *
+ * A client that encodes a string, then encodes the result again, sends the
+ * ESCAPE instead of the character: the six characters `\u2014` where an em
+ * dash belongs, and `\"` where a quotation mark belongs. Both are legal
+ * JSON string content, so the request parses, and the escape is then stored
+ * and drawn exactly as it arrived. Two titles in this repository carry that
+ * damage today. Nothing can repair them: a title is not a note, so a
+ * `correction` note cannot answer it, and no tool edits a stored title.
+ *
+ * So the check is at the boundary, and it REFUSES rather than repairs.
+ * Unescaping on read or on write would corrupt a title that legitimately
+ * holds a backslash, and it would guess; a refusal asks.
+ *
+ * ONLY THESE TWO PATTERNS, and each is chosen because `JSON.parse` consumes
+ * it. A decoded string can hold a backslash, but it cannot hold `\u` before
+ * four hex digits, and it cannot hold `\` before a quotation mark, unless
+ * the encoding happened twice. `\n` and `\t` are deliberately absent: they
+ * collide with `C:\notes` and `C:\temp`, and a Windows path is a thing a
+ * person writes. `\Users` does not match either, because the escape JSON
+ * emits is a lower-case `u` and the four characters after it must all be
+ * hexadecimal.
+ */
+const DOUBLE_ENCODED = /\\u[0-9a-fA-F]{4}|\\"/;
+
+/**
+ * Guard the one-line name of a thing.
+ *
+ * Applied to titles, labels and names — the short strings a reader meets as
+ * a heading and the writer meets as identity. NOT applied to a body, a
+ * summary, a description or a citation: those are Markdown, Markdown holds
+ * code, and a fenced block that explains `\u2014` or a regular expression
+ * that contains `\"` is text somebody meant.
+ *
+ * EVERY DOOR OF THAT SHAPE, NOT THE FIRST FIVE. The rule began on the note
+ * title, which is where the damage was reported, and on the four titles and
+ * labels beside it. That left the sibling paths that write the same kind of
+ * text somewhere worse: `ingredients[].name` on a recipe mints a canonical
+ * ingredient and a permanent slug and lands in an immutable revision, a tag
+ * label mints a term, an alias becomes a lookup key nobody can type, and
+ * `phase` and `component` are headings a reader meets inside a revision that
+ * no tool can edit. A rule that refuses `upsert_ingredient {name}` and
+ * accepts the identical string one field away is not a boundary; it is a
+ * sign on one of two doors.
+ *
+ * DELIBERATELY LEFT OUT, so a later reader does not take the list for an
+ * oversight: `subtitle`, `sources[].title`, `steps[].equipment` and
+ * `observations[].metric`. None of them names a record and none mints a
+ * slug; each is closer to prose or to machine vocabulary than to a heading,
+ * and a wrong one there is legible and can be superseded by a new revision.
+ * That is the test this rule is drawn against.
+ *
+ * A STORED NAME THAT IS ALREADY DAMAGED IS STILL REPAIRABLE, which is worth
+ * knowing because the refusal reads as a dead end otherwise.
+ * `upsert_ingredient` finds its row by `slug`, so the damaged slug sent
+ * beside a clean `name` rewrites the name. The rule refuses what arrives; it
+ * never refuses to mend what is stored.
+ */
+const PLAIN_NAME_RULE =
+  'Send the characters themselves. A name that arrives holding a backslash ' +
+  'escape — `\\u2014` where an em dash belongs, `\\"` where a quotation ' +
+  'mark belongs — is refused, because it is almost always a string that was ' +
+  'encoded twice and the store cannot correct it later.';
+
+const TAG_NAME_RULE =
+  'A tag cannot be named after an empty value. These names are refused: ' +
+  `${RESERVED_TAG_SLUGS.join(', ')}. To keep one of them as the label a ` +
+  'reader sees, send a `slug` of your own beside it.';
+
+/**
+ * Append a rule to a field's description without losing what is there.
+ *
+ * The rule is a refinement, so JSON Schema cannot express it. A caller that
+ * reads the advertised signature would meet it only by being refused. The
+ * repository already holds that principle — see the contract test named
+ * "the two rules a caller cannot see in the schema are in the text" — so the
+ * sentence goes where the caller is already looking.
+ */
+function withRule<T extends z.ZodType>(schema: T, rule: string): T {
+  const existing = schema.description;
+  return schema.describe(existing ? `${existing} ${rule}` : rule) as T;
+}
+
+function plainName<T extends z.ZodString>(schema: T, field: string): T {
+  return withRule(
+    schema.refine((value) => !DOUBLE_ENCODED.test(value), {
+      error:
+        `\`${field}\` carries a backslash escape: text of the form \\u2014 ` +
+        'or \\". This is almost always a string that was encoded as JSON two ' +
+        'times. Send the characters themselves — the em dash, the quotation ' +
+        'mark — and let your encoder escape them one time. The store keeps ' +
+        'the text exactly as it arrives, and no tool can correct it later.',
+    }),
+    PLAIN_NAME_RULE,
+  ) as T;
+}
+
+/**
+ * The name of a tag, wherever one is written.
+ *
+ * Three fields reach `resolveTermId` in `src/lib/queries/write.ts` and each
+ * one creates a tag from the text it is given: `upsert_category`'s label, a
+ * recipe's `categories`, and a step's `technique`. They are one rule and
+ * they are written as one function, because the first fix wrote the rule
+ * twice, missed the third field, and then stated an invariant that field
+ * made false.
+ *
+ * The base schema is a parameter rather than a constant so a caller keeps
+ * its own bounds. `technique` is `max(120)` with no floor and a tag label is
+ * `min(1).max(120)`; a helper that imposed one shape would change an
+ * advertised JSON Schema as a side effect of tightening a rule.
+ */
+function tagName<T extends z.ZodString>(schema: T, field: string): T {
+  return withRule(
+    plainName(schema, field).refine(
+      (label) => !isReservedTagSlug(slugify(label)),
+      {
+        error: (issue) => reservedTagSlugMessage(slugify(String(issue.input))),
+      },
+    ),
+    TAG_NAME_RULE,
+  ) as T;
+}
 
 export const RECIPE_STATUSES = ['draft', 'active', 'archived'] as const;
 
@@ -194,7 +375,7 @@ export const noteSchema = z.object({
         'swapped and why; warning = a trap; result = how it turned out; ' +
         'idea = untried; correction = fixes an earlier claim',
     ),
-  title: z.string().max(200).optional(),
+  title: plainName(z.string().max(200), 'title').optional(),
   body: z.string().min(1).max(20000).describe('Markdown'),
   /**
    * Meaningful on a `science` note, which the site draws as a mechanism.
@@ -275,7 +456,7 @@ export const ingredientLineSchema = z.object({
    * by slug, then by name, then by alias; unmatched names create a new
    * canonical ingredient rather than being silently dropped.
    */
-  name: z.string().min(1).max(200),
+  name: plainName(z.string().min(1).max(200), 'name'),
   quantity: z.number().finite().nonnegative().nullish(),
   /** Upper bound when the amount was written as a range ("4–5 chipotle"). */
   quantityMax: z.number().finite().nonnegative().nullish(),
@@ -287,9 +468,7 @@ export const ingredientLineSchema = z.object({
    * a caller that never sets one cannot use that form at all. A field the
    * advertised remedy depends on cannot be the one field with no sentence.
    */
-  component: z
-    .string()
-    .max(120)
+  component: plainName(z.string().max(120), 'component')
     .nullish()
     .describe(
       'The heading this line sits under: "Khao khua", "To serve". A step ' +
@@ -310,13 +489,29 @@ export type IngredientLineInput = z.infer<typeof ingredientLineSchema>;
 export const stepSchema = z.object({
   instruction: z.string().min(1).max(5000),
   /** Stage grouping: "Prep", "Cure", "Hang", "Finish". */
-  phase: z.string().max(120).nullish(),
+  phase: plainName(z.string().max(120), 'phase').nullish(),
   durationMinutes: z.number().int().nonnegative().nullish(),
   durationMaxMinutes: z.number().int().nonnegative().nullish(),
   temperatureC: z.number().finite().nullish(),
   equipment: z.array(z.string().max(120)).max(30).optional(),
-  /** Technique taxonomy term, e.g. "braising". Created if unknown. */
-  technique: z.string().max(120).nullish(),
+  /**
+   * Technique taxonomy term, e.g. "braising". Created if unknown.
+   *
+   * THE THIRD DOOR INTO `taxonomy_terms`, and the one that was left open.
+   * `upsert_category` and a recipe's `categories` both refuse a reserved
+   * name; this field reaches `resolveTermId` in `write.ts` exactly as they
+   * do, and it took `technique: "null"` without a word. So the invariant the
+   * other two state — a tag holding a reserved name is a legacy accident and
+   * not something reachable today — was false while this stayed a bare
+   * string, and the audit written for the owner was a clean-up for a hole
+   * that was still open.
+   *
+   * There is no `slug` to escape through here, as there is on
+   * `upsert_category`. A technique that really wants one of these words as
+   * its label is authored with `upsert_category` and its own slug, and the
+   * step then names that slug.
+   */
+  technique: tagName(z.string().max(120), 'technique').nullish(),
   /**
    * Names of ingredient lines this step consumes. Each must match the `name`
    * of a line in `ingredients`, or that line's `component` and name written
@@ -547,7 +742,7 @@ export const upsertCategoryShape = {
   /** Which kind of category this tag belongs to. */
   categoryType: z.enum(CATEGORY_TYPES),
   /** Display label. The slug is derived from it unless `slug` is given. */
-  label: z.string().min(1).max(120),
+  label: plainName(z.string().min(1).max(120), 'label'),
   slug: z.string().min(1).max(120).optional(),
   /**
    * One or two sentences explaining what the term means, shown to readers
@@ -561,7 +756,32 @@ export const upsertCategoryShape = {
    */
   parentSlug: z.string().min(1).max(120).nullish(),
 };
-export const upsertCategorySchema = z.object(upsertCategoryShape);
+/**
+ * The reserved-name rule sits here rather than on `label` or on `slug`,
+ * because neither field alone decides the answer: the write layer slugifies
+ * `slug` when it is given and `label` when it is not, so the value the rule
+ * governs only exists once both are in hand. That is what a cross-field
+ * refinement is for, and putting it on the assembled schema keeps
+ * `upsertCategoryShape` — the JSON Schema an agent reads — unchanged.
+ *
+ * `parentSlug` is NOT checked here. A reserved word there is a different
+ * mistake with a different answer, and the write layer already tells a
+ * caller that names a tag which is not there to send an explicit `null`
+ * instead. See `upsertCategory` in `src/lib/queries/write.ts`.
+ */
+export const upsertCategorySchema = z
+  .object(upsertCategoryShape)
+  .superRefine((value, ctx) => {
+    const named = value.slug ? 'slug' : 'label';
+    const slug = slugify(value.slug ?? value.label);
+    if (isReservedTagSlug(slug)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: [named],
+        message: reservedTagSlugMessage(slug),
+      });
+    }
+  });
 export type UpsertCategoryArgs = z.input<typeof upsertCategorySchema>;
 export type UpsertCategoryInput = z.infer<typeof upsertCategorySchema>;
 
@@ -573,20 +793,54 @@ export const buildShoppingListSchema = z.object(buildShoppingListShape);
 export type BuildShoppingListArgs = z.input<typeof buildShoppingListSchema>;
 export type BuildShoppingListInput = z.infer<typeof buildShoppingListSchema>;
 
+/**
+ * The other door a junk tag comes in by.
+ *
+ * Tagging a recipe auto-creates any tag it names, which is deliberate — a
+ * recipe should not be refused because a tag is new. But it means
+ * `categories: { diet: ['None'] }` makes a real term with the slug `none`,
+ * exactly as `upsert_category` would, and this path has no `slug` field to
+ * escape through. So the same list applies, on the label as slugified, and
+ * the issue lands on the offending entry rather than on the recipe.
+ */
+const tagLabel = tagName(z.string().min(1).max(120), 'label');
+
+/**
+ * Tags on a recipe. A WRITE: every name here can make a tag.
+ */
 export const categoriesSchema = z
+  .partialRecord(z.enum(CATEGORY_TYPES), z.array(tagLabel).max(30))
+  .optional();
+export type CategoriesInput = z.infer<typeof categoriesSchema>;
+
+/**
+ * Tags to filter a search by. A READ, and that is the whole difference.
+ *
+ * It had the same element schema as the write, and the rule above then
+ * refused `search_recipes {categories: {technique: ['null']}}` — with a
+ * message telling the caller to give the tag the name of the thing it
+ * groups and to send a `slug` beside it, neither of which a search can act
+ * on, since it has no `slug` field and is naming nothing.
+ *
+ * It matters more than a wrong sentence. The reserved rule exists because
+ * junk tags are in the store already, and the clean-up starts by asking
+ * which recipes carry one. `list_categories` shows the tag; `search_recipes`
+ * is the only tool that answers "which recipes", and it was the one refusing.
+ * A read tool answers with nothing found. It does not refuse the question.
+ */
+export const categoryFilterSchema = z
   .partialRecord(
     z.enum(CATEGORY_TYPES),
     z.array(z.string().min(1).max(120)).max(30),
   )
   .optional();
-export type CategoriesInput = z.infer<typeof categoriesSchema>;
 
 // ─────────────────────────────────────────────────────────────────────────
 // Recipe body — the part a revision snapshots
 // ─────────────────────────────────────────────────────────────────────────
 
 export const recipeBodyShape = {
-  title: z.string().min(1).max(200),
+  title: plainName(z.string().min(1).max(200), 'title'),
   subtitle: z.string().max(300).nullish(),
   summary: z.string().max(4000).nullish(),
   kind: z.enum(RECIPE_KINDS).optional().default('recipe'),
@@ -1276,14 +1530,17 @@ export type DescribeMechanismArgs = z.input<typeof describeMechanismSchema>;
 export type DescribeMechanismInput = z.infer<typeof describeMechanismSchema>;
 
 export const upsertIngredientShape = {
-  name: z.string().min(1).max(200),
+  name: plainName(z.string().min(1).max(200), 'name'),
   slug: z.string().max(120).optional(),
-  plural: z.string().max(200).nullish(),
+  plural: plainName(z.string().max(200), 'plural').nullish(),
   category: z.enum(INGREDIENT_CATEGORIES).optional(),
   description: z.string().max(4000).nullish(),
   densityGPerMl: z.number().positive().max(25).nullish(),
   defaultUnit: z.string().max(40).nullish(),
-  aliases: z.array(z.string().min(1).max(120)).max(50).optional(),
+  aliases: z
+    .array(plainName(z.string().min(1).max(120), 'aliases'))
+    .max(50)
+    .optional(),
   substitutes: z
     .array(z.string().min(1).max(200))
     .max(50)
@@ -1323,7 +1580,7 @@ export const logExperimentShape = {
     .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
     .max(120)
     .optional(),
-  title: z.string().min(1).max(200),
+  title: plainName(z.string().min(1).max(200), 'title'),
   /**
    * `.nullish()`, not `.optional()`. An omitted slug carries the stored link
    * forward, which is right for a re-log that adds one number — but it left
@@ -1363,7 +1620,7 @@ export const logExperimentShape = {
   items: z
     .array(
       z.object({
-        label: z.string().min(1).max(120),
+        label: plainName(z.string().min(1).max(120), 'label'),
         note: z.string().max(1000).nullish(),
       }),
     )
@@ -1406,7 +1663,7 @@ export const searchRecipesShape = {
     .optional()
     .describe('Free text; matches title, summary, terms and ingredients'),
   /** Facet → term slugs. All listed terms must be present (AND). */
-  categories: categoriesSchema,
+  categories: categoryFilterSchema,
   /** Ingredient slugs or names that must all appear. */
   ingredients: z.array(z.string().max(200)).max(20).optional(),
   /** Ingredient slugs or names that must NOT appear. */

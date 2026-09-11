@@ -74,11 +74,14 @@ export const metadata: Metadata = {
  * ─── THE KICKER THE DATA CANNOT FILL ─────────────────────────────────────
  *
  * The design draws a region above each title — `SOUTHERN AFRICA`,
- * `GULF COAST`, `MESOAMERICA`. Nothing in the schema holds a region, and
- * `listCategories` returns no parent term either. D-12 ruled on exactly this
- * shape: a slot the design draws and the data cannot fill is left out rather
- * than invented. R-STA-05 says the same. The card is a three-part column
- * here and a four-part one in the drawing.
+ * `GULF COAST`, `MESOAMERICA`. Nothing in the schema holds a region.
+ * `listCategories` does now carry each tag's `parent`, and a parent is not
+ * a region: the parent of `cajun` is `american`, where the drawing wants
+ * `GULF COAST`. Filling the slot with it would put the wrong word in the
+ * right place. D-12 ruled on exactly this shape: a slot the design draws
+ * and the data cannot fill is left out rather than invented. R-STA-05 says
+ * the same. The card is a three-part column here and a four-part one in the
+ * drawing.
  */
 
 /** `ONE RECIPE`, `SIX RECIPES`, `NO RECIPES`. The count is a word. */

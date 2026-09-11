@@ -56,4 +56,20 @@ export interface StubState {
   createStatus: number;
   commentStatus: number;
   nextIssueNumber: number;
+  /**
+   * How long to hold each issues-list answer open, in milliseconds, one
+   * entry per request in arrival order. An empty queue answers at once.
+   *
+   * It exists for one property that cannot be observed any other way: the
+   * open-report cap reads a list and then decides, and what it must not do
+   * is hand out a slot that another caller took while that read was in the
+   * air. A real GitHub produces that window by being slow, which is the one
+   * thing a test cannot ask of it.
+   *
+   * THE ANSWER IS BUILT WHEN THE REQUEST ARRIVES AND SENT WHEN THE DELAY IS
+   * OVER. That is the whole point: the caller gets a snapshot of the issues
+   * as they were before the wait, which is exactly what a slow read returns
+   * in life. Building it at send time would make the delay invisible.
+   */
+  listDelaysMs: number[];
 }

@@ -267,6 +267,23 @@ kill "$SERVER"               # by PID, not `pkill next-server`
 Stop the server by PID. `pkill -f next-server` takes a sibling agent's server
 down with it.
 
+**Run it the way CI runs it, or you have not run it.**
+
+`.github/workflows/ci.yml` sets two variables the local recipe above does
+not. A test that reads the environment can pass here and fail there, and one
+did: `e2e/auth-oauth.spec.ts` asserted that a forwarded host decides the
+OAuth issuer, which is true only when no override is set. CI sets the
+override, so the test was wrong and the code was right.
+
+Before you push, run the suite once more with CI's environment:
+
+```bash
+MCP_PUBLIC_URL=http://127.0.0.1:3100 CI=true E2E_PORT=3100 pnpm test:e2e
+```
+
+`CI=true` also turns off `reuseExistingServer`, so this run builds and boots
+its own server exactly as the workflow does.
+
 **If the port refuses to bind.** This machine sometimes reports
 `address already in use` for a published port that nothing holds. Start the
 container with no `-p` and read its address instead:
@@ -286,6 +303,7 @@ export DATABASE_URL=postgresql://postgres:nn@$IP:5432/noble_test
 | M6             | 145              | 0        | 0     | 52    | 176        |
 | M7             | 165              | 0        | 0     | 52    | 176        |
 | `report_issue` | 225              | 0        | 0     | 52    | 176        |
+| coverage       | 416              | 0        | 0     | 52    | 176        |
 
 M7 added 20 tests: `e2e/render.spec.ts`, which asserts that 4 conditional
 blocks are drawn on the page and, for 3 of them, that they are absent where
@@ -295,6 +313,22 @@ The row after it is `report_issue`, which measured 193 before the work and
 225 after: `e2e/mcp-report-issue.spec.ts` is 31 of those, and one is the
 registry line in `e2e/mcp-contract.spec.ts`. The audit columns did not move,
 and the page-load figure did not either — the tool adds no route.
+
+The `coverage` row is the branch that closed the three agent reports and
+then went after what the suite was not defending. 225 to 416 in nineteen
+files, and the figure is worth reading with its shape: 157 of the new tests
+came from four authors working in parallel on their own areas, and the last
+34 came from a mutation run over the result — four `ORDER BY` directions,
+both OAuth expiry checks, six screen and storage requirements, `safeRead`'s
+failure branch, `slugify`, the backfill boundary and the filter's case fold
+had all survived being deleted from the source with the whole suite green.
+A test that a mutation cannot kill is not coverage, and the only way to know
+which ones those are is to try it.
+
+**The audit columns still did not move, and that is the point of quoting
+them here.** Nineteen new spec files, five changed source files and not one
+pixel: `0 / 0 / 52` over the same 176 page loads, measured on a clean
+database before the suite ran, per the three traps above.
 
 Every minor fault is a control under 24 × 24 pixels. §6.1 carries the one
 shape they share.

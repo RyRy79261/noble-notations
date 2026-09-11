@@ -9,6 +9,7 @@ import 'server-only';
  * Postgres' string representation here rather than in twelve call sites.
  */
 import { and, asc, desc, eq, inArray, or, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import type { SQLWrapper } from 'drizzle-orm';
 import { db } from '@/db/client';
 import {
@@ -1011,11 +1012,26 @@ export async function listRecipeSlugs(): Promise<string[]> {
 
 export interface TermWithCount extends TermView {
   recipeCount: number;
+  /**
+   * The broader tag this one sits under, or `null` at the top level.
+   *
+   * A parent is always in the same category type, so it carries no type of
+   * its own. It is here because it was readable nowhere else: `getTerm`
+   * returns it for one tag at a time and the MCP registry exposes no tool
+   * that calls `getTerm`, so `list_categories` was the only view an agent
+   * had of the categories and it showed a flat list. A hierarchy that can
+   * be written and not read is a hierarchy nobody can check.
+   */
+  parent: { slug: string; label: string } | null;
 }
 
 export async function listCategories(
   facet?: CategoryType,
 ): Promise<TermWithCount[]> {
+  // A term has at most one parent, so this join adds no rows and the
+  // COUNT below still counts recipes.
+  const parentTerm = alias(taxonomyTerms, 'parent_term');
+
   const rows = await db
     .select({
       id: taxonomyTerms.id,
@@ -1023,9 +1039,12 @@ export async function listCategories(
       slug: taxonomyTerms.slug,
       label: taxonomyTerms.label,
       description: taxonomyTerms.description,
+      parentSlug: parentTerm.slug,
+      parentLabel: parentTerm.label,
       recipeCount: sql<number>`COUNT(${recipeTerms.recipeId})`,
     })
     .from(taxonomyTerms)
+    .leftJoin(parentTerm, eq(parentTerm.id, taxonomyTerms.parentId))
     .leftJoin(recipeTerms, eq(recipeTerms.termId, taxonomyTerms.id))
     .where(facet ? eq(taxonomyTerms.facet, facet) : sql`true`)
     .groupBy(
@@ -1034,6 +1053,8 @@ export async function listCategories(
       taxonomyTerms.slug,
       taxonomyTerms.label,
       taxonomyTerms.description,
+      parentTerm.slug,
+      parentTerm.label,
     )
     .orderBy(
       desc(sql`COUNT(${recipeTerms.recipeId})`),
@@ -1046,6 +1067,10 @@ export async function listCategories(
     slug: r.slug,
     label: r.label,
     description: r.description,
+    parent:
+      r.parentSlug && r.parentLabel
+        ? { slug: r.parentSlug, label: r.parentLabel }
+        : null,
     recipeCount: Number(r.recipeCount),
   }));
 }

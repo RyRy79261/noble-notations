@@ -17,19 +17,103 @@ const ROUTES = [
   '/list',
   '/batch-logs',
   '/archive',
+  // Both states of the search screen. `?q=` was the only one driven by any
+  // gate, and the bare form is the one a reader reaches from the navigation.
+  '/search',
   '/search?q=biltong',
   // Not in the navigation: reached from the footer, and from a recipe.
   '/connect',
   '/recipes/baumy-biltong/batch-logs',
+  // The archive note. `pnpm audit:ui` has no `/archive/[...slug]` either —
+  // BUILD-PLAN §6.5 — so nothing drove this address at any width.
+  '/archive/biltong/batch-03',
 ];
 
 for (const route of ROUTES) {
-  test(`${route} renders`, async ({ page }) => {
-    const response = await page.goto(route);
-    expect(response?.status()).toBe(200);
-    await expect(page.locator('h1').first()).toBeVisible();
+  test(`${route} renders at 1280 and at 360`, async ({ page }) => {
+    // Both widths, because the shell is not the same construction at each:
+    // the navigation moves into a drawer, the recipe aside becomes a tab,
+    // and a screen that renders at one width has been shipped broken at the
+    // other more than once. `pnpm audit:ui` measures four widths but is a
+    // separate gate that CI does not run.
+    for (const width of [1280, 360]) {
+      await page.setViewportSize({ width, height: width === 360 ? 780 : 900 });
+
+      const response = await page.goto(route);
+      expect(response?.status(), `${route} at ${width}`).toBe(200);
+      await expect(page.locator('h1').first()).toBeVisible();
+      // The foot is drawn per route through the `@foot` slot, so a route
+      // added without one loses C-04's three links at both widths.
+      await expect(page.locator('[data-page-foot]')).toHaveCount(1);
+    }
   });
 }
+
+test('the sign-in return trip is protected, and keeps where it was going', async ({
+  request,
+}) => {
+  /*
+   * `/connect/done` is the one screen in §10.10 that nothing loads: it is
+   * named as a redirect TARGET in `redirects.spec.ts` and never asked for.
+   * A visitor with no session never sees it — `src/proxy.ts` runs Neon
+   * Auth's middleware on this path and bounces them — and that bounce is the
+   * behaviour worth pinning, because the page is the OAuth return leg and a
+   * bounce that dropped the destination would strand a connector approval
+   * half way through.
+   */
+  const bare = await request.get('/connect/done', { maxRedirects: 0 });
+  expect(bare.status()).toBe(307);
+  expect(bare.headers()['location']).toBe('/sign-in');
+
+  const carrying = await request.get('/connect/done?next=%2Frecipes', {
+    maxRedirects: 0,
+  });
+  expect(carrying.status()).toBe(307);
+  expect(carrying.headers()['location']).toContain('next=%2Frecipes');
+});
+
+test('every share link has a picture, and it is the recipe’s own', async ({
+  request,
+}) => {
+  /*
+   * `src/app/opengraph-image.tsx` and
+   * `src/app/recipes/[slug]/opengraph-image.tsx` are what every link to this
+   * site becomes when somebody pastes it into a chat. Nothing fetches
+   * either: they are not routes `audit-ui` drives, they render through
+   * `ImageResponse` rather than through the shell, and the recipe one reads
+   * the database — so a query change can break every social preview on the
+   * site and no gate says a word.
+   *
+   * The images are compared rather than looked at. A per-recipe image that
+   * quietly fell back to the site's own, or to one picture for every recipe,
+   * is the failure a status code cannot see.
+   */
+  const shots = await Promise.all(
+    [
+      '/opengraph-image',
+      '/recipes/baumy-biltong/opengraph-image',
+      '/recipes/demi-glace/opengraph-image',
+      // A recipe that is not there must still answer with a picture rather
+      // than a 500: the address is public and a crawler will ask for it.
+      '/recipes/no-such-recipe/opengraph-image',
+    ].map((address) => request.get(address)),
+  );
+
+  const bodies: string[] = [];
+  for (const [index, shot] of shots.entries()) {
+    expect(shot.status(), `image ${index}`).toBe(200);
+    expect(shot.headers()['content-type']).toContain('image/png');
+    const body = await shot.body();
+    expect(
+      body.byteLength,
+      `image ${index} is too small to be a picture`,
+    ).toBeGreaterThan(2000);
+    bodies.push(body.toString('base64'));
+  }
+
+  // Four addresses, four different pictures.
+  expect(new Set(bodies).size).toBe(bodies.length);
+});
 
 test('the primary navigation holds the 9 destinations, in order', async ({
   page,

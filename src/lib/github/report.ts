@@ -228,8 +228,39 @@ function reserveComment(
  * `mcp_audit_log` — not from a list-then-create window. That is a bigger
  * change than this tool needs, and it is written down here so the next
  * person sizes the risk correctly rather than reading the cap as absolute.
+ *
+ * THE RESERVATION ALONE IS NOT ENOUGH, and the half it misses is the other
+ * half of the same window. It is held only while a create is in flight and
+ * given back the moment GitHub answers. A caller whose list read happened
+ * BEFORE that create, and whose decision happens AFTER the reservation was
+ * given back, therefore sees neither the new issue nor the reservation and
+ * files into a cap that is already full. With nine reports open and one slot
+ * left, twenty-four callers produced one filing or two depending on the
+ * speed of the answer. `createsCompleted` below closes that gap.
  */
 let createsInFlight = 0;
+
+/**
+ * Issues this process has created, counted since the process started.
+ *
+ * Read once at the top of every call, before the issues list is asked for,
+ * and compared against its own value at the decision. The difference is the
+ * creates that landed while this call was waiting on its read — the ones its
+ * snapshot is too old to contain and the reservation has already released.
+ *
+ * IT IS A COUNTER AND NOT A SET OF ISSUE NUMBERS, which is a deliberate
+ * trade and it goes one way. A create that lands WHILE a read is in flight
+ * may also come back inside that read's snapshot, and this counts it twice;
+ * a set of numbers would not. The cost of counting twice is that the last of
+ * ten slots is occasionally refused to a caller that raced for it, and the
+ * caller is told to close some reports. The cost of a set is that it has to
+ * be forgotten on a timer, and anything in it that GitHub has stopped
+ * reporting — a test double that was reset, an issue deleted rather than
+ * closed — is then counted against the cap until that timer runs out. A cap
+ * that is one too tight under a race is the safer of the two, and it is the
+ * direction this whole guard exists to fail in.
+ */
+let createsCompleted = 0;
 
 // ─────────────────────────────────────────────────────────────────────────
 // What the caller is told
@@ -518,6 +549,9 @@ export async function submitReport(
   // costs a maintainer one click, and every body carries the fingerprint, so
   // duplicates are findable and closable in bulk afterwards.
   let existing: IssueSummary[] | null = null;
+  // Taken BEFORE the read, which is the whole of its meaning: it dates the
+  // snapshot that comes back. See `createsCompleted`.
+  const createsAtRead = createsCompleted;
   try {
     existing = await client.listAgentReports();
   } catch {
@@ -582,10 +616,15 @@ export async function submitReport(
     )?.number;
 
     // `createsInFlight` is counted in, because a cap that reads a number and
-    // then acts on it is not a cap under concurrency.
+    // then acts on it is not a cap under concurrency. The `createsCompleted`
+    // difference is counted in for the same reason and covers the rest of
+    // the window: a create that finished after this call's list read is in
+    // neither the snapshot nor the reservation, and without it the cap leaks
+    // by one for every caller that was already waiting on its read.
     const openReports =
       existing.filter((issue) => issue.state === 'open').length +
-      createsInFlight;
+      createsInFlight +
+      (createsCompleted - createsAtRead);
     if (openReports >= OPEN_REPORT_CAP) {
       return {
         status: 'capped',
@@ -630,6 +669,11 @@ export async function submitReport(
   } finally {
     createsInFlight -= 1;
   }
+  // No `await` between the release above and the line below, so no other
+  // call can run its decision in the gap and see the reservation given back
+  // before the create it covered is counted. A throw takes the `catch`
+  // instead and counts nothing: a create that failed took no slot.
+  createsCompleted += 1;
 
   recordFiling(options.userId, stamp.getTime());
 
