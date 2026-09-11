@@ -7,7 +7,7 @@ import { citationDate } from '@/components/f/citation';
 import { PageHead, PageHero } from '@/components/f/page-head';
 import { SectionHead } from '@/components/f/section-label';
 import { Stat } from '@/components/f/stat';
-import { cardinal, roman } from '@/lib/site';
+import { cardinal, revisionOrdinal, roman } from '@/lib/site';
 import { cn } from '@/lib/utils';
 
 import { BatchLedger } from './batch-log-parts';
@@ -58,9 +58,27 @@ export function BatchLogDetail({
       .filter(Boolean)
       .join(' — ') || 'Batch log';
 
+  /*
+   * The run's own slot for the same fact `rowMeta` states on the two indexes
+   * (§4.3): the version this run cooked has been deleted.
+   *
+   * IT IS DRAWN ONLY WHEN THE VERSION IS WITHDRAWN, and that is deliberate.
+   * This screen has never printed the revision at all — the kicker is the
+   * recipe and the date — so printing the ordinal on every run would be a
+   * change to every batch log page in aid of a state none of them is in.
+   * Naming the number here is what makes `withdrawn` mean something: the
+   * design's answer is that the run keeps its number and says the version is
+   * gone, and a bare "withdrawn" would not say what was.
+   */
+  const withdrawn =
+    log.revisionWithdrawn && log.revisionNumber != null
+      ? `${revisionOrdinal(log.revisionNumber)} · withdrawn`
+      : null;
+
   const kicker =
-    [log.recipe?.title ?? 'Batch log', started].filter(Boolean).join(' · ') ||
-    'Batch log';
+    [log.recipe?.title ?? 'Batch log', withdrawn, started]
+      .filter(Boolean)
+      .join(' · ') || 'Batch log';
 
   /* `II` when the outcome section is drawn above it, `I` when it is not. */
   const hasAccount = Boolean(log.outcome) || log.notes.length > 0;

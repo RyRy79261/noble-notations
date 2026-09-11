@@ -1056,9 +1056,9 @@ export function RecipeDetail({
                 bodyClassName="gap-0"
               >
                 <p className="m-0 w-full max-w-155 text-15 leading-170 font-sans text-ink-2">
-                  A revision is never edited and never removed. Beside each is a
-                  sentence describing what the dish became — the part a cook can
-                  act on.
+                  A revision is written when the dish changes, and the version
+                  it replaces is kept. Beside each is a sentence describing what
+                  the dish became — the part a cook can act on.
                 </p>
                 {recipe.revisions.map((entry) => {
                   const viewing = entry.revisionNumber === rev.revisionNumber;

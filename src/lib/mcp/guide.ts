@@ -13,6 +13,24 @@ import 'server-only';
  * idea in each sentence, active voice, and no words that need other words
  * to explain them.
  *
+ * THE SPLIT, AND WHAT DECIDES WHICH HALF A THING GOES IN.
+ * `INSTRUCTIONS_HEAD` is read by a client before its first tool call, and it
+ * is paid for in every conversation whether or not it is used — so it holds
+ * only what an agent must know BEFORE it calls anything, and it holds each
+ * of those as one sentence. `GUIDE` is behind `get_started` and is paid for
+ * once, by an agent that asked, so it holds the explanation.
+ *
+ * The four things the CRUD surface added are split on that rule. The
+ * question that decides between a revision and a correction is in BOTH,
+ * because an agent that never calls `get_started` still has to answer it
+ * before it writes — that is the sentence whose absence costs a history.
+ * The names of the three correction tools, `restore_record` and
+ * `list_deleted` are in the instructions, because a capability an agent does
+ * not know exists is one it works around. Everything else — which tool owns
+ * which record, what a delete takes with it, why a restore is refused, why a
+ * number is never given again — is in `GUIDE.correctingARecord` and
+ * `GUIDE.deletingARecord`, where it costs a call that the agent chose.
+ *
  * ONE PARAGRAPH IS CONDITIONAL. `report_issue` is registered only when
  * `GITHUB_ISSUE_TOKEN` is set, so on a deployment without it — local
  * development, a preview, a fork — instructions that tell an agent to call
@@ -30,12 +48,17 @@ const INSTRUCTIONS_HEAD = `
 Noble Notations is a cooking store that keeps versions.
 
 The most important rule: a recipe has a name that does not change. Its
-ingredients and steps belong to a version. You cannot change a version
-after you make it. To improve a dish, call revise_recipe and give a
-reason. Do not make a second recipe for the same dish.
+ingredients and steps belong to a version. To improve a dish, call
+revise_recipe and give a reason. The old version stays and people can still
+read it. Do not make a second recipe for the same dish.
 
-You cannot delete anything. You cannot edit ingredients or steps. This is
-correct behaviour, not a fault.
+You can correct a record and you can delete one. A delete is not
+destruction: the record stops being visible, and restore_record brings it
+back. Call list_deleted to see the bin.
+
+Ask one question first: did the food change, or is the record wrong? If the
+food changed, call revise_recipe. If the record is wrong, call
+update_recipe, update_revision or update_note.
 
 A write can still replace a list. The categories field holds all the tags
 of a recipe, in every category type. A write that sends this field replaces
@@ -50,7 +73,9 @@ This adds history. It does not change the recipe that people read.
 Two fields were added after the store was full, so two tools fill them on
 a record that is already stored. Call add_mass_flow to say what a dish
 weighs at each stage. Call describe_mechanism to give a science note its
-conditions. Each field is written once. Neither tool changes a value.
+conditions. Each of these two tools writes its field one time. Neither
+replaces a value. To correct a value that is already stored, call
+update_revision or update_note.
 
 Units come from a fixed list. A unit outside it is refused.
 
@@ -90,7 +115,7 @@ export function serverInstructions(
 }
 
 const SCOPES_WITHOUT_REPORTING =
-  'The read tools need the scope noble-notations:read. The nine write ' +
+  'The read tools need the scope noble-notations:read. The fourteen write ' +
   'tools also need noble-notations:write. The system checks the scope on ' +
   'each call.';
 
@@ -100,13 +125,102 @@ const GUIDE = {
     'was made again from the start in each conversation. Now the dish ' +
     'becomes better in steps.',
 
+  /**
+   * The rule, and the sentence that keeps it a rule now that a stored
+   * version can be corrected.
+   *
+   * The old text said "you cannot change a version" and "you cannot delete a
+   * recipe", and both are now false. The danger the old text was defending
+   * against did not go away with it: an agent that corrects a version when
+   * the dish changed overwrites what a person cooked from, and that is the
+   * loss this whole repository exists to prevent. So the defence moves from
+   * a prohibition to a question, and the question is about the FOOD — the
+   * one thing the caller reliably knows.
+   */
   theOneRule:
     'A recipe has a name that does not change. Its ingredients and steps ' +
-    'belong to a version. You cannot change a version after you make it. ' +
-    'Each version records why you made it. To change a recipe, call ' +
-    'revise_recipe and give a reason. Do not make a second recipe for the ' +
-    'same dish. You cannot delete a recipe. You cannot edit ingredients or ' +
-    'steps.',
+    'belong to a version. Each version records why you made it. To improve ' +
+    'a dish, call revise_recipe and give a reason. The old version stays, ' +
+    'and people can still read it. Do not make a second recipe for the same ' +
+    'dish.\n\n' +
+    'Ask one question before you write: did the food change, or is the ' +
+    'record wrong?\n\n' +
+    'If the food changed, call revise_recipe. It adds a version. This is ' +
+    'almost always the answer.\n\n' +
+    'If the record is wrong, correct it. A typo, a wrong number, a version ' +
+    'that two chats wrote twice: these are not new versions of the dish. ' +
+    'They are mistakes in the record. Call update_recipe, update_revision ' +
+    'or update_note.\n\n' +
+    'Do not correct a version because the dish changed. The correction ' +
+    'writes over the version that a person cooked from, and the history of ' +
+    'the dish is gone.',
+
+  /**
+   * The three correction tools, and which record each one owns.
+   *
+   * It says what is NOT here as plainly as what is: an agent looking for
+   * `update_experiment` must find out in one read that `log_experiment` is
+   * that tool, rather than filing a missing-capability report.
+   */
+  correctingARecord:
+    'Six kinds of record can be corrected, and three tools do it.\n\n' +
+    'update_recipe corrects the name, the summary, the tags, the links, the ' +
+    'kind and the status of a recipe. It touches no version. You cannot ' +
+    'change the slug: it is the public address of the recipe.\n\n' +
+    'update_revision corrects a stored version in place. It makes no new ' +
+    'version and it moves no number. Send ingredients, steps or massFlow to ' +
+    'replace a whole list. A list that you leave out stays as it is.\n\n' +
+    'update_note corrects a note, and it can move the note to another ' +
+    'recipe, version, ingredient or run.\n\n' +
+    'The other three records need no new tool. log_experiment, ' +
+    'upsert_ingredient and upsert_category each write the keys that you ' +
+    'send onto the record that is stored. They are already the way to ' +
+    'correct a run, an ingredient and a tag.\n\n' +
+    'No correction asks for a reason. A reason records why a dish changed, ' +
+    'and a correction is the statement that the dish did not change.\n\n' +
+    'A note of kind "correction" is a different thing, and it is still ' +
+    'there. Add one when the old claim must stay readable. Correct the note ' +
+    'itself when the note was never true.',
+
+  /**
+   * Delete, restore and the bin.
+   *
+   * Why the rule changed is worth one sentence here as well as in AGENTS.md:
+   * an agent that believes a delete is final will leave a duplicate in
+   * place, and a duplicate revision is exactly what two chats working in
+   * parallel produce.
+   */
+  deletingARecord:
+    'You can delete a recipe, a version, a note, a run, an ingredient and a ' +
+    'tag. Call delete_record. Name the kind, then say which record.\n\n' +
+    'A delete is not destruction. The record stops being visible: the site ' +
+    'does not show it and the read tools do not return it. The record ' +
+    'itself stays. Call restore_record to bring it back, with the same ' +
+    'arguments.\n\n' +
+    'Delete a duplicate. Delete a record that somebody wrote by mistake. Do ' +
+    'not delete a version because the dish changed: call revise_recipe for ' +
+    'that, and the old version stays where it is.\n\n' +
+    'Give a reason. The bin shows it. It is the only thing that tells the ' +
+    'next reader why the record went.\n\n' +
+    'Some records take others with them. A recipe takes its versions, its ' +
+    'notes and its runs. A version takes its notes. A run takes its notes. ' +
+    'The result names what went with it. One restore brings back the same ' +
+    'set.\n\n' +
+    'A record that somebody deleted on its own, before the record above it ' +
+    'went, keeps its own date and its own reason. It does not come back ' +
+    'with the one above it. Restore it on its own.\n\n' +
+    'You cannot restore a record while the record it belongs to is still ' +
+    'deleted. The refusal names what to restore first.\n\n' +
+    'Call list_deleted to see the bin. Each row gives the kind, a name that ' +
+    'you can read, the date, who deleted it and the reason. Each row also ' +
+    'gives the arguments for restore_record, ready to send.\n\n' +
+    'Two rules keep a number safe. A number is never given again: a deleted ' +
+    'version keeps the number it had, so the address of that version stays ' +
+    'an address that nothing else can take. And a restore does not decide ' +
+    'which version people read. Call update_recipe with ' +
+    'currentRevisionNumber for that.\n\n' +
+    'You cannot delete the only version of a recipe. A recipe with no ' +
+    'version cannot be read. Delete the recipe.',
 
   olderVersions:
     'You can add a version that is older than every version in the store. ' +
@@ -121,13 +235,15 @@ const GUIDE = {
 
   workflow: [
     'Call search_recipes first. Always. Find out if the dish is here.',
-    'If the dish is here, call revise_recipe. Give a reason that says what you changed.',
+    'If the dish is here and the food changed, call revise_recipe. Give a reason that says what you changed.',
     'If the dish is not here, call create_recipe.',
     'If you find a version that is older than every stored version, call backfill_revision.',
     'Call upsert_category for each new tag. This gives the tag an explanation.',
     'Call add_note for each thing that you learned that is not an instruction.',
     'Call log_experiment after you cook a batch and measure it.',
     'Call add_mass_flow or describe_mechanism only for a record that is already stored.',
+    'If the record is wrong and the food did not change, call update_recipe, update_revision or update_note.',
+    'If a record is a duplicate or a mistake, call delete_record and give a reason. Call restore_record if you were wrong.',
     'If a tool does the wrong thing, call report_issue. Send the payload and the response, copied exactly.',
   ],
 
@@ -233,8 +349,10 @@ const GUIDE = {
     'join them with a comma or a dot. The page draws the separators. Keep ' +
     'a range in one value: "4 °C → 71 °C" is one condition, not two.\n\n' +
     'Send conditions to add_note when you write the note. If the note is ' +
-    'already stored, call describe_mechanism. A note states its ' +
-    'conditions once. If they are wrong, add a note of kind "correction".',
+    'already stored, call describe_mechanism. That tool writes the ' +
+    'conditions one time and refuses a second set. If they are wrong, call ' +
+    'update_note. To leave the old claim readable, add a note of kind ' +
+    '"correction".',
 
   /**
    * D-12, R-SCR-39. The figure is optional by requirement, so the text has
@@ -253,7 +371,8 @@ const GUIDE = {
     'The figure belongs to one version, because it records one batch. It ' +
     'is not copied into the next version. Send it again only when you ' +
     'weighed that version. To give a stored version its figure, call ' +
-    'add_mass_flow. A version takes one figure and then refuses another.',
+    'add_mass_flow. A version takes one figure and then refuses another. ' +
+    'To correct a figure that is wrong, call update_revision.',
 
   images:
     'Images are not necessary. Give a web address for each image. This ' +
@@ -270,16 +389,22 @@ const GUIDE = {
 
   /**
    * The count was "six" and the registry held seven, because
-   * `backfill_revision` was added and this line was not. It is nine now —
-   * `add_mass_flow` and `describe_mechanism` — and the number is worth
-   * keeping true: an agent that reads "six" and counts nine has no way to
-   * tell which three it must not trust.
+   * `backfill_revision` was added and this line was not. It is fourteen now
+   * — nine, plus the three corrections and the delete and the restore — and
+   * the number is worth keeping true: an agent that reads "six" and counts
+   * fourteen has no way to tell which eight it must not trust.
+   *
+   * `list_deleted` is a READ and is counted as one. It reports rows the site
+   * does not show, which is why that looks wrong at first glance — but the
+   * read scope already grants an archived recipe, and `ALLOWED_EMAILS`
+   * means one administrator approved every connector that can ask.
    */
   scopes:
-    'The read tools need the scope noble-notations:read. The nine write ' +
-    'tools also need noble-notations:write. The system checks the scope on ' +
-    'each call. report_issue needs no extra scope. Each connector can file ' +
-    'a report.',
+    'The read tools need the scope noble-notations:read. The fourteen write ' +
+    'tools also need noble-notations:write. list_deleted is a read tool, so ' +
+    'it needs the read scope only. The system checks the scope on each ' +
+    'call. report_issue needs no extra scope. Each connector can file a ' +
+    'report.',
 
   /**
    * The short version of this is in SERVER_INSTRUCTIONS too, and that

@@ -295,6 +295,32 @@ IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}
 export DATABASE_URL=postgresql://postgres:nn@$IP:5432/noble_test
 ```
 
+**And if it binds and then refuses every connection.** That is the other
+half, it is worse, and it has now cost two branches an afternoon each. A port
+on this machine can accept `listen()` — `ss -ltn` shows it LISTEN, `pnpm
+start` prints its address and does not fail — and then refuse every
+connection to it with `ECONNREFUSED`. Playwright reports that as
+`Timed out waiting 30000ms from config.webServer`, which reads like a slow
+build, so the suite gets blamed. Ports 3702 and 3712 have both done it;
+3711, 3713, 3716, 3721, 3723 and 3726 have not.
+
+Probe the port before you believe anything that ran on it. Bind a stub, then
+ask it for a page from the outside:
+
+```bash
+PORT=3721
+node -e "require('http').createServer((_,r)=>r.end('ok')).listen($PORT)" &
+STUB=$!
+ss -ltn | grep ":$PORT"                                   # LISTEN either way
+curl -s -o /dev/null -w '%{http_code}\n' \
+  "http://127.0.0.1:$PORT/__health"                        # 200, or nothing
+kill "$STUB"
+```
+
+A `000` with `curl: (7) Failed to connect` means the port is one of the bad
+ones. Pick another. `ss -ltn` alone cannot tell you, because a port that
+refuses every connection is LISTEN too.
+
 ### 5.1 The numbers
 
 | Measured after | End-to-end tests | Blockers | Major | Minor | Page loads |
@@ -304,6 +330,7 @@ export DATABASE_URL=postgresql://postgres:nn@$IP:5432/noble_test
 | M7             | 165              | 0        | 0     | 52    | 176        |
 | `report_issue` | 225              | 0        | 0     | 52    | 176        |
 | coverage       | 416              | 0        | 0     | 52    | 176        |
+| `crud`         | 458              | 0        | 0     | 52    | 176        |
 
 M7 added 20 tests: `e2e/render.spec.ts`, which asserts that 4 conditional
 blocks are drawn on the page and, for 3 of them, that they are absent where
@@ -324,6 +351,26 @@ failure branch, `slugify`, the backfill boundary and the filter's case fold
 had all survived being deleted from the source with the whole suite green.
 A test that a mutation cannot kill is not coverage, and the only way to know
 which ones those are is to try it.
+
+The `crud` row is the branch that gave the connector delete, restore and the
+three `update_*` tools. 416 to 458, in `e2e/mcp-crud.spec.ts`,
+`e2e/data-deleted.spec.ts` and the census that backs both — plus the cases a
+review round added: a concurrent `delete_record`, a steps-only correction
+over a deleted ingredient, a write result that must name no deleted record,
+an edge to a deleted tag surviving a rewrite, and `pnpm ingest` refusing to
+resurrect anything. The audit did not move, and it was measured twice: once
+on a clean database and once on a database holding a deleted record of each
+of the six kinds. `0 / 0 / 52` over 176 page loads both times — a deleted
+record introduces no render or accessibility fault anywhere. The page-load
+figure did not move either; delete adds no route.
+
+**Choose the deleted records off the audit's own route list.** The list holds
+`/science/demi-glace` and five other addresses named after a specific record,
+so deleting `demi-glace` makes the audit report 8 blockers and 8 majors —
+`http-status` and `console-error` on that route at four widths and two states
+each. That is the audit correctly reporting a 404 on a route whose subject
+was removed, not a fault in the page. Delete `pickled-jalapenos` instead and
+the figure is the baseline.
 
 **The audit columns still did not move, and that is the point of quoting
 them here.** Nineteen new spec files, five changed source files and not one
@@ -456,3 +503,62 @@ runs that did, printed under a label claiming all of them.
 
 **It becomes drawable the moment a run records a final weight.** It needs
 data, not a build.
+
+### 6.8 `recipes.search_vector` is stale for weight D on 5 of 6 seeded recipes
+
+`drizzle/0001_search_indexes.sql` folds ingredient names into weight D. Five
+of the six seeded recipes carry **no** weight-D lexeme at all — only
+`baumy-biltong` has any — so a free-text search for an ingredient name
+matches almost nothing it should.
+
+The cause is the trigger, not the data. `trg_recipes_search_vector` is a
+`BEFORE` trigger and `recipe_search_vector` reads `FROM recipes r`, so during
+`createRecipe`'s closing `SET current_revision_id` the function still sees
+the table's old NULL pointer and the weight-D half comes out empty. Migration
+`0007`'s replacement behaves the same way; it changed which rows the function
+skips, not where it reads the pointer from.
+
+It surfaced on `feat/crud` and that branch is not the cause. `deleteRecord`
+and `restoreRecord` call `refresh_recipe_search_vector` for every recipe
+carrying a tag or an ingredient that just changed state, which is the first
+code in this repository that ever re-runs the function — so it repairs the
+stale vector as a side effect. Measured: a delete of an unrelated tag and the
+matching restore leave all 718 content rows byte-identical except one
+`search_vector`, which **gains** 19 weight-D lexemes it should have had all
+along. That repair is correct and the route to it is not.
+
+**The fix is in the trigger, and it is a migration, not a branch.** Either
+have `recipe_search_vector` compute against `NEW.current_revision_id` rather
+than re-reading the table, or have `createRecipe` and `reviseRecipe` call
+`refresh_recipe_search_vector` once the pointer is set. Then backfill every
+row. Until one of those lands, a delete and a restore are not quite
+state-identical, and the one line that differs is this repair.
+
+### 6.9 A corrected revision is not marked as corrected
+
+`update_revision` writes `recipe_revisions.updated_at` — verified: correcting
+a title and a rationale moves it off `created_at`, and `recipes.updated_at`
+with it, so the sitemap's `lastmod` moves. **Nothing reads it.**
+`RecipeView.revision` and each history entry both carry `createdAt` and no
+`updatedAt`, and `recipeToMarkdown` carries neither — so `/recipes/<slug>.md`,
+`pnpm export` and `content/generated/` all present a corrected version as an
+original. `mcp_audit_log` records that the call happened and logs identifying
+primitives only, and by this repository's own argument nothing reads that
+table.
+
+The consequence worth naming: `experiments.revision_id` is a hard pointer, so
+a batch log reads whatever its revision says **now**. Correct revision 3's
+amounts today and `/batch-logs/biltong-batch-3` presents the corrected
+amounts as what that batch cooked, with nothing saying the version moved
+after the run. The branch already built the vocabulary for the neighbouring
+case — a deleted version reads _withdrawn_ — so the asymmetry is visible: a
+version that was removed is announced, a version that was rewritten is not.
+
+**It is recorded rather than built, because it is a change to the design.**
+The owner asked for CRUD and did not ask for a marker, and the design draws
+no such slot. The cheapest honest version surfaces the fact that already
+exists: add `updatedAt` to the history entry in `read.ts` and have
+`src/components/f/revision.tsx` print "corrected &lt;date&gt;" when
+`updatedAt > createdAt`, in the slot the "Recorded later" badge uses. No
+schema change — the column is written and migration `0007` backfilled it to
+`created_at`. It belongs to the designer first.

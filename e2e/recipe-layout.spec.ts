@@ -101,7 +101,13 @@ test.describe('agent onboarding', () => {
     }>('get_started', {});
 
     expect(guide.theOneRule).toMatch(/revise_recipe/);
-    expect(guide.theOneRule).toMatch(/cannot change a version/i);
+    // THIS LINE USED TO READ `/cannot change a version/i`, and that sentence
+    // is now false: `update_revision` exists. The prohibition became a
+    // question, and the question is the part an agent has to answer before
+    // it writes — both calls are valid, so nothing downstream can catch the
+    // wrong pick.
+    expect(guide.theOneRule).toMatch(/did the food change/i);
+    expect(guide.theOneRule).toMatch(/update_revision/);
     expect(guide.workflow[0]).toMatch(/search_recipes/);
 
     // The distinction the note kinds exist to make.

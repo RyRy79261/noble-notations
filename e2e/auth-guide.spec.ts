@@ -80,6 +80,22 @@ function enumOf(tool: AdvertisedTool, field: string): string[] {
   return values!;
 }
 
+/**
+ * The guide as one piece of text, the way a model reads it.
+ *
+ * The guide is an object of strings, arrays and nested objects, and the
+ * checks below are about the words in it. Serialising it to JSON instead
+ * would put backslash escapes through the middle of those words.
+ */
+function flatten(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return value.map(flatten).join('\n');
+  if (value && typeof value === 'object') {
+    return Object.values(value).map(flatten).join('\n');
+  }
+  return String(value ?? '');
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // 1. The instructions — the first thing a client reads
 // ─────────────────────────────────────────────────────────────────────────
@@ -90,11 +106,34 @@ test('the instructions state the rule the whole repository is built on', async (
   // for one dish is the exact failure this project exists to stop. That
   // sentence has to be in the text a client reads BEFORE its first tool
   // call, not only in the guide behind a tool it may never call.
-  const instructions = await serverInstructions();
+  // Whitespace is collapsed before the phrase matches below. The
+  // instructions are a template literal with real line breaks in it, so a
+  // sentence that gets re-wrapped by a later edit would otherwise fail a
+  // test about its meaning — which has happened once on this very phrase.
+  const instructions = (await serverInstructions()).replace(/\s+/g, ' ');
 
   expect(instructions).toContain('revise_recipe');
-  expect(instructions).toMatch(/cannot change a version/i);
-  expect(instructions).toMatch(/cannot delete/i);
+
+  // THIS PAIR OF LINES USED TO READ `/cannot change a version/` AND
+  // `/cannot delete/`, AND BOTH SENTENCES ARE NOW FALSE. They are replaced
+  // rather than deleted, because the line is the tripwire that caught the
+  // drift: a promise about what the connector CANNOT do is a claim about
+  // every tool that will ever be registered, and this repository has now had
+  // one age badly twice.
+  //
+  // What replaces them is the question that carries the defence the
+  // prohibition was giving. `revise_recipe` and `update_revision` are both
+  // valid calls, so no refusal can catch the wrong pick — an agent that
+  // corrects a version when the dish changed writes over what a person
+  // cooked from. The sentence has to be in the text a client reads BEFORE
+  // its first tool call, not only in the guide behind a tool it may never
+  // call.
+  expect(instructions).toMatch(/did the food change/i);
+  expect(instructions).toContain('update_revision');
+  expect(instructions).toContain('restore_record');
+  // A capability an agent does not know exists is one it works around, so
+  // the bin is named too.
+  expect(instructions).toContain('list_deleted');
   // The two write paths that are easy to confuse with editing, and the two
   // fill-once tools, are named where an agent will see them.
   expect(instructions).toContain('backfill_revision');
@@ -133,7 +172,12 @@ test('the guide and the instructions name only tools that exist', async () => {
 
   const sources: [string, string][] = [
     ['the server instructions', await serverInstructions()],
-    ['get_started', JSON.stringify(guide)],
+    // The guide's TEXT, not its JSON. `JSON.stringify` turns every newline
+    // into the two characters `\` and `n`, and the word-boundary match then
+    // reads a tool name at the start of a line as `nupdate_recipe` — a name
+    // no registry carries, reported as drift that is not there. Flattening
+    // the values matches what a model actually reads.
+    ['get_started', flatten(guide)],
     ...advertised.map((tool): [string, string] => [
       `the description of ${tool.name}`,
       tool.description ?? '',
@@ -172,6 +216,12 @@ test('every section of the guide is present and says something', async () => {
     'ingredients',
     'mechanismConditions',
     'massFlow',
+    // The two the CRUD surface added. Which tool owns which record, what a
+    // delete takes with it, why a restore is refused and why a number is
+    // never given again all live here rather than in the instructions,
+    // because they cost a call the agent chose to make.
+    'correctingARecord',
+    'deletingARecord',
     'images',
     'shoppingList',
     'scopes',
@@ -297,6 +347,10 @@ const CALLS: Record<string, Record<string, unknown>> = {
   get_experiment: { slug: 'biltong-batch-3' },
   build_shopping_list: { slugs: ['baumy-biltong'] },
   get_repository_stats: {},
+  // The bin is a READ. A caller that can delete already sees what it deleted
+  // in the delete's own result; the value of this tool is to the caller that
+  // arrives afterwards and has to find out what is missing and why.
+  list_deleted: { limit: 1 },
 
   // Neither scope.
   report_issue: {
@@ -337,6 +391,14 @@ const CALLS: Record<string, Record<string, unknown>> = {
     parentSlug: 'no-such-parent-for-the-scope-sweep',
   },
   log_experiment: { title: 'A scope sweep', revisionNumber: 1 },
+  update_recipe: { slug: GHOST, title: 'A sweep that must not write.' },
+  update_revision: { slug: GHOST, revisionNumber: 1, servings: 1 },
+  update_note: {
+    noteId: '00000000-0000-0000-0000-000000000000',
+    body: 'A sweep that must not write.',
+  },
+  delete_record: { kind: 'recipe', slug: GHOST },
+  restore_record: { kind: 'recipe', slug: GHOST },
 };
 
 const WRITE_TOOLS = [
@@ -349,6 +411,11 @@ const WRITE_TOOLS = [
   'upsert_ingredient',
   'upsert_category',
   'log_experiment',
+  'update_recipe',
+  'update_revision',
+  'update_note',
+  'delete_record',
+  'restore_record',
 ];
 
 /** English for a count, because the guide writes the number in words. */
@@ -359,6 +426,8 @@ const IN_WORDS: Record<number, string> = {
   10: 'ten',
   11: 'eleven',
   12: 'twelve',
+  13: 'thirteen',
+  14: 'fourteen',
 };
 
 test('a read-only token is refused every write tool and no other', async () => {

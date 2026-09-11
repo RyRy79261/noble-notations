@@ -1653,6 +1653,438 @@ export type LogExperimentArgs = z.input<typeof logExperimentSchema>;
 export type LogExperimentInput = z.infer<typeof logExperimentSchema>;
 
 // ─────────────────────────────────────────────────────────────────────────
+// Correcting a record, and taking one out
+//
+// One question separates these tools from `revise_recipe`, and it is written
+// into every description that touches them: DID THE FOOD CHANGE, OR IS THE
+// RECORD WRONG? A dish that changed gets a revision — a new version, the old
+// one kept, a rationale saying why. A record that is wrong gets a correction
+// — no new version, no number moved, no reason required, because a rationale
+// is the record of why the dish changed and an update is the statement that
+// it did not.
+//
+// The third case is the one that made this branch: two chats writing the same
+// revision twice. That duplicate is not a version. It is a data-entry
+// accident, and a rule that preserves it is protecting a mistake.
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * The six records that can be deleted and restored.
+ *
+ * Every record an agent can create is here. The CHILDREN are deliberately not:
+ * an ingredient line, a step, a note source, a mass flow stage, an experiment
+ * item and an observation have no delete of their own and no `deleted_at`
+ * column. A caller removes one by sending the parent's list without it, which
+ * is already the only shape the write layer has — `writeRevisionBody` takes
+ * whole lists, `applyTaxonomy` and `applyLinks` delete and rewrite, and
+ * `logExperiment` replaces items and observations as a pair. Two more reasons
+ * are in `src/db/schema.ts`: a child's `position` is an ordinal under a unique
+ * index, so removing line 3 of 6 either leaves a hole or renumbers rows nobody
+ * addressed; and `checkStepReferences` and `checkCarriedUses` both decide a
+ * step's binding by counting how many lines answer to a name, so a per-line
+ * delete would silently re-point a step at the survivor — the 400 g/40 g
+ * defect, reopened.
+ */
+export const DELETABLE_KINDS = [
+  'recipe',
+  'revision',
+  'note',
+  'experiment',
+  'ingredient',
+  'tag',
+] as const;
+export type DeletableKind = (typeof DELETABLE_KINDS)[number];
+
+/** How each kind may be addressed, in the words the refusal uses. */
+const RECORD_ADDRESS_FORMS: Record<DeletableKind, string> = {
+  recipe: 'an `id`, or a `slug`',
+  revision: 'an `id`, or a `slug` with a `revisionNumber`',
+  note: 'an `id`',
+  experiment: 'an `id`, or a `slug`',
+  ingredient: 'an `id`, or a `slug`',
+  tag: 'an `id`, or a `slug` with a `categoryType`',
+};
+
+/**
+ * How a caller names one record. Shared by `delete_record` and
+ * `restore_record`, so the two are addressed the same way and a row out of
+ * `list_deleted` can be sent straight back to the restore.
+ */
+export const recordAddressShape = {
+  kind: z
+    .enum(DELETABLE_KINDS)
+    .describe('Which kind of record this is. Then say which one.'),
+  /**
+   * `z.guid()` and not `z.uuid()`, for the reason `describeMechanismShape`
+   * gives: the strict form also checks the version and variant nibbles, and
+   * this is an id that was READ from the repository rather than invented by
+   * the caller. Refusing a value the database handed out would be a fault in
+   * the tool, not in the caller.
+   */
+  id: z
+    .guid()
+    .optional()
+    .describe('The id of the record. Works for every kind.'),
+  slug: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe('The slug of a recipe, a run or an ingredient, or of a tag.'),
+  revisionNumber: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe('With `slug`, for a version.'),
+  categoryType: z
+    .enum(CATEGORY_TYPES)
+    .optional()
+    .describe('With `slug`, for a tag.'),
+};
+
+/**
+ * The address table in §8, enforced at run time.
+ *
+ * A field that does not belong to the kind is refused rather than ignored.
+ * Dropping it silently is how "the argument was discarded" reports get
+ * filed — `upsertCategory` has one already — and here the cost of guessing
+ * is a caller who thinks it deleted revision 3 and deleted the recipe.
+ */
+function checkRecordAddress(
+  value: {
+    kind: DeletableKind;
+    id?: string;
+    slug?: string;
+    revisionNumber?: number;
+    categoryType?: CategoryType;
+  },
+  ctx: z.RefinementCtx,
+): void {
+  const form = RECORD_ADDRESS_FORMS[value.kind];
+  const refuse = (message: string, path?: string[]) =>
+    ctx.addIssue({
+      code: 'custom',
+      ...(path ? { path } : {}),
+      message: `${message} Name a ${value.kind} by ${form}.`,
+    });
+
+  const needsNumber = value.kind === 'revision';
+  const needsType = value.kind === 'tag';
+
+  if (value.id) {
+    if (value.slug) {
+      refuse('Give an `id` or a `slug`, not both.', ['slug']);
+      return;
+    }
+    // An id is the whole address. A qualifier beside it either agrees with
+    // the row, in which case it says nothing, or disagrees with it, in which
+    // case one of the two is the caller's real intent and nothing here can
+    // tell which.
+    if (value.revisionNumber != null) {
+      refuse('`revisionNumber` does not go with an `id`.', ['revisionNumber']);
+    }
+    if (value.categoryType) {
+      refuse('`categoryType` does not go with an `id`.', ['categoryType']);
+    }
+    return;
+  }
+
+  if (!value.slug) {
+    refuse('This names no record.', ['id']);
+    return;
+  }
+
+  if (value.kind === 'note') {
+    refuse('A note has no slug.', ['slug']);
+    return;
+  }
+
+  if (needsNumber && value.revisionNumber == null) {
+    refuse('A `slug` alone does not say which version.', ['revisionNumber']);
+  }
+  if (!needsNumber && value.revisionNumber != null) {
+    refuse(`A ${value.kind} takes no \`revisionNumber\`.`, ['revisionNumber']);
+  }
+  if (needsType && !value.categoryType) {
+    refuse('A tag slug is only unique inside its category type.', [
+      'categoryType',
+    ]);
+  }
+  if (!needsType && value.categoryType) {
+    refuse(`A ${value.kind} takes no \`categoryType\`.`, ['categoryType']);
+  }
+}
+
+export const deleteRecordShape = {
+  ...recordAddressShape,
+  /**
+   * Optional, and stored. A delete here is reversible, so demanding a reason
+   * would be the same friction the owner refused on the update tools, for a
+   * smaller payoff — but `list_deleted` prints it, and it is the only thing
+   * that tells the next reader why a record went.
+   */
+  reason: z
+    .string()
+    .max(500)
+    .nullish()
+    .describe(
+      'Why this record went. The bin shows it. Give one: it is the only ' +
+        'thing that tells the next reader why.',
+    ),
+};
+
+export const deleteRecordSchema = z
+  .object(deleteRecordShape)
+  .superRefine(checkRecordAddress);
+export type DeleteRecordArgs = z.input<typeof deleteRecordSchema>;
+export type DeleteRecordInput = z.infer<typeof deleteRecordSchema>;
+
+export const restoreRecordShape = { ...recordAddressShape };
+
+export const restoreRecordSchema = z
+  .object(restoreRecordShape)
+  .superRefine(checkRecordAddress);
+export type RestoreRecordArgs = z.input<typeof restoreRecordSchema>;
+export type RestoreRecordInput = z.infer<typeof restoreRecordSchema>;
+
+export const listDeletedShape = {
+  kind: z.enum(DELETABLE_KINDS).optional().describe('Show one kind only.'),
+  limit: z.number().int().min(1).max(200).optional(),
+  offset: z.number().int().min(0).optional(),
+};
+export const listDeletedSchema = z.object(listDeletedShape);
+export type ListDeletedArgs = z.input<typeof listDeletedSchema>;
+export type ListDeletedInput = z.infer<typeof listDeletedSchema>;
+
+/**
+ * Correct the record of a recipe. Touches no version and makes none.
+ *
+ * **`kind` and `status` are declared fresh rather than taken from
+ * `recipeBodyShape`.** Those two carry `.default('recipe')` and
+ * `.default('active')`, which is right on a create and would be a silent
+ * write here: a call correcting a typo in the title would also set the kind
+ * back to `recipe` and un-archive the recipe. Every field on this tool has to
+ * mean "leave it alone" when it is absent.
+ *
+ * **The slug is not in the list, and that is not immutability.** It is the
+ * public address of the recipe, there is no redirect table, and the nine
+ * redirects in `next.config.ts` are hand-written. Renaming it would 404 every
+ * external link to the recipe, silently.
+ */
+export const updateRecipeShape = {
+  slug: z
+    .string()
+    .min(1)
+    .max(120)
+    .describe(
+      'Which recipe to correct. The slug itself cannot be changed: it is ' +
+        'the public address of the recipe.',
+    ),
+  title: recipeBodyShape.title.optional(),
+  subtitle: recipeBodyShape.subtitle,
+  summary: recipeBodyShape.summary,
+  kind: z.enum(RECIPE_KINDS).optional(),
+  status: z
+    .enum(RECIPE_STATUSES)
+    .optional()
+    .describe(
+      'draft hides it from listings; archived keeps the URL but retires it',
+    ),
+  categories: recipeBodyShape.categories,
+  links: recipeBodyShape.links,
+  originNote: recipeBodyShape.originNote,
+  heroImageUrl: recipeBodyShape.heroImageUrl,
+  heroImageAlt: recipeBodyShape.heroImageAlt,
+  /**
+   * Move the recipe to another stored version. Every version stays; this
+   * decides which one people read.
+   *
+   * It is here because a restore deliberately does not move the pointer back:
+   * restoring a version returns it to the history, and what people read is a
+   * separate decision that somebody has to state.
+   */
+  currentRevisionNumber: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe(
+      'Move the recipe to this stored version. People then read it. Every ' +
+        'version stays.',
+    ),
+};
+
+/** The fields of `update_recipe` that are not the address. */
+const UPDATE_RECIPE_FIELDS = Object.keys(updateRecipeShape).filter(
+  (key) => key !== 'slug',
+);
+
+export const updateRecipeSchema = z
+  .object(updateRecipeShape)
+  .superRefine((value, ctx) => {
+    requireSomethingToDo(value, UPDATE_RECIPE_FIELDS, ctx, 'recipe');
+  });
+export type UpdateRecipeArgs = z.input<typeof updateRecipeSchema>;
+export type UpdateRecipeInput = z.infer<typeof updateRecipeSchema>;
+
+/**
+ * An update that names no field is a call that meant something else.
+ *
+ * Accepting it would write `updated_at` and report success, and the caller
+ * would read that as "the correction landed". The refusal names the tool that
+ * does what an empty update usually meant.
+ */
+function requireSomethingToDo(
+  value: Record<string, unknown>,
+  fields: string[],
+  ctx: z.RefinementCtx,
+  what: string,
+): void {
+  if (fields.some((field) => value[field] !== undefined)) return;
+  ctx.addIssue({
+    code: 'custom',
+    message:
+      `This names a ${what} and no field to correct, so it would change ` +
+      `nothing. Give at least one field. If the dish changed rather than ` +
+      'the record being wrong, call revise_recipe.',
+  });
+}
+
+/**
+ * Correct a version that is already stored, in place.
+ *
+ * `occurredAt` is editable here and carries none of `backfill_revision`'s
+ * "earlier than everything stored" rule. That rule exists to stop a backfill
+ * being used as a revise — it mints a version and must not be able to mint a
+ * current one. This creates nothing and moves no pointer, so it cannot do
+ * that, and a backfill dated wrong is exactly the data-entry accident this
+ * tool is for. The history re-orders, and the description says so.
+ */
+export const updateRevisionShape = {
+  slug: z.string().min(1).max(120).describe('Which recipe.'),
+  revisionNumber: z
+    .number()
+    .int()
+    .positive()
+    .describe('Which version of it. This number never changes.'),
+  title: recipeBodyShape.title.optional(),
+  summary: recipeBodyShape.summary,
+  rationale: z
+    .string()
+    .max(4000)
+    .nullish()
+    .describe('Why the version exists. Correct it; you need not give one.'),
+  yieldQuantity: recipeBodyShape.yieldQuantity,
+  yieldUnit: recipeBodyShape.yieldUnit,
+  servings: recipeBodyShape.servings,
+  totalTimeMinutes: recipeBodyShape.totalTimeMinutes,
+  activeTimeMinutes: recipeBodyShape.activeTimeMinutes,
+  occurredAt: z
+    .string()
+    .nullish()
+    .describe(
+      'When this version existed, as an ISO 8601 date or date-time. The ' +
+        'history is ordered by it, so it re-orders. A date before the day ' +
+        'the version was written down also marks the version "Recorded ' +
+        'later" on the recipe page. Send null to say the version existed ' +
+        'when it was written.',
+    ),
+  ingredients: recipeBodyShape.ingredients,
+  steps: recipeBodyShape.steps,
+  /** An explicit `null` removes the figure. Omitted leaves it alone. */
+  massFlow: massFlowSchema
+    .nullish()
+    .describe('Replaces the stored figure. Send null to remove it.'),
+};
+
+const UPDATE_REVISION_FIELDS = Object.keys(updateRevisionShape).filter(
+  (key) => key !== 'slug' && key !== 'revisionNumber',
+);
+
+export const updateRevisionSchema = z
+  .object(updateRevisionShape)
+  .superRefine((value, ctx) => {
+    requireSomethingToDo(value, UPDATE_REVISION_FIELDS, ctx, 'version');
+    if (
+      value.occurredAt != null &&
+      Number.isNaN(Date.parse(value.occurredAt))
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['occurredAt'],
+        message: `"${value.occurredAt}" is not a date this can read. Use ISO 8601, such as 2024-03-17.`,
+      });
+    }
+    // The same rule, in the same place, for the same reason `reviseRecipe`
+    // states it: only a call that sends BOTH lists can be cross-checked here.
+    // A call that replaces one list and leaves the other is checked at write
+    // time by `checkCarriedUses`, which has the stored half in hand.
+    if (value.ingredients && value.steps) checkStepReferences(value, ctx);
+    if (value.massFlow) {
+      checkMassFlowStages(value.massFlow.stages, ctx, ['massFlow', 'stages']);
+    }
+  });
+export type UpdateRevisionArgs = z.input<typeof updateRevisionSchema>;
+export type UpdateRevisionInput = z.infer<typeof updateRevisionSchema>;
+
+/**
+ * Correct a note that is already stored.
+ *
+ * The four subject fields move the note to another subject. They follow
+ * `addNoteShape`'s rule — at most one, and `revisionNumber` only beside
+ * `recipeSlug` — because `note_has_exactly_one_subject` is a check constraint
+ * and a violation of it reaches the caller as a database error rather than as
+ * a sentence it can act on.
+ */
+export const updateNoteShape = {
+  noteId: z
+    .guid()
+    .describe('The id of the note. get_recipe gives it for every note.'),
+  kind: noteSchema.shape.kind.optional(),
+  title: noteSchema.shape.title.nullish(),
+  body: noteSchema.shape.body.optional(),
+  conditions: noteSchema.shape.conditions,
+  sources: noteSchema.shape.sources,
+  recipeSlug: z.string().max(120).optional(),
+  ingredientSlug: z.string().max(120).optional(),
+  experimentSlug: z.string().max(120).optional(),
+  revisionNumber: z.number().int().positive().optional(),
+};
+
+const UPDATE_NOTE_FIELDS = Object.keys(updateNoteShape).filter(
+  (key) => key !== 'noteId',
+);
+
+export const updateNoteSchema = z
+  .object(updateNoteShape)
+  .superRefine((value, ctx) => {
+    requireSomethingToDo(value, UPDATE_NOTE_FIELDS, ctx, 'note');
+    const subjects = [
+      value.recipeSlug,
+      value.ingredientSlug,
+      value.experimentSlug,
+    ].filter(Boolean);
+    if (subjects.length > 1) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'A note hangs off one subject. Give at most one of recipeSlug, ' +
+          'ingredientSlug or experimentSlug.',
+      });
+    }
+    if (value.revisionNumber != null && !value.recipeSlug) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['revisionNumber'],
+        message: 'revisionNumber only applies together with recipeSlug.',
+      });
+    }
+  });
+export type UpdateNoteArgs = z.input<typeof updateNoteSchema>;
+export type UpdateNoteInput = z.infer<typeof updateNoteSchema>;
+
+// ─────────────────────────────────────────────────────────────────────────
 // Search
 // ─────────────────────────────────────────────────────────────────────────
 

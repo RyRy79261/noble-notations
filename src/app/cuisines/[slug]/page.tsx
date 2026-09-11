@@ -250,8 +250,8 @@ export default async function CuisinePage({ params }: Params) {
         <Notice title="A cuisine is set once and never changes">
           A recipe keeps its name and its cuisine for the whole of its life.
           Everything else — the wash, the dredge, the timings — belongs to a
-          revision and may be revised. Nothing is edited in place; a new
-          revision is written and the old one is kept.
+          revision and may be revised. A change to the dish writes a new
+          revision, and the version it replaces is kept.
         </Notice>
 
         {/* C-09 and R-CMP-05: nothing at all when the cuisine is flat.

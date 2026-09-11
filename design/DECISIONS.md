@@ -8,20 +8,21 @@ Each entry says what I chose, why, and what to do to change it.
 The build is complete. This table is the state of each decision after M7.
 An entry that a later milestone settled says so in place.
 
-| ID   | Decision                                                | State after M7                                                                       |
-| ---- | ------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| D-01 | The address of a batch log with no recipe               | Built in M2. Two routes, one canonical address for each run.                         |
-| D-02 | The conditions on a mechanism block                     | Option A built in M5.5. M6 fixed the drawing and seeded 9 notes. **Met, and drawn.** |
-| D-03 | The old stylesheet stays until M7                       | **Done. M7 deleted the file, the layer and the bridge, and turned preflight on.**    |
-| D-04 | The rename reaches the page copy in M2                  | Built in M2.                                                                         |
-| D-05 | What "Applied in" means, and what counts as a study     | Built in M2. M6 seeded the 4 missing demi-glace mechanisms.                          |
-| D-06 | One file per design component, or one file per family   | Held for the whole build. 25 files carry 36 design names.                            |
-| D-07 | The page foot's left slot is a document issue           | Built in M3. M6 gave each screen its own effectivity through `src/app/@foot/`.       |
-| D-08 | An explanation on a tag requires a term page            | Built in M3. The unreachable shape is not representable.                             |
-| D-09 | The bridge carries colour, not the faces or the radius  | **Done. The bridge is gone. M7 deleted it with the stylesheet it fed.**              |
-| D-10 | The body link is an underline                           | Built in M4.                                                                         |
-| D-11 | A card summary is not cut at 160 characters             | Built in M4. C-05 of the specification is corrected in §20.7.                        |
-| D-12 | Three things the design draws that the data cannot fill | The figure is built. The other two stay out. **The 360 readout is still open.**      |
+| ID   | Decision                                                             | State after M7                                                                       |
+| ---- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| D-01 | The address of a batch log with no recipe                            | Built in M2. Two routes, one canonical address for each run.                         |
+| D-02 | The conditions on a mechanism block                                  | Option A built in M5.5. M6 fixed the drawing and seeded 9 notes. **Met, and drawn.** |
+| D-03 | The old stylesheet stays until M7                                    | **Done. M7 deleted the file, the layer and the bridge, and turned preflight on.**    |
+| D-04 | The rename reaches the page copy in M2                               | Built in M2.                                                                         |
+| D-05 | What "Applied in" means, and what counts as a study                  | Built in M2. M6 seeded the 4 missing demi-glace mechanisms.                          |
+| D-06 | One file per design component, or one file per family                | Held for the whole build. 25 files carry 36 design names.                            |
+| D-07 | The page foot's left slot is a document issue                        | Built in M3. M6 gave each screen its own effectivity through `src/app/@foot/`.       |
+| D-08 | An explanation on a tag requires a term page                         | Built in M3. The unreachable shape is not representable.                             |
+| D-09 | The bridge carries colour, not the faces or the radius               | **Done. The bridge is gone. M7 deleted it with the stylesheet it fed.**              |
+| D-10 | The body link is an underline                                        | Built in M4.                                                                         |
+| D-11 | A card summary is not cut at 160 characters                          | Built in M4. C-05 of the specification is corrected in §20.7.                        |
+| D-12 | Three things the design draws that the data cannot fill              | The figure is built. The other two stay out. **The 360 readout is still open.**      |
+| D-13 | Delete is soft, it is called delete, and the flag goes down the tree | Decided by the owner, built on `feat/crud`. Six tables, six views, one event id.     |
 
 Two things are still open at the end of the build, and
 `design/BUILD-PLAN.md` §6 carries both:
@@ -761,3 +762,102 @@ Two things look absent on the seeded site and are correct:
 - **The literature block** on Baumy Biltong. That recipe cites nothing.
   R-SCR-38 says the block is absent then. Demi-Glace cites four works and
   draws it.
+
+---
+
+## D-13 — Delete is soft, it is called delete, and the flag goes down the tree
+
+**Status:** Decided by the repository owner. Built on `feat/crud`.
+**Date:** 2026-09-11
+**Touches:** AGENTS.md § _Delete is soft, and it is called delete_,
+`docs/mcp-connector.md` § _Delete, restore and the bin_, migration `0007`
+
+### The problem
+
+The connector could create and it could not correct. The rule was that
+nothing is deleted and nothing is edited in place, and that rule was
+defending the right thing at the wrong target: the purpose here is an
+**accurate history**, not an immutable record, and the two only agree while
+every row was written on purpose.
+
+They stop agreeing the moment two chats write the same revision, which is a
+thing that happens — this is a connector several conversations hold at once.
+The second row is not a version of the dish, because the dish did not change
+between them. It is a data-entry accident, and a rule that preserves it is
+protecting a mistake: the history then says a person cooked something twice
+when they cooked it once.
+
+### What I chose
+
+Full CRUD, and a delete that is **soft**. The row stays, it stops being
+visible, and `restore_record` brings it back. Four columns —`deleted_at`,
+`deleted_by`, `deleted_reason`, `deleted_event_id` — on the six tables that
+hold a record somebody can address: recipes, revisions, notes, experiments,
+ingredients and tags. Children and link tables carry no flag, because their
+lifetime is their parent's and every read reaches them through it.
+
+Three things follow, and each is the reason the design is shaped this way:
+
+1. **It is called delete, not archive.** Three things in this repository
+   already carry that word — the `/archive` route, `status: 'archived'` on a
+   recipe, and the frozen `content/` Markdown — and each means something
+   different. A fourth meaning makes all four unreadable. A caller says
+   delete; the row survives; restore brings it back.
+2. **One delete mints one event id and writes it to every row it touches.**
+   A restore clears by that id. Every UPDATE carries `deleted_at IS NULL`, so
+   a row deleted earlier on its own is skipped, keeps its own stamp, and is
+   not brought back by its parent's restore. The restore never has to know
+   the tree. The addressed row is also taken `FOR UPDATE`: two connectors
+   deleting one record under READ COMMITTED both read it live, and without
+   the lock the loser's event id landed on the root while the winner's stayed
+   on the children — a restore then brought back the root alone. Locking the
+   addressed row is not the whole of it: two calls deleting two DIFFERENT
+   revisions of one recipe disagree about a third row, `recipes`, so the
+   pointer is read under `FOR UPDATE` on that row too. The order is
+   **`recipes` last** for every writer but a delete or a restore addressing a
+   recipe, and those two take a per-recipe advisory lock before any row lock
+   so the one pair of opposite orders cannot interleave.
+3. **A delete does not renumber and does not leave a recipe versionless.**
+   Revision numbers are in public URLs and in the browser's ticked-ingredient
+   key, and renumbering does not 404 — it serves a _wrong_ page silently. So a
+   deleted number is retired and never reissued, and deleting the current
+   revision moves the pointer to the newest survivor by the order the history
+   already uses. Deleting the only revision is refused.
+
+The read side is three layers: six `*_live` views that `read.ts` selects from
+and nothing else; an ESLint import ban scoped to that file, because a helper
+can be left out and an import ban cannot; and a census in the end-to-end
+suite that calls every exported read and fails when a new one is not in its
+table. The write side is one rule — a write that names a deleted row **by its
+own key** restores it when the tool is an upsert and refuses when the tool
+appends or corrects.
+
+### The other option
+
+Two narrow tools instead: something like `withdraw_revision` and
+`merge_duplicate`, each doing one job and nothing else.
+
+It was offered and the owner turned it down, and the reasoning holds up: a
+narrow tool answers the accident that has already been seen and nothing else.
+Every record an agent can create is a record it can get wrong, and a
+connector that can write six kinds and correct two makes the other four
+permanent by omission. The bounded risk of the generic form is blast radius —
+`delete_record` is easier to call by accident than `delete_tag` would be — and
+that is bounded by construction rather than by hoping: every delete is soft,
+the result names every record that went with it, `list_deleted` is the bin,
+and one call puts it back.
+
+A **hard** delete was never a candidate. It frees a revision number for the
+next revise to take, and an old bookmark then points quietly at a different
+version.
+
+### To change it
+
+The flag is `deleted_at` on six tables in `src/db/schema.ts` and the views
+beside it; `deleteRecord` and `restoreRecord` in `src/lib/queries/write.ts`
+are the whole mechanism; `src/lib/queries/deleted.ts` is the bin. To take the
+tools away, unregister `delete_record`, `restore_record` and the three
+`update_*` tools in `src/lib/mcp/tools.ts` — the columns and the views can
+stay, and a site whose reads all go through the views does not notice.
+
+Do **not** make a delete hard without reading point 3 above first.

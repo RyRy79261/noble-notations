@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { useAnnounce } from '@/lib/announce';
-import { formatQuantity } from '@/lib/domain/units';
+import { formatQuantity, unresolvedLineNeeds } from '@/lib/domain/units';
 import type { IngredientLineView } from '@/lib/queries/read';
 import { CATEGORY_LABELS, categoryRank } from '@/lib/site';
 import { cn } from '@/lib/utils';
@@ -481,19 +481,52 @@ export function IngredientChecklist({
                   screen reader should still say how many. */}
               <div role="list" className="flex w-full flex-col items-start">
                 {group.items.map(({ line, reference }) => {
+                  /*
+                   * A LINE THAT NAMES NO CANONICAL INGREDIENT DRAWS ITS OWN
+                   * TEXT AND NOTHING ELSE.
+                   *
+                   * `raw_text` is the line AS IT WAS WRITTEN — the amount,
+                   * the unit and the preparation are all inside it — so
+                   * drawing the amount column beside it reads
+                   * `10 pod` `10 pod Star anise`. The archive has no
+                   * unresolved line, which is why that was never seen. Soft
+                   * delete makes the state reachable: deleting an ingredient
+                   * leaves every line that named it on its revision and the
+                   * line degrades to its own text, which is what keeps the
+                   * recipe cookable while nothing links at a record that is
+                   * gone.
+                   *
+                   * The cost is that such a line does not scale with the
+                   * servings control. That is the honest half: scaling the
+                   * column while the same amount sits unscaled inside the
+                   * name would put two different numbers on one line.
+                   * `recipeToMarkdown` and `buildShoppingList` drop the same
+                   * three fields for the same reason. The NOTE is a column
+                   * of its own and is not in `raw_text`, so it stays.
+                   */
+                  const resolved = line.ingredient !== null;
+                  /* WHICH of the three `raw_text` already carries is asked of
+                     the text. A caller-supplied `rawText` is routinely the
+                     name alone, and dropping the amount on that line loses
+                     it. `unresolvedLineNeeds` carries the reasoning. */
+                  const needs = resolved
+                    ? { measure: true, preparation: true, optional: true }
+                    : unresolvedLineNeeds(line);
                   const label = line.ingredient?.name ?? line.rawText;
                   const isChecked = checked.has(line.id);
 
                   // The unit goes with the number into the scaling, so a
                   // count is rounded like a count and a mass like a mass.
-                  const amount = formatQuantity(
-                    line.quantity == null
-                      ? line.quantity
-                      : scaleAmount(line.quantity, scale, line.unit),
-                    line.quantityMax == null
-                      ? line.quantityMax
-                      : scaleAmount(line.quantityMax, scale, line.unit),
-                  );
+                  const amount = needs.measure
+                    ? formatQuantity(
+                        line.quantity == null
+                          ? line.quantity
+                          : scaleAmount(line.quantity, scale, line.unit),
+                        line.quantityMax == null
+                          ? line.quantityMax
+                          : scaleAmount(line.quantityMax, scale, line.unit),
+                      )
+                    : null;
 
                   /* §10.2.6's "(optional)" mark goes into `mark`, which is
                      F/Ingredient row's `NAME_ROW` slot — the one the design
@@ -504,11 +537,12 @@ export function IngredientChecklist({
                      `--text-faint` as the mark's carrier, so the token is
                      settled even though the word occurs zero times in the
                      eighteen exports. */
-                  const mark: ReactNode = line.optional ? (
-                    <span className="text-09 font-mono tracking-label uppercase text-ink-3">
-                      (optional)
-                    </span>
-                  ) : undefined;
+                  const mark: ReactNode =
+                    needs.optional && line.optional ? (
+                      <span className="text-09 font-mono tracking-label uppercase text-ink-3">
+                        (optional)
+                      </span>
+                    ) : undefined;
 
                   /* The note goes into `preparation`, which is the only
                      block under the name that the design draws. A `<span>`
@@ -518,10 +552,11 @@ export function IngredientChecklist({
                      the span breaks the LINE, but `textContent` would still
                      read "cut into stripsand pat dry" without it (R-CMP-14's
                      fault class). */
+                  const prep = needs.preparation ? line.preparation : null;
                   const preparation: ReactNode =
-                    line.preparation || line.note ? (
+                    prep || line.note ? (
                       <>
-                        {line.preparation}{' '}
+                        {prep}{' '}
                         {line.note ? (
                           <span className="block">{line.note}</span>
                         ) : null}
@@ -534,7 +569,7 @@ export function IngredientChecklist({
                       role="listitem"
                       reference={reference}
                       amount={amount}
-                      unit={line.unit}
+                      unit={needs.measure ? line.unit : null}
                       name={label}
                       mark={mark}
                       href={

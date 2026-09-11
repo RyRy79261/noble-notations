@@ -43,11 +43,19 @@ export const metadata: Metadata = {
  * THE TOOL LISTS ARE THE REAL ONES. The design draws four read tools and
  * three write tools with invented names — `search_entries`, `add_state`.
  * This list is the one a person reads before approving write access, so it
- * names every tool the scope grants and not a sample: ten, nine and the one
- * that is in neither scope, from `src/lib/mcp/tools.ts`.
+ * names every tool the scope grants and not a sample: eleven, fourteen and
+ * the one that is in neither scope, from `src/lib/mcp/tools.ts`.
  * `docs/mcp-connector.md` §Tools and that file are the other two places the
  * set is written down; all three move together, and `TOOLS` in
  * `e2e/mcp-contract.spec.ts` is the line that says so.
+ *
+ * SECTION III IS "WHAT AN AGENT MAY WRITE" AND WAS "WHAT AN AGENT MAY ADD".
+ * The word had to move with the scope. `noble-notations:write` now grants
+ * three correction tools and a delete, so a person approving it on the
+ * strength of the word "add" would be approving something wider than they
+ * read. The second warning below carries the rest of that sentence: the
+ * delete is reversible, and this page is where the person who owns the
+ * repository finds that out before they grant it rather than after.
  */
 export default function ConnectPage() {
   const endpoint = `${site.url}/api/mcp/mcp`;
@@ -75,7 +83,7 @@ export default function ConnectPage() {
              it the lede runs the full 1160px column and wraps to two lines
              where the design wraps to three. */
           ledeClassName="shell:max-w-215"
-          lede="Noble Notations answers the Model Context Protocol. Give an agent the address below and it can read every recipe, every revision, every tag and every run in the catalogue. Reading is open to anyone. Writing asks you to sign in first, and even then it can only add."
+          lede="Noble Notations answers the Model Context Protocol. Give an agent the address below and it can read every recipe, every revision, every tag and every run in the catalogue. Reading is open to anyone. Writing asks you to sign in first. Nothing it deletes is destroyed."
         />
 
         {/* The endpoint band. `f-desk`, no rule, no radius: 20/22 of padding
@@ -146,11 +154,11 @@ export default function ConnectPage() {
 
         <Section
           ordinal="III"
-          title="What an agent may add"
+          title="What an agent may write"
           meta={`${numberWord(WRITE_TOOLS.length)} tools · sign in first`}
           narrowMeta="Sign in first"
         >
-          <ToolList tools={WRITE_TOOLS} prefix="W" scope="Adds" />
+          <ToolList tools={WRITE_TOOLS} prefix="W" scope="Writes" />
         </Section>
 
         <Section
@@ -180,29 +188,41 @@ export default function ConnectPage() {
         </Warning>
 
         {/*
-         * The claim used to read "Nothing is ever deleted or edited in
-         * place". That is the rule for the thing it matters for and it was
-         * never true of the whole connector: `upsert_ingredient` and
-         * `upsert_category` have always written over a stored label, and
-         * `describe_mechanism` fills a field on a stored note. The scoped
-         * form is the one `src/lib/queries/write.ts` states at the top of the
-         * file, and it is the sentence that is actually load-bearing — a
-         * reader approving write access needs to know what CAN change, not a
-         * promise that is wider than the code.
+         * THIS CLAIM HAS NOW BEEN WRONG TWICE, in the same direction both
+         * times, and the shape of the mistake is worth keeping.
+         *
+         * It first read "Nothing is ever deleted or edited in place", which
+         * was never true of the whole connector: `upsert_ingredient` and
+         * `upsert_category` have always written over a stored label. It was
+         * narrowed to "the write path only ever adds", which was true on the
+         * day it was written and stopped being true the day the write scope
+         * gained three corrections and a delete.
+         *
+         * The lesson is that a promise about what the connector CANNOT do
+         * ages badly, because it is a claim about every tool that will ever
+         * be registered. What a reader approving write access actually needs
+         * is what the grant DOES, and what is reversible — so that is what
+         * this says now, and it is a statement about mechanism rather than
+         * about restraint.
          */}
-        <Warning title="The write path only ever adds">
-          There is no tool here that edits a recipe and none that deletes.{' '}
+        <Warning title="A delete is reversible, and nothing is destroyed">
+          Write access lets an agent add a recipe, correct one, and delete one.
+          A delete does not destroy anything: the record stops being visible —
+          the site does not show it and the read tools do not return it — and{' '}
+          <code className="[font-size:inherit] font-mono">restore_record</code>{' '}
+          brings it back with the same arguments.{' '}
+          <code className="[font-size:inherit] font-mono">list_deleted</code>{' '}
+          shows what is in the bin, with the date, who deleted it and the reason
+          they gave. Deleting a recipe takes its revisions, its notes and its
+          runs with it, and one restore brings back the same set. The revision
+          rule is unchanged and it is still the one that matters:{' '}
           <code className="[font-size:inherit] font-mono">revise_recipe</code>{' '}
-          writes a new revision and leaves every earlier one exactly where it
-          was, so a revision that has been recorded can never be removed — not
-          by an agent, not by the administrator, not by mistake. Three things
-          can change: an ingredient and a tag can be improved in place, because
-          they describe a name and not a version, and a stored science note can
-          be given the conditions it was written without. That last one can be
-          done once. After it the tool refuses, and the answer to a wrong value
-          is a note of kind{' '}
-          <code className="[font-size:inherit] font-mono">correction</code>.
-          Every tool call is written to an audit log.
+          adds a revision and leaves every earlier one where it was, and{' '}
+          <code className="[font-size:inherit] font-mono">update_revision</code>{' '}
+          corrects a revision that was recorded wrongly. The question that
+          separates them is whether the dish changed or the record is wrong.
+          Every tool call is written to an audit log, and nothing can delete
+          that.
         </Warning>
       </div>
     </>
@@ -214,8 +234,8 @@ export default function ConnectPage() {
 type Tool = { name: string; text: string };
 
 /**
- * The ten tools the read scope grants, in the order `registerTools` declares
- * them (`src/lib/mcp/tools.ts:241`).
+ * The eleven tools the read scope grants, in the order `registerTools`
+ * declares them.
  */
 const READ_TOOLS: Tool[] = [
   {
@@ -258,9 +278,21 @@ const READ_TOOLS: Tool[] = [
     name: 'get_repository_stats',
     text: 'How much is held: recipes, revisions, ingredients, tags and runs.',
   },
+  /*
+   * A read, and the only one that reports a row the site does not show. It
+   * is in the read scope because the person who needs it is the one who
+   * arrives after a delete and has to find out what is missing and why — and
+   * the read scope already grants an archived recipe. There is no second
+   * audience to hide it from: `ALLOWED_EMAILS` means one administrator
+   * approves every connector.
+   */
+  {
+    name: 'list_deleted',
+    text: 'What is in the bin: the kind, the date, who deleted it, the reason, and how to restore it.',
+  },
 ];
 
-/** The nine the write scope grants. Approving it grants all of them. */
+/** The fourteen the write scope grants. Approving it grants all of them. */
 const WRITE_TOOLS: Tool[] = [
   { name: 'create_recipe', text: 'A genuinely new dish. Search first.' },
   {
@@ -295,10 +327,30 @@ const WRITE_TOOLS: Tool[] = [
     name: 'log_experiment',
     text: 'A batch that was actually cooked, with its measurements.',
   },
+  {
+    name: 'update_recipe',
+    text: 'The record of a recipe, when it is wrong: the name, the summary, the tags. It touches no revision.',
+  },
+  {
+    name: 'update_revision',
+    text: 'A stored revision, when it was recorded wrongly. It makes no revision and it moves no number.',
+  },
+  {
+    name: 'update_note',
+    text: 'A stored note: its kind, its text, its conditions, its sources, or what it hangs off.',
+  },
+  {
+    name: 'delete_record',
+    text: 'A recipe, a revision, a note, a run, an ingredient or a tag. It stops being visible; it is not destroyed.',
+  },
+  {
+    name: 'restore_record',
+    text: 'The undo for the one above, with the same arguments and the same set of records.',
+  },
 ];
 
 /**
- * The twentieth tool, and the only one in neither scope.
+ * The twenty-sixth tool, and the only one in neither scope.
  *
  * It is listed on its own because neither of the two lists above is true of
  * it: it needs no scope, and its effect lands outside this system. Reading
@@ -324,9 +376,9 @@ const REPORT_TOOLS: Tool[] = [
  * ingredient name is 14px Geist, the description is Geist where the alias is
  * serif italic, the scope is a 9px tracked label where the count is 12px
  * mono — so reusing it would mean three new props on a shared component for
- * one screen. A list is also the truer shape: this is nine or ten things of
- * one kind, not a record with four fields, and a screen reader announces the
- * count.
+ * one screen. A list is also the truer shape: this is eleven or fourteen
+ * things of one kind, not a record with four fields, and a screen reader
+ * announces the count.
  *
  * `shell:contents` on the column is what lets one DOM draw both: at 360 the
  * three cells are a flex column beside the code, and at 1280 the wrapper

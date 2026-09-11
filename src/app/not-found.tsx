@@ -14,7 +14,13 @@ import { SectionHead } from '@/components/f/section-label';
  * R-SCR-26: low traffic, and it must not look unfinished. The design gives
  * this screen more air than any other — `p-[ 52px 60px 96px 60px ]` — and
  * four blocks: the hero, a recessed address band, three places to try under
- * a numbered head, and the notice that says nothing here is ever deleted.
+ * a numbered head, and the notice that says what a delete does.
+ *
+ * THAT NOTICE USED TO SAY NOTHING HERE IS EVER DELETED, and this is the one
+ * page every deleted record's address serves. A reader who follows a link to
+ * a record an agent deleted lands here, so the page has to state the rule
+ * that now holds: a record can be deleted, the row is kept, and an agent
+ * with the connector can put it back.
  *
  * THE ADDRESS BAND DOES NOT NAME THE ADDRESS, and it cannot. The design
  * draws `YOU ASKED FOR /recipes/baumy-biltong/v3`. A `not-found.tsx` is
@@ -71,7 +77,7 @@ export default function NotFound() {
           title="No page at this address"
           /* 860px — `access-1280.html`, `data-pencil-name="Lede"`. */
           ledeClassName="shell:max-w-215"
-          lede="There is nothing at the address you asked for. It may well be from an earlier issue of this site: the addresses changed when revisions were given names instead of numbers, and four sections were renamed. Nothing here is ever deleted, so whatever you were looking for is almost certainly still on the record under a different address."
+          lede="There is nothing at the address you asked for. It may well be from an earlier issue of this site: the addresses changed when revisions were given names instead of numbers, and four sections were renamed. A page that has moved still answers at its new address, so start from one of the three indexes below."
         />
 
         {/* The recessed address band. `f-desk`, no rule and no radius: 18/20
@@ -145,11 +151,13 @@ export default function NotFound() {
           </div>
         </section>
 
-        <Notice title="Nothing here is ever deleted">
-          A recipe keeps its name for as long as this site exists, and every
-          revision ever recorded on it stays where it was recorded. A page that
-          has gone has changed address, not stopped existing. The archived notes
-          are kept in the same way, exactly as they were written.
+        <Notice title="A deleted record is kept">
+          A recipe keeps its name for as long as this site exists, and a
+          revision keeps its number. A record can be deleted. The site then
+          stops showing it, and this page is what its address answers. The
+          record itself is not destroyed: it stays in the store, and an agent
+          with the connector can put it back. The archived notes are kept in the
+          same way, exactly as they were written.
         </Notice>
       </div>
 

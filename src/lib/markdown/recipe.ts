@@ -12,7 +12,7 @@
  * Both must agree. A recipe that reads one way in the repository and
  * another way over HTTP is two recipes.
  */
-import { formatQuantity } from '@/lib/domain/units';
+import { formatQuantity, unresolvedLineNeeds } from '@/lib/domain/units';
 import { CATEGORY_TYPE_LABELS } from '@/lib/site';
 import type { RecipeView } from '@/lib/queries/read';
 
@@ -131,12 +131,37 @@ export function recipeToMarkdown(
         if (component) body.push('', `### ${component}`, '');
       }
       const amount = formatQuantity(line.quantity, line.quantityMax);
-      const measure = amount
-        ? `${amount}${line.unit ? ` ${line.unit}` : ''} `
-        : '';
-      const name = line.ingredient?.name ?? line.rawText;
-      const prep = line.preparation ? `, ${line.preparation}` : '';
-      const opt = line.optional ? ' _(optional)_' : '';
+      /*
+       * `raw_text` IS THE LINE AS IT WAS WRITTEN, amount and all, so the
+       * measure is prepended only when the name came from the canonical
+       * ingredient. Without this an unresolved line reads `10 pod 10 pod
+       * Star anise`.
+       *
+       * The archive has no unresolved line, which is why the doubling was
+       * never seen. Soft delete makes the state reachable: deleting an
+       * ingredient leaves every line that named it on its revision, and the
+       * line degrades to its own text — the recipe is still cookable and
+       * nothing links at a record that is gone. The page and the shopping
+       * list already draw it that way; this is the exporter agreeing.
+       */
+      const resolved = line.ingredient?.name ?? null;
+      /*
+       * WHICH of the three the text already carries is asked of the text,
+       * not inferred from the ingredient. A caller-supplied `rawText` is
+       * routinely the name alone, and dropping the measure on that line lost
+       * the amount outright. `unresolvedLineNeeds` carries the reasoning.
+       */
+      const needs = resolved
+        ? { measure: true, preparation: true, optional: true }
+        : unresolvedLineNeeds(line);
+      const measure =
+        needs.measure && amount
+          ? `${amount}${line.unit ? ` ${line.unit}` : ''} `
+          : '';
+      const name = resolved ?? line.rawText;
+      const prep =
+        needs.preparation && line.preparation ? `, ${line.preparation}` : '';
+      const opt = needs.optional && line.optional ? ' _(optional)_' : '';
       body.push(`- ${measure}${name}${prep}${opt}`);
     }
     body.push('');

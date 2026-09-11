@@ -16,13 +16,20 @@
  *                   ingredient, with citable sources.
  *
  * The organising principle is REVISIONS. A recipe is a stable identity with a
- * slug and a title; its ingredients and steps belong to an immutable
- * `recipe_revisions` row. Refining a recipe appends a revision and moves the
- * pointer — it never edits history. That is the whole point of the rebuild:
- * the same dish gets better over time instead of being re-derived from
- * scratch on every conversation.
+ * slug and a title; its ingredients and steps belong to a `recipe_revisions`
+ * row. Refining a recipe APPENDS a revision and moves the pointer. That is
+ * the whole point of the rebuild: the same dish gets better over time instead
+ * of being re-derived from scratch on every conversation.
+ *
+ * Append-only is not the same as immutable, and this schema states the
+ * difference in two places rather than one. A dish that CHANGED gets a new
+ * revision. A revision that was written down WRONG gets corrected in place —
+ * `update_recipe`, `update_revision`, `update_note` — which makes no version
+ * and moves no number. A record that should never have been written gets
+ * DELETED, softly: see `softDelete` below, which is where the four columns
+ * that carry that are defined and argued for.
  */
-import { sql } from 'drizzle-orm';
+import { isNull, sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
   boolean,
@@ -34,6 +41,7 @@ import {
   numeric,
   pgEnum,
   pgTable,
+  pgView,
   text,
   timestamp,
   uniqueIndex,
@@ -55,6 +63,58 @@ const now = () =>
   timestamp('created_at', { withTimezone: true }).defaultNow().notNull();
 const touched = () =>
   timestamp('updated_at', { withTimezone: true }).defaultNow().notNull();
+
+/**
+ * The four columns a DELETE writes, on the six tables that carry a record.
+ *
+ * A delete here is soft: the row stays, it stops being visible, and
+ * `restore_record` brings it back. The purpose of this repository is an
+ * accurate history, not an immutable one — two chats can write the same
+ * revision twice, and a duplicate is a data-entry accident rather than a
+ * version, so the model has to be able to take one back out.
+ *
+ * **`deleted_at`, not `is_deleted`.** A timestamp answers "when", which the
+ * bin listing and the restore order both need, and a boolean would want a
+ * second column for it. It is also already this schema's vocabulary for "this
+ * row stopped counting at a moment": `mcp_access_tokens.revoked_at`,
+ * `mcp_auth_codes.consumed_at`.
+ *
+ * **`deleted_by` is denormalised on purpose, and the audit log is not enough.**
+ * `writeMcpAudit` is fire-and-forget and swallows its own failure into a
+ * `console.warn`, so a value the bin must display cannot depend on it; nothing
+ * reads `mcp_audit_log` and building `list_deleted` over it would mean matching
+ * a text blob against live rows; the audit log records tool CALLS while the bin
+ * needs row STATE (deleted, restored, deleted again is three audit rows and one
+ * truth); and not every write comes through MCP — `pnpm ingest` calls the write
+ * layer with no principal at all. Nullable for that last reason.
+ *
+ * **`deleted_reason` is stored and the tool argument is optional.** A delete is
+ * reversible, so a required reason is friction for a small payoff — but the bin
+ * prints it, and it is the only thing that tells the next reader why a record
+ * went.
+ *
+ * **`deleted_event_id` is the cascade stamp.** One delete call mints one uuid
+ * and writes it to every row it touches, the root included, and every UPDATE
+ * carries `AND deleted_at IS NULL` — so a row that was already deleted keeps
+ * its own stamp and its own date. A restore clears exactly the rows carrying
+ * the addressed row's stamp, which is why a child deleted on its own before its
+ * parent stays deleted when the parent comes back. Named `event` and not
+ * `cascade` because `ON DELETE CASCADE` already means a hard delete in this
+ * schema, and not `batch` because this repository's batches are biltong.
+ *
+ * **This is not `recipes.status = 'archived'`, and the word "archive" is not
+ * used for it anywhere.** `archived` means *readable at its own address, off
+ * the index*; `deleted_at` means *not readable anywhere, 404*. The third
+ * `archive` — the frozen Markdown under `content/`, served by
+ * `src/lib/archive.ts` off disk behind `/archive` — never touches the database.
+ * Three meanings is already two too many.
+ */
+const softDelete = () => ({
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  deletedBy: text('deleted_by'),
+  deletedReason: text('deleted_reason'),
+  deletedEventId: uuid('deleted_event_id'),
+});
 
 // ─────────────────────────────────────────────────────────────────────────
 // Enums
@@ -175,10 +235,28 @@ export const taxonomyTerms = pgTable(
     ),
     createdAt: now(),
     updatedAt: touched(),
+    ...softDelete(),
   },
   (t) => [
     uniqueIndex('uq_taxonomy_facet_slug').on(t.facet, t.slug),
     index('idx_taxonomy_parent').on(t.parentId),
+    /**
+     * Two partial indexes per soft-deletable table, and partial is what makes
+     * them cheap: they cover deleted rows only, which is a handful in a store
+     * whose whole point is keeping things. `list_deleted` reads the first and
+     * `restore_record` reads the second.
+     *
+     * There is deliberately no index on the live side. The tables are small
+     * and every live read already carries a selective predicate — a slug, a
+     * recipe id, a facet — so `deleted_at IS NULL` is a filter on a handful of
+     * rows rather than a scan.
+     */
+    index('idx_taxonomy_terms_deleted')
+      .on(t.deletedAt.desc())
+      .where(sql`${t.deletedAt} IS NOT NULL`),
+    index('idx_taxonomy_terms_deleted_event')
+      .on(t.deletedEventId)
+      .where(sql`${t.deletedEventId} IS NOT NULL`),
   ],
 );
 
@@ -227,8 +305,17 @@ export const ingredients = pgTable(
       .default(sql`ARRAY[]::text[]`),
     createdAt: now(),
     updatedAt: touched(),
+    ...softDelete(),
   },
-  (t) => [index('idx_ingredients_category').on(t.category)],
+  (t) => [
+    index('idx_ingredients_category').on(t.category),
+    index('idx_ingredients_deleted')
+      .on(t.deletedAt.desc())
+      .where(sql`${t.deletedAt} IS NOT NULL`),
+    index('idx_ingredients_deleted_event')
+      .on(t.deletedEventId)
+      .where(sql`${t.deletedEventId} IS NOT NULL`),
+  ],
 );
 
 export const ingredientRelations = pgTable(
@@ -276,6 +363,16 @@ export const recipes = pgTable(
      * Points at the revision the site renders. Nullable only in the window
      * between inserting a recipe and inserting its first revision; every
      * write path closes that window in a transaction.
+     *
+     * **The invariant, and every child read depends on it: this always names a
+     * LIVE revision of a LIVE recipe.** Deleting the current revision of a
+     * recipe that has others moves the pointer to the newest survivor by
+     * `COALESCE(occurred_at, created_at) DESC, revision_number DESC` — the
+     * order the history is already listed in, not `MAX(revision_number)`, for
+     * the reason `getRecipeIdentity` gives: a backfilled revision carries a
+     * later number and an earlier date. Deleting the ONLY revision is refused
+     * and says to delete the recipe instead, because a null pointer would let
+     * `listRecipes` print a recipe whose page 404s.
      */
     currentRevisionId: uuid('current_revision_id'),
     heroImageUrl: text('hero_image_url'),
@@ -286,10 +383,17 @@ export const recipes = pgTable(
     searchVector: tsvector('search_vector'),
     createdAt: now(),
     updatedAt: touched(),
+    ...softDelete(),
   },
   (t) => [
     index('idx_recipes_status').on(t.status),
     index('idx_recipes_kind').on(t.kind),
+    index('idx_recipes_deleted')
+      .on(t.deletedAt.desc())
+      .where(sql`${t.deletedAt} IS NOT NULL`),
+    index('idx_recipes_deleted_event')
+      .on(t.deletedEventId)
+      .where(sql`${t.deletedEventId} IS NOT NULL`),
   ],
 );
 
@@ -300,7 +404,18 @@ export const recipeRevisions = pgTable(
     recipeId: uuid('recipe_id')
       .notNull()
       .references(() => recipes.id, { onDelete: 'cascade' }),
-    /** 1-based, dense, per recipe. */
+    /**
+     * 1-based, per recipe, and permanent. Dense until a version is deleted.
+     *
+     * **A deleted number is retired and is never reissued**, and that is the
+     * second thing the *soft* half of a delete buys. `reviseRecipe` takes
+     * `MAX(revision_number) + 1` over this table, deleted rows included, so the
+     * next version gets a fresh number; a hard delete would free number 3, the
+     * next revise would reuse it, and `/recipes/x/revisions/3` — a public URL,
+     * and half of the `nn:checked:{slug}:{revision}` key a phone remembers a
+     * ticked list under — would quietly start drawing a different version.
+     * A deleted 3 answers 404 forever instead, which is the honest answer.
+     */
     revisionNumber: integer('revision_number').notNull(),
     title: text('title').notNull(),
     summary: text('summary'),
@@ -333,11 +448,26 @@ export const recipeRevisions = pgTable(
      */
     occurredAt: timestamp('occurred_at', { withTimezone: true }),
     createdAt: now(),
+    /**
+     * Every other content table has carried one since the first migration.
+     * This table was the exception because a revision was never editable, and
+     * `update_revision` is the moment that stopped being true: a version that
+     * is corrected in place has a record that changed, and the row has to be
+     * able to say so.
+     */
+    updatedAt: touched(),
+    ...softDelete(),
   },
   (t) => [
     uniqueIndex('uq_revision_number').on(t.recipeId, t.revisionNumber),
     index('idx_revisions_recipe').on(t.recipeId),
     check('revision_number_positive', sql`${t.revisionNumber} > 0`),
+    index('idx_recipe_revisions_deleted')
+      .on(t.deletedAt.desc())
+      .where(sql`${t.deletedAt} IS NOT NULL`),
+    index('idx_recipe_revisions_deleted_event')
+      .on(t.deletedEventId)
+      .where(sql`${t.deletedEventId} IS NOT NULL`),
   ],
 );
 
@@ -690,12 +820,19 @@ export const notes = pgTable(
 
     createdAt: now(),
     updatedAt: touched(),
+    ...softDelete(),
   },
   (t) => [
     index('idx_notes_recipe').on(t.recipeId),
     index('idx_notes_revision').on(t.revisionId),
     index('idx_notes_ingredient').on(t.ingredientId),
     index('idx_notes_kind').on(t.kind),
+    index('idx_notes_deleted')
+      .on(t.deletedAt.desc())
+      .where(sql`${t.deletedAt} IS NOT NULL`),
+    index('idx_notes_deleted_event')
+      .on(t.deletedEventId)
+      .where(sql`${t.deletedEventId} IS NOT NULL`),
     // A note hangs off exactly one subject. Anything else makes "show me the
     // notes for X" ambiguous and lets orphans accumulate silently.
     check(
@@ -754,7 +891,18 @@ export const experiments = pgTable(
     recipeId: uuid('recipe_id').references(() => recipes.id, {
       onDelete: 'set null',
     }),
-    /** The exact revision that was cooked, when it is known. */
+    /**
+     * The exact revision that was cooked, when it is known.
+     *
+     * A run is NOT taken along when that revision is deleted: the run
+     * happened, and its number and its title are still readable because the
+     * revision row is still there. The two experiment reads join the base
+     * table rather than the live view for exactly this, and set
+     * `revisionWithdrawn` from `deleted_at IS NOT NULL` so the page can say
+     * "third revision · withdrawn". A hard delete would fire the
+     * `ON DELETE SET NULL` below and make the run read "no version recorded",
+     * which is a false statement about a run that recorded one.
+     */
     revisionId: uuid('revision_id').references(() => recipeRevisions.id, {
       onDelete: 'set null',
     }),
@@ -769,8 +917,17 @@ export const experiments = pgTable(
     currency: text('currency').default('EUR'),
     createdAt: now(),
     updatedAt: touched(),
+    ...softDelete(),
   },
-  (t) => [index('idx_experiments_recipe').on(t.recipeId)],
+  (t) => [
+    index('idx_experiments_recipe').on(t.recipeId),
+    index('idx_experiments_deleted')
+      .on(t.deletedAt.desc())
+      .where(sql`${t.deletedAt} IS NOT NULL`),
+    index('idx_experiments_deleted_event')
+      .on(t.deletedEventId)
+      .where(sql`${t.deletedEventId} IS NOT NULL`),
+  ],
 );
 
 /** An individually tracked unit within a run — one hanging piece, one jar. */
@@ -919,4 +1076,45 @@ export const mcpAuditLog = pgTable(
     ),
     index('idx_mcp_audit_ts').on(t.timestamp),
   ],
+);
+
+// ─────────────────────────────────────────────────────────────────────────
+// The live views — what a read is allowed to see
+//
+// One view per soft-deletable table, each the table minus its deleted rows.
+// `src/lib/queries/read.ts` selects from these and from nothing else, and
+// that is enforced rather than agreed: `eslint.config.mjs` bans the six base
+// tables from being imported into that file, so a new query CANNOT name one
+// and `pnpm lint` is a CI gate. A shared `and(live(t), …)` helper was the
+// other option and is weaker for one reason — a helper can be left out of a
+// new query, an import ban cannot.
+//
+// Two files see the base tables on purpose. `src/lib/queries/deleted.ts`
+// reads deleted rows, because listing the bin is its whole job; and the two
+// experiment reads take `recipe_revisions` unfiltered, so a batch log pinned
+// to a withdrawn version can still print its number.
+// ─────────────────────────────────────────────────────────────────────────
+
+export const recipesLive = pgView('recipes_live').as((qb) =>
+  qb.select().from(recipes).where(isNull(recipes.deletedAt)),
+);
+
+export const recipeRevisionsLive = pgView('recipe_revisions_live').as((qb) =>
+  qb.select().from(recipeRevisions).where(isNull(recipeRevisions.deletedAt)),
+);
+
+export const notesLive = pgView('notes_live').as((qb) =>
+  qb.select().from(notes).where(isNull(notes.deletedAt)),
+);
+
+export const experimentsLive = pgView('experiments_live').as((qb) =>
+  qb.select().from(experiments).where(isNull(experiments.deletedAt)),
+);
+
+export const ingredientsLive = pgView('ingredients_live').as((qb) =>
+  qb.select().from(ingredients).where(isNull(ingredients.deletedAt)),
+);
+
+export const taxonomyTermsLive = pgView('taxonomy_terms_live').as((qb) =>
+  qb.select().from(taxonomyTerms).where(isNull(taxonomyTerms.deletedAt)),
 );

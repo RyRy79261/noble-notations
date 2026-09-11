@@ -4,12 +4,26 @@ import 'server-only';
  * Write path for the repository.
  *
  * Every function here is the *only* supported way to change its part of the
- * model, and each one runs in a single transaction. The rule that shapes all
- * of it: a recipe's ingredients and steps are never edited in place. Refining
- * a recipe appends a revision and moves `recipes.current_revision_id`, so the
- * history of how a dish got good is preserved rather than overwritten.
+ * model, and each one runs in a single transaction.
+ *
+ * The rule that shapes most of it: a dish that changed gets a REVISION.
+ * `reviseRecipe` appends a version and moves `recipes.current_revision_id`, so
+ * the history of how a dish got good is preserved rather than overwritten.
+ *
+ * The rule that shapes the rest of it, and it is a different act: a record
+ * that is WRONG gets a correction. `updateRecipe`, `updateRevision` and
+ * `updateNote` change a stored record in place, make no version and move no
+ * number, and take no rationale — a rationale is the record of why the dish
+ * changed, and a correction is the statement that it did not. The question
+ * that separates the two is written into every tool description that touches
+ * them: **did the food change, or is the record wrong?**
+ *
+ * `deleteRecord` and `restoreRecord` are the third act. A delete is SOFT: the
+ * row stays, it stops being visible, and a restore brings it and everything
+ * that went with it back. See `src/db/schema.ts` for the four columns and why
+ * this is never called an archive.
  */
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { withTransaction, type TransactionClient } from '@/db/client';
 import {
   experimentItems,
@@ -38,6 +52,7 @@ import {
 } from '@/lib/domain/units';
 import {
   ambiguousUseMessage,
+  DELETABLE_KINDS,
   isReservedTagSlug,
   qualifiedUseKey,
   qualifierMessage,
@@ -48,6 +63,7 @@ import type {
   AddNoteInput,
   BackfillRevisionInput,
   CreateRecipeInput,
+  DeletableKind,
   DescribeMechanismInput,
   IngredientLineInput,
   LogExperimentInput,
@@ -57,9 +73,14 @@ import type {
   StepInput,
   CategoryType,
   CategoriesInput,
+  UpdateNoteInput,
+  UpdateRecipeInput,
+  UpdateRevisionInput,
   UpsertIngredientInput,
   UpsertCategoryInput,
 } from '@/lib/domain/schemas';
+
+export type { DeletableKind };
 
 type Tx = TransactionClient;
 
@@ -70,6 +91,46 @@ function num(value: number | null | undefined): string | null {
 
 export class NotFoundError extends Error {}
 export class ConflictError extends Error {}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Soft delete — the two halves of the rule every write below obeys
+//
+//   A write that names a deleted row by its own key RESTORES it when the
+//   tool is an UPSERT, and REFUSES when the tool APPENDS or CORRECTS.
+//
+// An upsert says "this is what the record should be", and naming an
+// ingredient in a real recipe line is proof that the ingredient exists — so
+// failing a whole recipe over a bookkeeping state would be the wrong trade.
+// A tool that appends to a record, or corrects one, is naming something it
+// believes is there; telling it the row is deleted is information it can act
+// on, and silently writing into an invisible record is not.
+//
+// Every refusal is a ConflictError and never a NotFoundError: the row EXISTS.
+// It also has to be one of the classes `runTool` in src/lib/mcp/tools.ts
+// trusts, or the caller reads "An internal error occurred" and cannot tell a
+// recoverable state from a broken server.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Written to every row one delete call touches, the root included. */
+interface DeleteStamp {
+  deletedAt: Date;
+  deletedBy: string | null;
+  deletedReason: string | null;
+  deletedEventId: string;
+}
+
+/** What a restore writes. Named once so no caller clears three of four. */
+const LIVE = {
+  deletedAt: null,
+  deletedBy: null,
+  deletedReason: null,
+  deletedEventId: null,
+} as const;
+
+/** The sentence every refusal-on-deleted shares. */
+function deletedRefusal(handle: string): string {
+  return `${handle} is deleted. Call restore_record to bring it back first.`;
+}
 
 // ─────────────────────────────────────────────────────────────────────────
 // Resolution helpers — turn the names an agent writes into canonical rows
@@ -83,7 +144,55 @@ export class ConflictError extends Error {}
  * saved until the ingredient list is curated first, which in practice means
  * the recipe never gets saved. An auto-created row is a stub with category
  * `other` that `upsert_ingredient` can enrich later.
+ *
+ * **A deleted ingredient is restored rather than matched around.** This runs
+ * inside a recipe write, where the caller has named a real ingredient in a
+ * real line — that is proof the ingredient exists, and it is the upsert half
+ * of the rule at the top of this file. Refusing here would fail a whole
+ * recipe over a bookkeeping state the caller cannot see and did not ask
+ * about; skipping the row and minting a second one would be worse still,
+ * because the slug is unique and the insert would collide. The restore is
+ * silent because there is nowhere in a recipe's result to say it; the tools
+ * that address an ingredient directly — `upsert_ingredient` — report it.
  */
+/**
+ * One ingredient line as the write layer moves it between revisions.
+ *
+ * `carriedIngredientId` is not part of the submission contract and no caller
+ * can send one: `schemas.ts` defines the shape an agent writes, and this
+ * field exists only between `copyIngredientLines` and `writeRevisionBody`.
+ */
+type CarriedIngredientLine = IngredientLineInput & {
+  carriedIngredientId?: string | null;
+};
+
+/**
+ * The ingredient a KEPT line already pointed at, by id.
+ *
+ * No match by name, and deliberately no restore. The caller did not name
+ * this ingredient — the previous revision did, and this call is carrying its
+ * line forward unchanged. A line whose ingredient is deleted keeps pointing
+ * at the deleted row and renders as its own text, exactly as it did on the
+ * revision it came from.
+ */
+async function carriedIngredient(
+  tx: Tx,
+  id: string,
+  fallbackName: string,
+): Promise<{ id: string; canonicalName: string }> {
+  const rows = await tx
+    .select({ id: ingredients.id, name: ingredients.name })
+    .from(ingredients)
+    .where(eq(ingredients.id, id))
+    .limit(1);
+  const row = rows[0];
+  // A row that is gone entirely is not a state this schema allows — the id
+  // came out of a `recipe_ingredients` row whose FK names it — so this falls
+  // back to the ordinary path rather than inventing an error for it.
+  if (!row) return resolveIngredient(tx, fallbackName);
+  return { id: row.id, canonicalName: row.name };
+}
+
 async function resolveIngredient(
   tx: Tx,
   name: string,
@@ -92,14 +201,25 @@ async function resolveIngredient(
   const slug = slugify(trimmed);
 
   const bySlug = await tx
-    .select({ id: ingredients.id, name: ingredients.name })
+    .select({
+      id: ingredients.id,
+      name: ingredients.name,
+      deletedAt: ingredients.deletedAt,
+    })
     .from(ingredients)
     .where(eq(ingredients.slug, slug))
     .limit(1);
-  if (bySlug[0]) return { id: bySlug[0].id, canonicalName: bySlug[0].name };
+  if (bySlug[0]) {
+    if (bySlug[0].deletedAt) await restoreIngredientRow(tx, bySlug[0].id);
+    return { id: bySlug[0].id, canonicalName: bySlug[0].name };
+  }
 
   const byNameOrAlias = await tx
-    .select({ id: ingredients.id, name: ingredients.name })
+    .select({
+      id: ingredients.id,
+      name: ingredients.name,
+      deletedAt: ingredients.deletedAt,
+    })
     .from(ingredients)
     .where(
       sql`lower(${ingredients.name}) = ${trimmed.toLowerCase()}
@@ -110,6 +230,9 @@ async function resolveIngredient(
     )
     .limit(1);
   if (byNameOrAlias[0]) {
+    if (byNameOrAlias[0].deletedAt) {
+      await restoreIngredientRow(tx, byNameOrAlias[0].id);
+    }
     return { id: byNameOrAlias[0].id, canonicalName: byNameOrAlias[0].name };
   }
 
@@ -133,6 +256,11 @@ async function resolveIngredientId(tx: Tx, name: string): Promise<string> {
 /**
  * Look up an ingredient without creating one. Validation paths need this:
  * creating a row as a side effect of checking a reference would be wrong.
+ *
+ * It sees DELETED rows, and must. `ingredients.slug` is unique whatever the
+ * row's state, so a deleted ingredient still owns its name — filtering it out
+ * here would make `upsertIngredient`'s collision guard pass and the insert
+ * then fail on the unique index, with a message nobody can act on.
  *
  * The canonical name comes back beside the id because a qualified reference
  * is keyed on a name, not on an id: a line written under an alias has to be
@@ -315,7 +443,14 @@ async function checkCarriedUses(
   }
 }
 
-/** Find (or create) a taxonomy term within a facet. */
+/**
+ * Find (or create) a taxonomy term within a facet.
+ *
+ * A deleted tag is restored rather than matched around, for the reason
+ * `resolveIngredient` gives: this runs inside a recipe write, `uq_taxonomy_
+ * facet_slug` means a second row cannot be minted anyway, and tagging a
+ * recipe with a name is a statement that the name is in use.
+ */
 async function resolveTermId(
   tx: Tx,
   facet: CategoryType,
@@ -324,11 +459,14 @@ async function resolveTermId(
   const trimmed = label.trim();
   const slug = slugify(trimmed);
   const existing = await tx
-    .select({ id: taxonomyTerms.id })
+    .select({ id: taxonomyTerms.id, deletedAt: taxonomyTerms.deletedAt })
     .from(taxonomyTerms)
     .where(and(eq(taxonomyTerms.facet, facet), eq(taxonomyTerms.slug, slug)))
     .limit(1);
-  if (existing[0]) return existing[0].id;
+  if (existing[0]) {
+    if (existing[0].deletedAt) await restoreTermRow(tx, existing[0].id);
+    return existing[0].id;
+  }
 
   const inserted = await tx
     .insert(taxonomyTerms)
@@ -341,14 +479,32 @@ async function resolveTermId(
   return inserted[0]!.id;
 }
 
-/** Replace a recipe's taxonomy assignments wholesale. */
+/**
+ * Replace a recipe's taxonomy assignments wholesale.
+ *
+ * WHOLESALE MEANS THE LIVE ONES. `get_recipe` shows a recipe's tags through
+ * the live view, so a tag that is deleted is not in the list the caller is
+ * told to send back — "Call get_recipe first. Then send back each tag that
+ * you want to keep" is this tool's own instruction. Clearing every edge and
+ * rewriting from that list therefore destroyed the edge to a deleted tag,
+ * permanently and with no correct call available to prevent it: the caller
+ * could not see the tag, and `recipe_terms` carries no delete stamp of its
+ * own to restore from. Scoping the delete to edges whose tag is live leaves
+ * that one edge alone, so restoring the tag puts the recipe back on it.
+ */
 async function applyTaxonomy(
   tx: Tx,
   recipeId: string,
   taxonomy: CategoriesInput,
 ): Promise<void> {
   if (!taxonomy) return;
-  await tx.delete(recipeTerms).where(eq(recipeTerms.recipeId, recipeId));
+  await tx.execute(
+    sql`DELETE FROM recipe_terms rt
+          USING taxonomy_terms t
+          WHERE t.id = rt.term_id
+            AND t.deleted_at IS NULL
+            AND rt.recipe_id = ${recipeId}`,
+  );
 
   for (const [facet, labels] of Object.entries(taxonomy)) {
     if (!labels?.length) continue;
@@ -370,7 +526,7 @@ async function applyTaxonomy(
 async function writeRevisionBody(
   tx: Tx,
   revisionId: string,
-  ingredientLines: IngredientLineInput[],
+  ingredientLines: CarriedIngredientLine[],
   steps: StepInput[],
 ): Promise<void> {
   /**
@@ -434,10 +590,9 @@ async function writeRevisionBody(
   }[] = [];
 
   for (const [index, line] of ingredientLines.entries()) {
-    const { id: ingredientId, canonicalName } = await resolveIngredient(
-      tx,
-      line.name,
-    );
+    const { id: ingredientId, canonicalName } = line.carriedIngredientId
+      ? await carriedIngredient(tx, line.carriedIngredientId, line.name)
+      : await resolveIngredient(tx, line.name);
     const unit = normaliseUnit(line.unit);
     const rawText =
       line.rawText ??
@@ -667,18 +822,18 @@ async function writeNotes(
 }
 
 /**
- * Write the mass flow figure for a revision.
+ * Write the mass flow figure for a revision, refusing a second one.
  *
- * Append-only, and the only shape of write this table has. There is no
- * update path and no delete path, for the reason the whole model has none:
- * the numbers are a record of a batch that was actually weighed, and a
- * figure that can be rewritten is a measurement that can be quietly
- * replaced. A revision may be given one figure, once.
+ * `add_mass_flow` is FILL-ONCE and stays fill-once: it records what a batch
+ * weighed, and a tool that can quietly replace a measurement is a tool that
+ * can make a stored number stop being a fact. That promise is now LOCAL TO
+ * THIS TOOL rather than a property of the whole model — `update_revision`
+ * corrects a figure that is wrong — so the refusal says which tool does
+ * which, and the two sentences it used to end with ("cannot be changed once
+ * it is written") would have become false the day this branch landed.
  *
- * The refusal is the half that makes the addition legal. `UNIQUE
- * (revision_id)` would raise a constraint violation on its own; this reads
- * the stored row first so the caller is told what is already there and that
- * a revise is the way to record a different batch.
+ * `UNIQUE (revision_id)` would raise a constraint violation on its own; this
+ * reads the stored row first so the caller is told what is already there.
  */
 async function writeMassFlow(
   tx: Tx,
@@ -693,13 +848,28 @@ async function writeMassFlow(
   if (existing[0]) {
     throw new ConflictError(
       'This revision already has a mass flow figure, recorded on ' +
-        `${existing[0].createdAt.toISOString().slice(0, 10)}. A figure ` +
-        'cannot be changed once it is written: it records what a batch ' +
-        'weighed. To record a different batch, add a revision with ' +
-        'revise_recipe and send the figure with it.',
+        `${existing[0].createdAt.toISOString().slice(0, 10)}. This tool ` +
+        'does not replace a figure: it records what a batch weighed. To ' +
+        'record a different batch, call revise_recipe and send the figure ' +
+        'with it. To correct a figure that is wrong, call update_revision.',
     );
   }
 
+  return insertMassFlow(tx, revisionId, massFlow);
+}
+
+/**
+ * The insert half, with no opinion about what was there before.
+ *
+ * Split out for `replaceMassFlow`, which `update_revision` uses: the refusal
+ * above has to stay intact for `add_mass_flow`, and a correction has to be
+ * able to get past it.
+ */
+async function insertMassFlow(
+  tx: Tx,
+  revisionId: string,
+  massFlow: MassFlowInput,
+): Promise<string> {
   const flowRow = await tx
     .insert(recipeMassFlows)
     .values({
@@ -729,7 +899,34 @@ async function writeMassFlow(
   return massFlowId;
 }
 
-/** Replace a recipe's outgoing links. Unknown targets are reported, not silent. */
+/**
+ * Replace a revision's figure, or remove it.
+ *
+ * `null` deletes the flow and its stages go with it by FK cascade — a mass
+ * flow stage is a CHILD (see `DELETABLE_KINDS`): it has no delete of its own
+ * and no `deleted_at`, and a caller removes one by sending the list without
+ * it. Only `update_revision` reaches this.
+ */
+async function replaceMassFlow(
+  tx: Tx,
+  revisionId: string,
+  massFlow: MassFlowInput | null,
+): Promise<string | null> {
+  await tx
+    .delete(recipeMassFlows)
+    .where(eq(recipeMassFlows.revisionId, revisionId));
+  if (!massFlow) return null;
+  return insertMassFlow(tx, revisionId, massFlow);
+}
+
+/**
+ * Replace a recipe's outgoing links. Unknown targets are reported, not silent.
+ *
+ * Scoped to links whose target is LIVE, for the reason `applyTaxonomy` gives:
+ * `get_recipe` does not show a link to a deleted recipe, so a caller sending
+ * back the list it was shown cannot keep one, and a hard delete here is not
+ * recoverable by restoring the target.
+ */
 async function applyLinks(
   tx: Tx,
   fromRecipeId: string,
@@ -737,19 +934,52 @@ async function applyLinks(
 ): Promise<string[]> {
   if (!links) return [];
   const unresolved: string[] = [];
-  await tx
-    .delete(recipeLinks)
-    .where(eq(recipeLinks.fromRecipeId, fromRecipeId));
+  await tx.execute(
+    sql`DELETE FROM recipe_links l
+          USING recipes r
+          WHERE r.id = l.to_recipe_id
+            AND r.deleted_at IS NULL
+            AND l.from_recipe_id = ${fromRecipeId}`,
+  );
 
   for (const link of links) {
     const target = await tx
-      .select({ id: recipes.id })
+      .select({
+        id: recipes.id,
+        title: recipes.title,
+        slug: recipes.slug,
+        deletedAt: recipes.deletedAt,
+      })
       .from(recipes)
       .where(eq(recipes.slug, link.slug))
       .limit(1);
     if (!target[0]) {
       unresolved.push(link.slug);
       continue;
+    }
+    // A deleted target is NOT an unresolved link. The row exists, so a report
+    // saying "that slug is not here" would send the caller looking for a
+    // spelling mistake that is not there. It is refused instead, and the
+    // refusal names the way out — unless this recipe already links to it, in
+    // which case the caller is echoing back an edge that survived the delete
+    // above and is asking for nothing to change. Refusing that would make an
+    // ordinary correction impossible for any recipe holding such an edge.
+    if (target[0].deletedAt) {
+      const held = await tx
+        .select({ id: recipeLinks.id })
+        .from(recipeLinks)
+        .where(
+          and(
+            eq(recipeLinks.fromRecipeId, fromRecipeId),
+            eq(recipeLinks.toRecipeId, target[0].id),
+            eq(recipeLinks.kind, link.kind),
+          ),
+        )
+        .limit(1);
+      if (held[0]) continue;
+      throw new ConflictError(
+        deletedRefusal(`${target[0].title} (${target[0].slug})`),
+      );
     }
     if (target[0].id === fromRecipeId) continue;
     await tx
@@ -811,6 +1041,15 @@ export interface NeedsDescription {
  * call happened to create: a term left undescribed by an earlier write is
  * exactly as incomplete, and the caller holding the recipe is the one who
  * can fix it.
+ *
+ * LIVE ROWS ONLY, and this is the one place a write RESULT could leak a
+ * deleted record. `read.ts` reaches every table through a view and a census
+ * checks it, but a write result is outside both. A deleted tag named here
+ * reaches the caller as a slug and a label, and `followUpMessage` in
+ * `tools.ts` then tells the model to call `upsert_category` on it — which
+ * restores it. So a write that mentions no deleted record cannot undo a
+ * delete by accident. `write.ts` is allowed the base tables, so the filter
+ * is stated rather than borrowed from a view.
  */
 async function collectNeedsDescription(
   tx: Tx,
@@ -826,7 +1065,9 @@ async function collectNeedsDescription(
     })
     .from(recipeTerms)
     .innerJoin(taxonomyTerms, eq(recipeTerms.termId, taxonomyTerms.id))
-    .where(eq(recipeTerms.recipeId, recipeId));
+    .where(
+      and(isNull(taxonomyTerms.deletedAt), eq(recipeTerms.recipeId, recipeId)),
+    );
 
   const lineRows = await tx
     .select({
@@ -840,7 +1081,12 @@ async function collectNeedsDescription(
     })
     .from(recipeIngredients)
     .innerJoin(ingredients, eq(recipeIngredients.ingredientId, ingredients.id))
-    .where(eq(recipeIngredients.revisionId, revisionId));
+    .where(
+      and(
+        isNull(ingredients.deletedAt),
+        eq(recipeIngredients.revisionId, revisionId),
+      ),
+    );
 
   const seen = new Set<string>();
   const bare: NeedsDescription['ingredients'] = [];
@@ -881,15 +1127,28 @@ export async function createRecipe(
   source: 'human' | 'mcp' | 'import' = 'mcp',
 ): Promise<WriteResult> {
   return withTransaction(async (tx) => {
-    const taken = await tx.select({ slug: recipes.slug }).from(recipes);
+    /**
+     * Every slug, DELETED ONES INCLUDED, and that is deliberate. A slug is
+     * the public address of a recipe and a deleted recipe still holds
+     * `/recipes/laab-moo`; handing the name to a second recipe would make
+     * restoring the first impossible and would point an old link at a
+     * different dish. So `uniqueSlug` counts them and picks `laab-moo-2`.
+     */
+    const taken = await tx
+      .select({ slug: recipes.slug, deletedAt: recipes.deletedAt })
+      .from(recipes);
     const desired = input.slug ?? slugify(input.title);
 
     if (input.slug) {
       const clash = taken.find((r) => r.slug === input.slug);
       if (clash) {
         throw new ConflictError(
-          `A recipe with slug "${input.slug}" already exists. Use revise_recipe ` +
-            'to add a revision, or choose a different slug.',
+          clash.deletedAt
+            ? `A recipe with slug "${input.slug}" is deleted. Call ` +
+                `restore_record { kind: "recipe", slug: "${input.slug}" } to ` +
+                'bring it back, or choose a different slug.'
+            : `A recipe with slug "${input.slug}" already exists. Use ` +
+                'revise_recipe to add a revision, or choose a different slug.',
         );
       }
     }
@@ -973,6 +1232,7 @@ export async function reviseRecipe(
         id: recipes.id,
         currentRevisionId: recipes.currentRevisionId,
         title: recipes.title,
+        deletedAt: recipes.deletedAt,
       })
       .from(recipes)
       .where(eq(recipes.slug, input.slug))
@@ -981,17 +1241,48 @@ export async function reviseRecipe(
     if (!recipe) {
       throw new NotFoundError(`No recipe with slug "${input.slug}".`);
     }
+    // Appending a version to an invisible recipe would write a revision
+    // nobody can read and report success. ConflictError, not NotFoundError:
+    // the recipe is there.
+    if (recipe.deletedAt) {
+      throw new ConflictError(
+        deletedRefusal(`${recipe.title} (${input.slug})`),
+      );
+    }
 
+    /**
+     * The version this one supersedes, and it must be a LIVE one.
+     *
+     * `isNull(deletedAt)` is the backstop, not the fix. `current_revision_id`
+     * is supposed to name a live revision — `deleteRecord` moves it off a
+     * revision it removes, under a lock, and `updateRecipe` refuses to move
+     * it onto a deleted one — but this read is where a pointer that is wrong
+     * for any reason does the most damage: everything an omitted list carries
+     * forward comes from here, so a deleted revision read as `previous` puts
+     * its ingredients and its steps back on the public page, inside a new
+     * live revision, with no `restore_record` called and nothing to say it
+     * happened. A missed carry-forward is a visible, correctable mistake; a
+     * silent republication of withdrawn content is not.
+     */
     const previous = recipe.currentRevisionId
       ? (
           await tx
             .select()
             .from(recipeRevisions)
-            .where(eq(recipeRevisions.id, recipe.currentRevisionId))
+            .where(
+              and(
+                eq(recipeRevisions.id, recipe.currentRevisionId),
+                isNull(recipeRevisions.deletedAt),
+              ),
+            )
             .limit(1)
         )[0]
       : undefined;
 
+    // Over EVERY revision, deleted ones included. A deleted number is
+    // retired: the row still holds it, so the next version takes a fresh one
+    // and `/recipes/<slug>/revisions/3` for a deleted 3 answers 404 forever
+    // rather than quietly drawing a different version.
     const maxRow = await tx
       .select({
         max: sql<number>`COALESCE(MAX(${recipeRevisions.revisionNumber}), 0)`,
@@ -1161,13 +1452,22 @@ export async function backfillRevision(
 ): Promise<WriteResult> {
   return withTransaction(async (tx) => {
     const found = await tx
-      .select({ id: recipes.id, title: recipes.title })
+      .select({
+        id: recipes.id,
+        title: recipes.title,
+        deletedAt: recipes.deletedAt,
+      })
       .from(recipes)
       .where(eq(recipes.slug, input.slug))
       .limit(1);
     const recipe = found[0];
     if (!recipe) {
       throw new NotFoundError(`No recipe with slug "${input.slug}".`);
+    }
+    if (recipe.deletedAt) {
+      throw new ConflictError(
+        deletedRefusal(`${recipe.title} (${input.slug})`),
+      );
     }
 
     const occurredAt = new Date(input.occurredAt);
@@ -1249,13 +1549,28 @@ export async function backfillRevision(
   });
 }
 
-/** Read a revision's ingredient lines back out in submission shape. */
+/**
+ * Read a revision's ingredient lines back out in submission shape.
+ *
+ * EACH LINE CARRIES THE INGREDIENT ID IT ALREADY HAD, and that is not an
+ * optimisation. `name` here is the CANONICAL name, read off the base table
+ * so a line whose ingredient is deleted still comes back holding it. Sending
+ * that name back through `resolveIngredient` — which restores on a slug hit,
+ * by design, because a caller naming an ingredient in a real line is proof
+ * it exists — silently un-deleted an ingredient for any `revise_recipe` or
+ * `update_revision` that changed only the steps. The caller named nothing:
+ * the write layer did, by echoing its own row back at itself. Carrying the
+ * id means a kept line keeps pointing at the row it pointed at, whatever
+ * state that row is in, and `restore_record` on the ingredient is what
+ * brings it back.
+ */
 async function copyIngredientLines(
   tx: Tx,
   revisionId: string,
-): Promise<IngredientLineInput[]> {
+): Promise<CarriedIngredientLine[]> {
   const rows = await tx
     .select({
+      ingredientId: recipeIngredients.ingredientId,
       name: sql<string>`COALESCE(${ingredients.name}, ${recipeIngredients.rawText})`,
       quantity: recipeIngredients.quantity,
       quantityMax: recipeIngredients.quantityMax,
@@ -1272,6 +1587,7 @@ async function copyIngredientLines(
     .orderBy(recipeIngredients.position);
 
   return rows.map((r) => ({
+    carriedIngredientId: r.ingredientId,
     name: r.name,
     quantity: r.quantity == null ? null : Number(r.quantity),
     quantityMax: r.quantityMax == null ? null : Number(r.quantityMax),
@@ -1390,65 +1706,124 @@ async function copySteps(tx: Tx, revisionId: string): Promise<StepInput[]> {
 // Notes, ingredients, experiments
 // ─────────────────────────────────────────────────────────────────────────
 
+/**
+ * Turn a note's subject arguments into the one column that carries it.
+ *
+ * Shared by `addNote` and `updateNote`, so "which of the five columns does
+ * `recipeSlug` with a `revisionNumber` mean" is answered once. Every lookup
+ * refuses a deleted record: a note is an append, and appending to something
+ * invisible is a silent write.
+ */
+async function resolveNoteSubject(
+  tx: Tx,
+  input: {
+    recipeSlug?: string | null;
+    ingredientSlug?: string | null;
+    experimentSlug?: string | null;
+    revisionNumber?: number | null;
+  },
+): Promise<NoteSubject> {
+  const subject: NoteSubject = {};
+
+  if (input.recipeSlug) {
+    const found = await tx
+      .select({
+        id: recipes.id,
+        title: recipes.title,
+        deletedAt: recipes.deletedAt,
+      })
+      .from(recipes)
+      .where(eq(recipes.slug, input.recipeSlug))
+      .limit(1);
+    if (!found[0]) throw new NotFoundError(`No recipe "${input.recipeSlug}".`);
+    if (found[0].deletedAt) {
+      throw new ConflictError(
+        deletedRefusal(`${found[0].title} (${input.recipeSlug})`),
+      );
+    }
+
+    if (input.revisionNumber != null) {
+      const rev = await tx
+        .select({
+          id: recipeRevisions.id,
+          deletedAt: recipeRevisions.deletedAt,
+        })
+        .from(recipeRevisions)
+        .where(
+          and(
+            eq(recipeRevisions.recipeId, found[0].id),
+            eq(recipeRevisions.revisionNumber, input.revisionNumber),
+          ),
+        )
+        .limit(1);
+      if (!rev[0]) {
+        throw new NotFoundError(
+          `Recipe "${input.recipeSlug}" has no revision ${input.revisionNumber}.`,
+        );
+      }
+      if (rev[0].deletedAt) {
+        throw new ConflictError(
+          deletedRefusal(`${found[0].title}, revision ${input.revisionNumber}`),
+        );
+      }
+      subject.revisionId = rev[0].id;
+    } else {
+      subject.recipeId = found[0].id;
+    }
+  } else if (input.ingredientSlug) {
+    const found = await tx
+      .select({
+        id: ingredients.id,
+        name: ingredients.name,
+        deletedAt: ingredients.deletedAt,
+      })
+      .from(ingredients)
+      .where(eq(ingredients.slug, input.ingredientSlug))
+      .limit(1);
+    if (!found[0]) {
+      throw new NotFoundError(`No ingredient "${input.ingredientSlug}".`);
+    }
+    if (found[0].deletedAt) {
+      throw new ConflictError(
+        deletedRefusal(`${found[0].name} (${input.ingredientSlug})`),
+      );
+    }
+    subject.ingredientId = found[0].id;
+  } else if (input.experimentSlug) {
+    const found = await tx
+      .select({
+        id: experiments.id,
+        title: experiments.title,
+        deletedAt: experiments.deletedAt,
+      })
+      .from(experiments)
+      .where(eq(experiments.slug, input.experimentSlug))
+      .limit(1);
+    if (!found[0]) {
+      throw new NotFoundError(`No experiment "${input.experimentSlug}".`);
+    }
+    if (found[0].deletedAt) {
+      throw new ConflictError(
+        deletedRefusal(`${found[0].title} (${input.experimentSlug})`),
+      );
+    }
+    subject.experimentId = found[0].id;
+  }
+
+  return subject;
+}
+
 export async function addNote(
   input: AddNoteInput,
 ): Promise<{ noteId: string }> {
   return withTransaction(async (tx) => {
     const subject: Parameters<typeof writeNotes>[1] = {};
 
-    if (input.recipeSlug) {
-      const found = await tx
-        .select({
-          id: recipes.id,
-          currentRevisionId: recipes.currentRevisionId,
-        })
-        .from(recipes)
-        .where(eq(recipes.slug, input.recipeSlug))
-        .limit(1);
-      if (!found[0])
-        throw new NotFoundError(`No recipe "${input.recipeSlug}".`);
-
-      if (input.revisionNumber != null) {
-        const rev = await tx
-          .select({ id: recipeRevisions.id })
-          .from(recipeRevisions)
-          .where(
-            and(
-              eq(recipeRevisions.recipeId, found[0].id),
-              eq(recipeRevisions.revisionNumber, input.revisionNumber),
-            ),
-          )
-          .limit(1);
-        if (!rev[0]) {
-          throw new NotFoundError(
-            `Recipe "${input.recipeSlug}" has no revision ${input.revisionNumber}.`,
-          );
-        }
-        subject.revisionId = rev[0].id;
-      } else {
-        subject.recipeId = found[0].id;
-      }
-    } else if (input.ingredientSlug) {
-      const found = await tx
-        .select({ id: ingredients.id })
-        .from(ingredients)
-        .where(eq(ingredients.slug, input.ingredientSlug))
-        .limit(1);
-      if (!found[0]) {
-        throw new NotFoundError(`No ingredient "${input.ingredientSlug}".`);
-      }
-      subject.ingredientId = found[0].id;
-    } else if (input.experimentSlug) {
-      const found = await tx
-        .select({ id: experiments.id })
-        .from(experiments)
-        .where(eq(experiments.slug, input.experimentSlug))
-        .limit(1);
-      if (!found[0]) {
-        throw new NotFoundError(`No experiment "${input.experimentSlug}".`);
-      }
-      subject.experimentId = found[0].id;
-    }
+    // A note appends to a record, so it REFUSES a deleted one rather than
+    // restoring it: writing a note onto an invisible recipe would report
+    // success and show the caller nothing. `resolveNoteSubject` is where each
+    // of the four lookups makes that test.
+    Object.assign(subject, await resolveNoteSubject(tx, input));
 
     const [noteId] = await writeNotes(tx, subject, [
       {
@@ -1480,29 +1855,48 @@ export async function addNote(
  * is stored and that a revise is how a different batch gets recorded. So
  * this write is add-once, never change.
  *
- * It exists because no other path can reach the archive. `pnpm ingest`
- * skips a recipe that exists and `--force` adds revisions; a revise makes a
- * new version, and a version whose only change is a diagram breaks "every
- * revision records why it exists" and moves a number that is in URLs and in
- * the keys that remember ticked ingredients.
+ * That promise is now LOCAL TO THIS TOOL. `update_revision` can replace a
+ * figure, because a figure that was typed wrong is a record that is wrong
+ * and correcting one is a different act from recording another batch. The
+ * ergonomic path for filling an empty field on a stored revision is still
+ * here, and the refusal says which tool answers which question.
+ *
+ * It exists because no other path could reach the archive when it was
+ * written. `pnpm ingest` skips a recipe that exists and `--force` adds
+ * revisions; a revise makes a new version, and a version whose only change
+ * is a diagram breaks "every revision records why it exists" and moves a
+ * number that is in URLs and in the keys that remember ticked ingredients.
  */
 export async function addMassFlow(
   input: AddMassFlowInput,
 ): Promise<{ slug: string; revisionNumber: number; massFlowId: string }> {
   return withTransaction(async (tx) => {
     const found = await tx
-      .select({ id: recipes.id, currentRevisionId: recipes.currentRevisionId })
+      .select({
+        id: recipes.id,
+        title: recipes.title,
+        currentRevisionId: recipes.currentRevisionId,
+        deletedAt: recipes.deletedAt,
+      })
       .from(recipes)
       .where(eq(recipes.slug, input.slug))
       .limit(1);
     if (!found[0]) throw new NotFoundError(`No recipe "${input.slug}".`);
+    if (found[0].deletedAt) {
+      throw new ConflictError(
+        deletedRefusal(`${found[0].title} (${input.slug})`),
+      );
+    }
 
     let revisionId = found[0].currentRevisionId;
     let revisionNumber: number;
 
     if (input.revisionNumber != null) {
       const rev = await tx
-        .select({ id: recipeRevisions.id })
+        .select({
+          id: recipeRevisions.id,
+          deletedAt: recipeRevisions.deletedAt,
+        })
         .from(recipeRevisions)
         .where(
           and(
@@ -1514,6 +1908,11 @@ export async function addMassFlow(
       if (!rev[0]) {
         throw new NotFoundError(
           `Recipe "${input.slug}" has no revision ${input.revisionNumber}.`,
+        );
+      }
+      if (rev[0].deletedAt) {
+        throw new ConflictError(
+          deletedRefusal(`${found[0].title}, revision ${input.revisionNumber}`),
         );
       }
       revisionId = rev[0].id;
@@ -1551,10 +1950,12 @@ export async function addMassFlow(
  *
  * The same shape of write as `addMassFlow`, one level down, and the same
  * argument: every science note in the archive was written before the column
- * existed, and a note is append-only — the model's answer to a wrong note
- * is a `correction`, not an edit. This fills a field that has never held a
- * value, so it can only turn absent into present. A note whose conditions
- * are already written is refused, and the error says what is there.
+ * existed. This fills a field that has never held a value, so it can only
+ * turn absent into present. A note whose conditions are already written is
+ * refused, and the error says what is there — and now also which tool
+ * corrects them, because `update_note` can and this one still cannot. The
+ * two answers are different on purpose: a `correction` note leaves the old
+ * claim readable, and an update says the old claim was never true.
  *
  * `notes.updatedAt` moves, because the record of the note did change. That
  * column has existed since the first migration and nothing has ever moved
@@ -1586,7 +1987,9 @@ export async function describeMechanism(
         id: notes.id,
         kind: notes.kind,
         title: notes.title,
+        body: notes.body,
         conditions: notes.conditions,
+        deletedAt: notes.deletedAt,
       })
       .from(notes)
       .where(eq(notes.id, input.noteId))
@@ -1594,12 +1997,18 @@ export async function describeMechanism(
       .for('update');
     const note = found[0];
     if (!note) throw new NotFoundError(`No note with id "${input.noteId}".`);
+    if (note.deletedAt) {
+      throw new ConflictError(
+        deletedRefusal(noteHandle(note.kind, note.title, note.body)),
+      );
+    }
 
     if (note.conditions.length > 0) {
       throw new ConflictError(
         `That note already states its conditions: ` +
-          `${note.conditions.join(' · ')}. They cannot be changed. If they ` +
-          'are wrong, add a note of kind "correction" that says so.',
+          `${note.conditions.join(' · ')}. This tool does not replace them. ` +
+          'To correct them, call update_note. To leave the old claim ' +
+          'readable, add a note of kind "correction" that says so.',
       );
     }
 
@@ -1616,8 +2025,9 @@ export async function describeMechanism(
 
     if (written.length === 0) {
       throw new ConflictError(
-        'That note states its conditions already. They cannot be changed. ' +
-          'If they are wrong, add a note of kind "correction" that says so.',
+        'That note states its conditions already. This tool does not ' +
+          'replace them. To correct them, call update_note. To leave the ' +
+          'old claim readable, add a note of kind "correction" that says so.',
       );
     }
 
@@ -1645,6 +2055,13 @@ export async function upsertCategory(input: UpsertCategoryInput): Promise<{
   categoryType: CategoryType;
   slug: string;
   created: boolean;
+  /**
+   * True when this call brought a deleted tag back. An upsert states what
+   * the record should be, so it restores rather than refuses — and it says
+   * so, because a caller that gets `created: false` for a tag it could not
+   * see anywhere has been told nothing at all.
+   */
+  restored: boolean;
   /** The broader tag this one now sits under. Always in the same category
       type, so it needs no type of its own. `null` means it is top level. */
   parent: { slug: string; label: string } | null;
@@ -1693,6 +2110,7 @@ export async function upsertCategory(input: UpsertCategoryInput): Promise<{
             id: taxonomyTerms.id,
             slug: taxonomyTerms.slug,
             label: taxonomyTerms.label,
+            deletedAt: taxonomyTerms.deletedAt,
           })
           .from(taxonomyTerms)
           .where(
@@ -1707,6 +2125,16 @@ export async function upsertCategory(input: UpsertCategoryInput): Promise<{
             `No tag "${parentSlug}" in the "${input.categoryType}" category ` +
               'to use as parent. Pass parentSlug: null to clear the parent ' +
               'instead.',
+          );
+        }
+        // The upsert rule restores the row this call ADDRESSES. A parent is
+        // a row it points at, and pointing at a deleted one would store a
+        // hierarchy that reads as `parent: null` on every screen.
+        if (parent[0].deletedAt) {
+          throw new ConflictError(
+            deletedRefusal(
+              `${input.categoryType}/${parent[0].slug} — ${parent[0].label}`,
+            ),
           );
         }
         // AFTER the lookup, not before it, and the order carries the whole
@@ -1734,7 +2162,11 @@ export async function upsertCategory(input: UpsertCategoryInput): Promise<{
     }
 
     const existing = await tx
-      .select({ id: taxonomyTerms.id, parentId: taxonomyTerms.parentId })
+      .select({
+        id: taxonomyTerms.id,
+        parentId: taxonomyTerms.parentId,
+        deletedAt: taxonomyTerms.deletedAt,
+      })
       .from(taxonomyTerms)
       .where(
         and(
@@ -1745,6 +2177,12 @@ export async function upsertCategory(input: UpsertCategoryInput): Promise<{
       .limit(1);
 
     if (existing[0]) {
+      // Restore, not refuse: `upsert_category` says what the tag should be,
+      // and `uq_taxonomy_facet_slug` means there is no second row to write
+      // instead. Everything the delete took with it comes back too, so the
+      // result is the same state a `restore_record` would have produced.
+      const restored = existing[0].deletedAt != null;
+      if (restored) await restoreTermRow(tx, existing[0].id);
       await tx
         .update(taxonomyTerms)
         .set({
@@ -1760,6 +2198,7 @@ export async function upsertCategory(input: UpsertCategoryInput): Promise<{
         categoryType: input.categoryType,
         slug,
         created: false,
+        restored,
         // An omitted `parentSlug` wrote nothing, so the result says what is
         // stored rather than saying null and reading as a clear.
         parent:
@@ -1780,6 +2219,7 @@ export async function upsertCategory(input: UpsertCategoryInput): Promise<{
       categoryType: input.categoryType,
       slug,
       created: true,
+      restored: false,
       parent: namedParent,
     };
   });
@@ -1798,14 +2238,21 @@ export async function upsertCategory(input: UpsertCategoryInput): Promise<{
  */
 export async function upsertIngredient(
   input: UpsertIngredientInput,
-): Promise<{ slug: string; created: boolean }> {
+): Promise<{ slug: string; created: boolean; restored: boolean }> {
   return withTransaction(async (tx) => {
     const slug = input.slug ?? slugify(input.name);
     const existing = await tx
-      .select({ id: ingredients.id })
+      .select({ id: ingredients.id, deletedAt: ingredients.deletedAt })
       .from(ingredients)
       .where(eq(ingredients.slug, slug))
       .limit(1);
+
+    // Restore, not refuse. The slug is unique, so there is no second row to
+    // write instead, and naming an ingredient in an upsert is a statement
+    // that the ingredient exists. The result says so: a caller that got
+    // `created: false` for a row it could not see anywhere was told nothing.
+    const restored = existing[0]?.deletedAt != null;
+    if (restored) await restoreIngredientRow(tx, existing[0]!.id);
 
     // The same invariant, on the field that names the row.
     //
@@ -1820,7 +2267,11 @@ export async function upsertIngredient(
     const nameOwnerId = await findIngredientId(tx, input.name);
     if (nameOwnerId && nameOwnerId !== existing[0]?.id) {
       const owner = await tx
-        .select({ slug: ingredients.slug, name: ingredients.name })
+        .select({
+          slug: ingredients.slug,
+          name: ingredients.name,
+          deletedAt: ingredients.deletedAt,
+        })
         .from(ingredients)
         .where(eq(ingredients.id, nameOwnerId))
         .limit(1);
@@ -1829,7 +2280,14 @@ export async function upsertIngredient(
           `(${owner[0]?.slug}). Two ingredients cannot answer to the same ` +
           'name: a recipe line naming it would bind to one of them without ' +
           `saying which. Send slug: "${owner[0]?.slug}" to change that ` +
-          'ingredient, or pick a name that no ingredient answers to.',
+          'ingredient, or pick a name that no ingredient answers to.' +
+          // A deleted ingredient still owns its name — the slug is unique
+          // whatever the row's state — so the collision is real and the
+          // caller needs to be told why it cannot see the thing it hit.
+          (owner[0]?.deletedAt
+            ? ` That ingredient is deleted. Sending slug: "${owner[0]?.slug}"` +
+              ' brings it back.'
+            : ''),
       );
     }
 
@@ -1918,14 +2376,21 @@ export async function upsertIngredient(
       }
     }
 
-    return { slug, created: !existing[0] };
+    return { slug, created: !existing[0], restored };
   });
 }
 
-export async function logExperiment(
-  input: LogExperimentInput,
-): Promise<{ slug: string; itemCount: number; observationCount: number }> {
+export async function logExperiment(input: LogExperimentInput): Promise<{
+  slug: string;
+  itemCount: number;
+  observationCount: number;
+  /** True when this call brought a deleted run back. See below. */
+  restored: boolean;
+}> {
   return withTransaction(async (tx) => {
+    // Every slug, deleted runs included, for the reason `createRecipe` gives:
+    // a deleted run still holds `/batch-logs/<slug>`, so a generated slug
+    // must not take a name that a restore would need back.
     const taken = await tx.select({ slug: experiments.slug }).from(experiments);
     const slug =
       input.slug ??
@@ -1940,8 +2405,11 @@ export async function logExperiment(
     const existing = await tx
       .select({
         id: experiments.id,
+        title: experiments.title,
         recipeId: experiments.recipeId,
         revisionId: experiments.revisionId,
+        deletedAt: experiments.deletedAt,
+        deletedEventId: experiments.deletedEventId,
       })
       .from(experiments)
       .where(eq(experiments.slug, slug))
@@ -1961,18 +2429,31 @@ export async function logExperiment(
       const found = await tx
         .select({
           id: recipes.id,
+          title: recipes.title,
           currentRevisionId: recipes.currentRevisionId,
+          deletedAt: recipes.deletedAt,
         })
         .from(recipes)
         .where(eq(recipes.slug, input.recipeSlug))
         .limit(1);
       if (!found[0])
         throw new NotFoundError(`No recipe "${input.recipeSlug}".`);
+      // The run is the record this upsert addresses; the recipe is a row it
+      // points at. Linking a run to a deleted recipe would put a line on
+      // /batch-logs whose link 404s.
+      if (found[0].deletedAt) {
+        throw new ConflictError(
+          deletedRefusal(`${found[0].title} (${input.recipeSlug})`),
+        );
+      }
       recipeId = found[0].id;
 
       if (input.revisionNumber != null) {
         const rev = await tx
-          .select({ id: recipeRevisions.id })
+          .select({
+            id: recipeRevisions.id,
+            deletedAt: recipeRevisions.deletedAt,
+          })
           .from(recipeRevisions)
           .where(
             and(
@@ -1984,6 +2465,24 @@ export async function logExperiment(
         if (!rev[0]) {
           throw new NotFoundError(
             `Recipe "${input.recipeSlug}" has no revision ${input.revisionNumber}.`,
+          );
+        }
+        // Deliberately pinning a NEW run to a withdrawn version is different
+        // from a stored run whose version was withdrawn afterwards. The
+        // second is the case soft delete exists for and reads as
+        // "third revision · withdrawn"; the first is a caller naming a row it
+        // cannot see, and is refused.
+        //
+        // NAMING THE PIN THE RUN ALREADY HOLDS IS NEITHER. It moves nothing,
+        // and the state it asks for is the state on disk — which is why
+        // `pnpm ingest --force` hit this: every seed re-logs its run with the
+        // revision number it was stored with, so one withdrawn version made
+        // the whole load abort after a partial write.
+        if (rev[0].deletedAt && rev[0].id !== existing[0]?.revisionId) {
+          throw new ConflictError(
+            deletedRefusal(
+              `${found[0].title}, revision ${input.revisionNumber}`,
+            ),
           );
         }
         revisionId = rev[0].id;
@@ -2000,6 +2499,40 @@ export async function logExperiment(
       } else {
         revisionId = found[0].currentRevisionId;
       }
+    }
+
+    /**
+     * A re-log of a DELETED run brings it back, and the two links it will
+     * hold after this call are what the restore rule is tested against — not
+     * the ones it was stored with. That is what lets the escape hatch in
+     * `restoreBlockedBy`'s message work: `log_experiment` with
+     * `recipeSlug: null` unlinks the run and restores it in one call, so a
+     * run whose recipe is still deleted is never stuck.
+     *
+     * A run cascaded away with its recipe cannot get through here: its recipe
+     * is deleted, and either the caller re-points the run at a live recipe or
+     * the check below refuses and names the recipe to restore first.
+     */
+    const restored = existing[0]?.deletedAt != null;
+    if (restored && existing[0]) {
+      const effectiveRecipeId =
+        recipeId !== undefined ? recipeId : existing[0].recipeId;
+      const effectiveRevisionId =
+        recipeId !== undefined ? (revisionId ?? null) : existing[0].revisionId;
+      const record: ResolvedRecord = {
+        kind: 'experiment',
+        id: existing[0].id,
+        address: { kind: 'experiment', id: existing[0].id, slug },
+        handle: `${existing[0].title} (${slug})`,
+        deletedAt: existing[0].deletedAt,
+        deletedEventId: existing[0].deletedEventId,
+        recipeId: effectiveRecipeId,
+        revisionId: effectiveRevisionId,
+        subject: null,
+      };
+      const blocked = await restoreBlockedBy(tx, record);
+      if (blocked) throw new ConflictError(blocked);
+      await restoreExperimentRow(tx, record.id, record.deletedEventId);
     }
 
     // Same rule as `upsertIngredient`: only the keys the caller sent, because
@@ -2139,9 +2672,1713 @@ export async function logExperiment(
         slug,
         itemCount: Number(stored[0]?.items ?? 0),
         observationCount: Number(stored[0]?.observations ?? 0),
+        restored,
       };
     }
 
-    return { slug, itemCount: itemIdByLabel.size, observationCount };
+    return { slug, itemCount: itemIdByLabel.size, observationCount, restored };
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Correcting a stored record
+//
+// DID THE FOOD CHANGE, OR IS THE RECORD WRONG? That one question separates
+// these three functions from `reviseRecipe`, and it is the sentence every
+// tool description that touches them repeats. A dish that changed gets a
+// version: `revise_recipe`, a rationale, the old version kept. A record that
+// is wrong gets a correction: no new version, no number moved, and NO
+// RATIONALE — a rationale is the record of why the dish changed, and a
+// correction is the statement that it did not.
+//
+// The case that made them exist is neither: two chats writing the same
+// revision twice. A duplicate is not a version, it is a data-entry accident,
+// and a rule that preserves it is protecting a mistake.
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Correct the record of a recipe. Touches no version and makes none.
+ *
+ * Returns `WriteResult` and goes through the same `collectNeedsDescription`
+ * as `create_recipe`, because it can mint tags: `categories` replaces the
+ * whole list and `resolveTermId` creates what it names. A caller that adds a
+ * tag here owes the same description it would owe there, and reusing the
+ * machinery means the follow-up text cannot drift.
+ */
+export async function updateRecipe(
+  input: UpdateRecipeInput,
+): Promise<WriteResult> {
+  return withTransaction(async (tx) => {
+    const found = await tx
+      .select({
+        id: recipes.id,
+        title: recipes.title,
+        currentRevisionId: recipes.currentRevisionId,
+        deletedAt: recipes.deletedAt,
+      })
+      .from(recipes)
+      .where(eq(recipes.slug, input.slug))
+      .limit(1);
+    const recipe = found[0];
+    if (!recipe) {
+      throw new NotFoundError(`No recipe with slug "${input.slug}".`);
+    }
+    if (recipe.deletedAt) {
+      throw new ConflictError(
+        deletedRefusal(`${recipe.title} (${input.slug})`),
+      );
+    }
+
+    /**
+     * Moving the pointer is the main reason this tool carries a revision
+     * number. A restore deliberately does not move it back — restoring a
+     * version returns it to the history, and what people read is a separate
+     * decision — so this is where that decision gets stated.
+     */
+    let currentRevisionId = recipe.currentRevisionId;
+    if (input.currentRevisionNumber != null) {
+      const rev = await tx
+        .select({
+          id: recipeRevisions.id,
+          deletedAt: recipeRevisions.deletedAt,
+        })
+        .from(recipeRevisions)
+        .where(
+          and(
+            eq(recipeRevisions.recipeId, recipe.id),
+            eq(recipeRevisions.revisionNumber, input.currentRevisionNumber),
+          ),
+        )
+        .limit(1);
+      if (!rev[0]) {
+        throw new NotFoundError(
+          `Recipe "${input.slug}" has no revision ${input.currentRevisionNumber}.`,
+        );
+      }
+      // The invariant in `src/db/schema.ts`: `current_revision_id` always
+      // names a LIVE revision. Pointing it at a deleted one would make the
+      // recipe 404 while still being listed.
+      if (rev[0].deletedAt) {
+        throw new ConflictError(
+          deletedRefusal(
+            `${recipe.title}, revision ${input.currentRevisionNumber}`,
+          ),
+        );
+      }
+      currentRevisionId = rev[0].id;
+    }
+
+    if (!currentRevisionId) {
+      throw new ConflictError(
+        `Recipe "${input.slug}" has no version yet, so there is nothing to ` +
+          'correct. Add one with revise_recipe.',
+      );
+    }
+
+    await applyTaxonomy(tx, recipe.id, input.categories);
+    const unresolvedLinks = input.links
+      ? await applyLinks(tx, recipe.id, input.links)
+      : [];
+
+    /**
+     * THE SAME CHECK, AGAIN, UNDER THE RECIPE ROW'S LOCK — and it is the
+     * check that counts. The one above ran unlocked and is check-then-act
+     * across two rows: a concurrent `delete_record` of the very revision
+     * named here stamps it, finds the pointer naming something else, leaves
+     * the pointer alone, and this call then moves the pointer onto the
+     * revision that delete just removed. It is the pointer race of
+     * `deleteRecord`'s revision branch arriving from the other side, and it
+     * needs the same answer.
+     *
+     * The lock is taken HERE rather than at the top of the function, so the
+     * recipe row stays the last row this transaction locks — the order
+     * `THE LOCK ORDER` sets out, and the order the `UPDATE` below has always
+     * used anyway. The revision is read again, not locked: holding the recipe
+     * row is enough, because a delete of one of its revisions has to reach
+     * this same row before it can decide anything about the pointer.
+     */
+    if (input.currentRevisionNumber != null) {
+      await tx
+        .select({ id: recipes.id })
+        .from(recipes)
+        .where(eq(recipes.id, recipe.id))
+        .limit(1)
+        .for('update', { of: recipes });
+      const still = await tx
+        .select({ deletedAt: recipeRevisions.deletedAt })
+        .from(recipeRevisions)
+        .where(eq(recipeRevisions.id, currentRevisionId))
+        .limit(1);
+      if (still[0]?.deletedAt) {
+        throw new ConflictError(
+          deletedRefusal(
+            `${recipe.title}, revision ${input.currentRevisionNumber}`,
+          ),
+        );
+      }
+    }
+
+    // Only the keys the caller sent. A `??` fallback here would make an
+    // omission indistinguishable from an explicit clear, and this object is
+    // handed whole to `.set()` — the rule `upsertIngredient` states.
+    await tx
+      .update(recipes)
+      .set({
+        ...(input.title !== undefined ? { title: input.title } : {}),
+        ...(input.subtitle !== undefined
+          ? { subtitle: input.subtitle ?? null }
+          : {}),
+        ...(input.summary !== undefined
+          ? { summary: input.summary ?? null }
+          : {}),
+        ...(input.kind !== undefined ? { kind: input.kind } : {}),
+        ...(input.status !== undefined ? { status: input.status } : {}),
+        ...(input.originNote !== undefined
+          ? { originNote: input.originNote ?? null }
+          : {}),
+        ...(input.heroImageUrl !== undefined
+          ? { heroImageUrl: input.heroImageUrl ?? null }
+          : {}),
+        ...(input.heroImageAlt !== undefined
+          ? { heroImageAlt: input.heroImageAlt ?? null }
+          : {}),
+        ...(input.currentRevisionNumber != null ? { currentRevisionId } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(recipes.id, recipe.id));
+
+    const number = await tx
+      .select({ revisionNumber: recipeRevisions.revisionNumber })
+      .from(recipeRevisions)
+      .where(eq(recipeRevisions.id, currentRevisionId))
+      .limit(1);
+
+    return {
+      slug: input.slug,
+      revisionNumber: number[0]!.revisionNumber,
+      recipeId: recipe.id,
+      revisionId: currentRevisionId,
+      unresolvedLinks,
+      needsDescription: await collectNeedsDescription(
+        tx,
+        recipe.id,
+        currentRevisionId,
+      ),
+    };
+  });
+}
+
+/**
+ * Correct a version that is already stored, in place.
+ *
+ * It mirrors `reviseRecipe`'s carry-forward logic against ITSELF rather than
+ * against a previous revision: an omitted list is read back out of this
+ * revision, cross-checked, and written again. That is what keeps the step →
+ * ingredient-line links correct when only one of the two lists is replaced,
+ * and `checkCarriedUses` runs with exactly the same two hints for exactly the
+ * same reason — skipping it would re-open the 400 g/40 g binding defect
+ * inside a new tool.
+ *
+ * NOTES ON STEPS SURVIVE THE REWRITE, and they need help to. A step is a
+ * child: it has no delete of its own, and replacing the list means deleting
+ * the rows. `notes.step_id` is `ON DELETE CASCADE`, so a straight
+ * delete-and-rewrite would HARD delete every note attached to a step of this
+ * revision — silently, with no stamp and no restore. So the notes are parked
+ * on the revision first, and put back on the step that takes the same
+ * position afterwards. A note whose position no longer exists stays on the
+ * version, which is the honest degradation: the note survives, attached to
+ * the thing it was written about.
+ */
+export async function updateRevision(
+  input: UpdateRevisionInput,
+): Promise<WriteResult> {
+  return withTransaction(async (tx) => {
+    const recipeRows = await tx
+      .select({
+        id: recipes.id,
+        title: recipes.title,
+        deletedAt: recipes.deletedAt,
+      })
+      .from(recipes)
+      .where(eq(recipes.slug, input.slug))
+      .limit(1);
+    const recipe = recipeRows[0];
+    if (!recipe) {
+      throw new NotFoundError(`No recipe with slug "${input.slug}".`);
+    }
+    if (recipe.deletedAt) {
+      throw new ConflictError(
+        deletedRefusal(`${recipe.title} (${input.slug})`),
+      );
+    }
+
+    const revisionRows = await tx
+      .select({
+        id: recipeRevisions.id,
+        deletedAt: recipeRevisions.deletedAt,
+      })
+      .from(recipeRevisions)
+      .where(
+        and(
+          eq(recipeRevisions.recipeId, recipe.id),
+          eq(recipeRevisions.revisionNumber, input.revisionNumber),
+        ),
+      )
+      .limit(1);
+    const revision = revisionRows[0];
+    if (!revision) {
+      throw new NotFoundError(
+        `Recipe "${input.slug}" has no revision ${input.revisionNumber}.`,
+      );
+    }
+    if (revision.deletedAt) {
+      throw new ConflictError(
+        deletedRefusal(`${recipe.title}, revision ${input.revisionNumber}`),
+      );
+    }
+    const revisionId = revision.id;
+
+    // BOTH lists are read before anything is deleted. Reading the carried
+    // half afterwards would read the half this call is in the middle of
+    // replacing.
+    const replacesBody =
+      input.ingredients !== undefined || input.steps !== undefined;
+    if (replacesBody) {
+      const ingredientLines =
+        input.ingredients ?? (await copyIngredientLines(tx, revisionId));
+      const stepList = input.steps ?? (await copySteps(tx, revisionId));
+
+      if (input.steps && !input.ingredients) {
+        await checkCarriedUses(tx, ingredientLines, stepList, {
+          match: 'byName',
+          missing:
+            "which is not in this version's ingredient list. Send " +
+            '`ingredients` alongside `steps` to change both.',
+          ambiguous:
+            'Send `ingredients` alongside `steps` to give a line the new ' +
+            'spelling.',
+          qualifier:
+            'Send `ingredients` alongside `steps` to give a line that ' +
+            'component.',
+        });
+      } else if (input.ingredients && !input.steps) {
+        await checkCarriedUses(tx, ingredientLines, stepList, {
+          match: 'byIngredient',
+          ambiguous:
+            'Send `steps` alongside `ingredients` to say which line each ' +
+            'step means.',
+        });
+      }
+
+      // Park the step notes. `notes.step_id` cascades on delete, and the
+      // step rows are about to go.
+      const stepNotes = await tx
+        .select({ noteId: notes.id, position: recipeSteps.position })
+        .from(notes)
+        .innerJoin(recipeSteps, eq(recipeSteps.id, notes.stepId))
+        .where(eq(recipeSteps.revisionId, revisionId));
+      if (stepNotes.length > 0) {
+        await tx
+          .update(notes)
+          .set({ stepId: null, revisionId })
+          .where(
+            inArray(
+              notes.id,
+              stepNotes.map((row) => row.noteId),
+            ),
+          );
+      }
+
+      // `recipe_step_ingredients` goes with the steps by FK cascade, and the
+      // search vector looks after itself: the trigger on `recipe_ingredients`
+      // refreshes the recipe whose CURRENT revision this is, and correctly
+      // does nothing when it is not.
+      await tx
+        .delete(recipeIngredients)
+        .where(eq(recipeIngredients.revisionId, revisionId));
+      await tx
+        .delete(recipeSteps)
+        .where(eq(recipeSteps.revisionId, revisionId));
+      await writeRevisionBody(tx, revisionId, ingredientLines, stepList);
+
+      if (stepNotes.length > 0) {
+        const rewritten = await tx
+          .select({ id: recipeSteps.id, position: recipeSteps.position })
+          .from(recipeSteps)
+          .where(eq(recipeSteps.revisionId, revisionId));
+        const stepIdAt = new Map(
+          rewritten.map((step) => [step.position, step.id]),
+        );
+        for (const note of stepNotes) {
+          const stepId = stepIdAt.get(note.position);
+          // No step at that position any more: the list got shorter. The
+          // note stays on the version rather than being thrown away.
+          if (!stepId) continue;
+          await tx
+            .update(notes)
+            .set({ stepId, revisionId: null })
+            .where(eq(notes.id, note.noteId));
+        }
+      }
+    }
+
+    // `undefined` leaves the figure alone; an explicit `null` removes it.
+    if (input.massFlow !== undefined) {
+      await replaceMassFlow(tx, revisionId, input.massFlow ?? null);
+    }
+
+    await tx
+      .update(recipeRevisions)
+      .set({
+        ...(input.title !== undefined ? { title: input.title } : {}),
+        ...(input.summary !== undefined
+          ? { summary: input.summary ?? null }
+          : {}),
+        ...(input.rationale !== undefined
+          ? { rationale: input.rationale ?? null }
+          : {}),
+        ...(input.yieldQuantity !== undefined
+          ? { yieldQuantity: num(input.yieldQuantity) }
+          : {}),
+        ...(input.yieldUnit !== undefined
+          ? { yieldUnit: input.yieldUnit ?? null }
+          : {}),
+        ...(input.servings !== undefined
+          ? { servings: input.servings ?? null }
+          : {}),
+        ...(input.totalTimeMinutes !== undefined
+          ? { totalTimeMinutes: input.totalTimeMinutes ?? null }
+          : {}),
+        ...(input.activeTimeMinutes !== undefined
+          ? { activeTimeMinutes: input.activeTimeMinutes ?? null }
+          : {}),
+        ...(input.occurredAt !== undefined
+          ? {
+              occurredAt: input.occurredAt ? new Date(input.occurredAt) : null,
+            }
+          : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(recipeRevisions.id, revisionId));
+
+    // The record of this recipe changed, and the sitemap and every
+    // "newest first" list order by this column.
+    await tx
+      .update(recipes)
+      .set({ updatedAt: new Date() })
+      .where(eq(recipes.id, recipe.id));
+
+    return {
+      slug: input.slug,
+      revisionNumber: input.revisionNumber,
+      recipeId: recipe.id,
+      revisionId,
+      unresolvedLinks: [],
+      needsDescription: await collectNeedsDescription(
+        tx,
+        recipe.id,
+        revisionId,
+      ),
+    };
+  });
+}
+
+/**
+ * Correct a note that is already stored.
+ *
+ * `conditions` is writable here and fill-once in `describe_mechanism`, and
+ * both are right: that tool records a mechanism's conditions for the first
+ * time and must not be able to replace a measurement quietly, while this one
+ * is the statement that what is stored was never true. The other answer — a
+ * note of kind `correction` — is still there and still different: it leaves
+ * the old claim readable.
+ */
+export async function updateNote(
+  input: UpdateNoteInput,
+): Promise<{ noteId: string }> {
+  return withTransaction(async (tx) => {
+    const found = await tx
+      .select({
+        id: notes.id,
+        kind: notes.kind,
+        title: notes.title,
+        body: notes.body,
+        deletedAt: notes.deletedAt,
+      })
+      .from(notes)
+      .where(eq(notes.id, input.noteId))
+      .limit(1);
+    const note = found[0];
+    if (!note) throw new NotFoundError(`No note with id "${input.noteId}".`);
+    if (note.deletedAt) {
+      throw new ConflictError(
+        deletedRefusal(noteHandle(note.kind, note.title, note.body)),
+      );
+    }
+
+    /**
+     * A research note without a source is not research, and the rule cannot
+     * live at the parse boundary here: the schema sees the fields this call
+     * sends, and whether the note ends up with a source depends on what is
+     * already stored. So it is checked against the state this call will
+     * leave behind.
+     */
+    const kind = input.kind ?? note.kind;
+    if (kind === 'research') {
+      const sourceCount =
+        input.sources !== undefined
+          ? input.sources.length
+          : (
+              await tx
+                .select({ id: noteSources.id })
+                .from(noteSources)
+                .where(eq(noteSources.noteId, note.id))
+            ).length;
+      if (sourceCount === 0) {
+        throw new ConflictError(
+          'A research note must cite at least one source in `sources` — ' +
+            'give a url, or a title and citation. Research is the kind that ' +
+            'records where something came from; without that it is an ' +
+            '`observation` or an `idea`, which take no sources.',
+        );
+      }
+    }
+
+    /**
+     * Moving the note rewrites ALL FIVE subject columns, because
+     * `note_has_exactly_one_subject` is a check constraint: leaving the old
+     * one set beside the new one is a database error rather than a sentence
+     * the caller can act on. The position is recomputed for the new subject,
+     * since it is an ordinal within one parent and the old one means nothing
+     * under the new one.
+     */
+    const movesSubject = Boolean(
+      input.recipeSlug || input.ingredientSlug || input.experimentSlug,
+    );
+    let move: Record<string, unknown> = {};
+    if (movesSubject) {
+      const subject = await resolveNoteSubject(tx, input);
+      move = {
+        recipeId: subject.recipeId ?? null,
+        revisionId: subject.revisionId ?? null,
+        stepId: null,
+        ingredientId: subject.ingredientId ?? null,
+        experimentId: subject.experimentId ?? null,
+        position: await nextNotePosition(tx, subject),
+      };
+    }
+
+    if (input.sources !== undefined) {
+      await tx.delete(noteSources).where(eq(noteSources.noteId, note.id));
+      let position = 1;
+      for (const source of input.sources) {
+        await tx.insert(noteSources).values({
+          noteId: note.id,
+          url: source.url ?? null,
+          title: source.title ?? null,
+          citation: source.citation ?? null,
+          accessedAt: source.accessedAt ?? null,
+          position: position++,
+        });
+      }
+    }
+
+    await tx
+      .update(notes)
+      .set({
+        ...(input.kind !== undefined ? { kind: input.kind } : {}),
+        ...(input.title !== undefined ? { title: input.title ?? null } : {}),
+        ...(input.body !== undefined ? { body: input.body } : {}),
+        ...(input.conditions !== undefined
+          ? { conditions: input.conditions }
+          : {}),
+        ...move,
+        updatedAt: new Date(),
+      })
+      .where(eq(notes.id, note.id));
+
+    return { noteId: note.id };
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Delete and restore
+//
+// A delete is soft and it is called delete. The row stays, it stops being
+// visible, and `restoreRecord` brings it back. `src/db/schema.ts` holds the
+// four columns and the reasoning; what follows is the mechanism.
+//
+// THE CASCADE IS WRITTEN DOWN THE TREE, not inferred by joining a read back
+// up it. Two facts decide that. `experiments.recipe_id` is nullable BY
+// DESIGN — a run may name no recipe, and `/batch-logs` prints "Not linked to
+// a recipe" for one — so under a join-upward rule a run whose recipe was
+// deleted and a run that never named one are the same row, and there is
+// nothing to join to. And the four hardest reads in `read.ts` would each
+// grow a filter: `getRecipeBySlug`'s note read is `recipe_id = X OR
+// revision_id = Y`, `noteRecipeId` is a four-way COALESCE of correlated
+// subqueries, and `noteBelongsToRecipe` states the same rule turned round
+// with a comment saying the two must move together. Four places to forget
+// instead of two. The write cost is bounded and one-off: a recipe has a
+// handful of revisions, tens of notes and a few runs, so it is six UPDATEs
+// in one transaction.
+//
+// EVERY UPDATE CARRIES `deleted_at IS NULL`, the root's included. That
+// single predicate is what makes the child-deleted-first case need no
+// bookkeeping: a row that was already deleted is skipped and keeps its own
+// stamp, its own date and its own reason, so restoring the parent's event
+// leaves it exactly where it was and `restore_record` on the child itself is
+// what brings it back.
+//
+// THE ROOT ALSO TAKES `FOR UPDATE`, and the predicate alone was not enough.
+// Two connectors deleting one record under READ COMMITTED both read it live
+// and both write. The cascade was already safe — the loser's UPDATEs matched
+// nothing — but the root's was not: the loser's event id overwrote the
+// winner's on the root while the children kept the winner's, and a restore
+// clears by the ROOT's id, so it brought back the root alone and left a live
+// recipe whose `current_revision_id` named a deleted revision. See
+// `SEE_DELETED_LOCKED`.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** How a caller names one record. The legal forms are in `schemas.ts`. */
+export interface RecordAddress {
+  kind: DeletableKind;
+  id?: string;
+  slug?: string;
+  revisionNumber?: number;
+  categoryType?: CategoryType;
+}
+
+export interface DeleteResult {
+  kind: DeletableKind;
+  id: string;
+  handle: string;
+  deletedAt: string;
+  eventId: string;
+  /** What went with it. The root is named above and is not counted here. */
+  cascaded: { kind: DeletableKind; count: number }[];
+}
+
+export interface RestoreResult {
+  kind: DeletableKind;
+  id: string;
+  handle: string;
+  /** What came back with it. The root is named above and is not counted. */
+  restored: { kind: DeletableKind; count: number }[];
+}
+
+/** One record, found by its address, with what the rules below need. */
+interface ResolvedRecord {
+  kind: DeletableKind;
+  id: string;
+  /** One line a person recognises. */
+  handle: string;
+  /** The same row, written the way `restore_record` takes it. */
+  address: Required<Pick<RecordAddress, 'kind' | 'id'>> & RecordAddress;
+  deletedAt: Date | null;
+  deletedEventId: string | null;
+  /** The recipe a revision belongs to, or the one a run names. */
+  recipeId: string | null;
+  /** The revision a run is pinned to. */
+  revisionId: string | null;
+  /** A note's five subject columns, so its parent can be found. */
+  subject: {
+    recipeId: string | null;
+    revisionId: string | null;
+    stepId: string | null;
+    ingredientId: string | null;
+    experimentId: string | null;
+  } | null;
+}
+
+/** A note's handle: its kind, then its title or the start of its body. */
+function noteHandle(kind: string, title: string | null, body: string): string {
+  const text = title?.trim() || body.trim().replace(/\s+/g, ' ').slice(0, 80);
+  return `${kind}: ${text}`;
+}
+
+/** What the caller wrote, for a message that says which address missed. */
+function addressText(address: RecordAddress): string {
+  if (address.id) return `id "${address.id}"`;
+  if (address.kind === 'revision') {
+    return `"${address.slug}" revision ${address.revisionNumber}`;
+  }
+  if (address.kind === 'tag') {
+    return `"${address.slug}" in the "${address.categoryType}" category`;
+  }
+  return `"${address.slug}"`;
+}
+
+/** Read the row whatever state it is in. Every delete and restore path does. */
+const SEE_DELETED = { allowDeleted: true } as const;
+
+/**
+ * The same, and hold the row until the transaction ends.
+ *
+ * `deleteRecord` and `restoreRecord` are check-then-act: they read the row,
+ * decide from its `deleted_at`, and then write. `withTransaction` runs at the
+ * pool default, READ COMMITTED, so two connectors deleting one record both
+ * read it live, both pass the guard, and both write — and this connector is
+ * multi-client by design. The cascade survived that (every cascade UPDATE
+ * carries `deleted_at IS NULL`, so the loser stamped nothing) but the root
+ * did not: the loser's event id landed on the root while the winner's stayed
+ * on the children, and `restore_record` then cleared the root alone and left
+ * a live recipe pointing at a deleted revision.
+ *
+ * `FOR UPDATE` is the same answer `describeMechanism` takes for the same
+ * shape, and `docs/mcp-connector.md` states the reasoning. `of` names the
+ * addressed table only: the revision read joins `recipes` for the handle, and
+ * locking a recipe row here — BEFORE the revision — would put this call on
+ * the opposite side of the lock order every other writer in this file uses.
+ * See `THE LOCK ORDER` below for what that order is and why the revision
+ * branch of `deleteRecord` takes the recipe row second rather than first.
+ */
+const SEE_DELETED_LOCKED = { allowDeleted: true, lock: true } as const;
+
+/**
+ * THE LOCK ORDER, stated once, because two writers taking two rows in
+ * opposite orders is a deadlock and a deadlock in a delete is worse than
+ * anything it would be fixing: Postgres kills one transaction after
+ * `deadlock_timeout` and the caller is told "An internal error occurred".
+ *
+ * **`recipes` is locked LAST.** Every writer that touches both a recipe and
+ * something below it reaches the recipe row at the end:
+ *
+ * | Writer                      | Order                                        |
+ * | --------------------------- | -------------------------------------------- |
+ * | `createRecipe`              | new rows only                                |
+ * | `reviseRecipe`              | ingredients, terms → new revision → recipes  |
+ * | `updateRevision`            | ingredients → revision → recipes             |
+ * | `updateRecipe`              | terms, links → recipes                       |
+ * | `deleteRecord` (ingredient) | ingredients → notes → recipes (search vector)|
+ * | `deleteRecord` (tag)        | terms → recipes (search vector)              |
+ * | `deleteRecord` (revision)   | revision → recipes                           |
+ *
+ * `deleteRecord` and `restoreRecord` addressing a RECIPE are the one
+ * exception and cannot be anything else: the recipe is the row they address,
+ * so `resolveAddress` locks it first and the cascade reaches the revisions
+ * after. That leaves exactly one pair in the wrong order — a recipe delete
+ * against a revision delete of the same recipe — and `lockRecipeTree` below
+ * is what makes that pair impossible rather than merely unlikely.
+ *
+ * Any integer identifies the namespace; it only has to be one this database
+ * does not use for something else.
+ */
+const RECIPE_TREE_LOCK = 8317;
+
+/**
+ * Hold one recipe's whole tree for the rest of this transaction.
+ *
+ * It is a MUTEX, not a row lock, and that is the point: it is taken as the
+ * FIRST statement of the transaction, before any row lock at all. A
+ * transaction can therefore never be holding a row somebody else wants while
+ * it waits here, so this lock cannot be one edge of a cycle — which is what
+ * lets `deleteRecord` address a recipe (recipes first, revisions after) and a
+ * revision (revision first, recipes after) without the two orders ever
+ * meeting. They do not run at the same time on one recipe.
+ *
+ * `pg_advisory_xact_lock` is released when the transaction ends, commit or
+ * rollback, so it is safe behind a connection pool in a way the session-scoped
+ * form is not. `hashtext` collapses the uuid to an `int4`; a collision costs
+ * two unrelated recipes a moment of waiting and nothing else.
+ */
+async function lockRecipeTree(tx: Tx, recipeId: string): Promise<void> {
+  await tx.execute(
+    sql`SELECT pg_advisory_xact_lock(${RECIPE_TREE_LOCK}, hashtext(${recipeId}))`,
+  );
+}
+
+/**
+ * The recipe a delete or a restore is about to reach into, found WITHOUT a
+ * lock so that `lockRecipeTree` really is the first lock taken.
+ *
+ * Reading it unlocked is safe because neither answer can change under us:
+ * `recipes.id` is the primary key and `recipe_revisions.recipe_id` is never
+ * updated — a revision cannot move to another recipe. Nothing is deleted for
+ * real either, so a row that is there stays there.
+ *
+ * Returns null for the four kinds that are not part of a recipe's tree, and
+ * for an address that names nothing — `resolveAddress` raises the proper
+ * `NotFoundError` a moment later, with the message the caller needs.
+ */
+async function recipeTreeOf(
+  tx: Tx,
+  address: RecordAddress,
+): Promise<string | null> {
+  if (address.kind === 'recipe') {
+    const rows = await tx
+      .select({ id: recipes.id })
+      .from(recipes)
+      .where(
+        address.id
+          ? eq(recipes.id, address.id)
+          : eq(recipes.slug, address.slug!),
+      )
+      .limit(1);
+    return rows[0]?.id ?? null;
+  }
+  if (address.kind === 'revision') {
+    const rows = await tx
+      .select({ id: recipeRevisions.recipeId })
+      .from(recipeRevisions)
+      .innerJoin(recipes, eq(recipes.id, recipeRevisions.recipeId))
+      .where(
+        address.id
+          ? eq(recipeRevisions.id, address.id)
+          : and(
+              eq(recipes.slug, address.slug!),
+              eq(recipeRevisions.revisionNumber, address.revisionNumber!),
+            ),
+      )
+      .limit(1);
+    return rows[0]?.id ?? null;
+  }
+  return null;
+}
+
+/**
+ * Turn an address into a row. THE ONE PLACE the address table in
+ * `schemas.ts` §8 is enforced at run time, so `delete_record`,
+ * `restore_record` and anything added later cannot disagree about what
+ * `{ kind: 'tag', slug: 'braising' }` means.
+ *
+ * It reads the BASE tables, not the `_live` views, because both callers need
+ * to see deleted rows — one to refuse a second delete, the other to restore.
+ * `allowDeleted: false` is for a caller that wants the row only if it is
+ * live, and it refuses with the shared sentence.
+ */
+async function resolveAddress(
+  tx: Tx,
+  address: RecordAddress,
+  options: { allowDeleted: boolean; lock?: boolean },
+): Promise<ResolvedRecord> {
+  /**
+   * Whether each read below ends in `FOR UPDATE OF <the addressed table>`.
+   * See `SEE_DELETED_LOCKED`: a caller that is about to write the row asks
+   * for it; a caller that only wants to read the row's state does not.
+   */
+  const lock = options.lock === true;
+
+  const missing = () =>
+    new NotFoundError(`No ${address.kind} at ${addressText(address)}.`);
+  const base = {
+    recipeId: null,
+    revisionId: null,
+    subject: null,
+  } as const;
+
+  let record: ResolvedRecord;
+
+  switch (address.kind) {
+    case 'recipe': {
+      const read = tx
+        .select({
+          id: recipes.id,
+          slug: recipes.slug,
+          title: recipes.title,
+          deletedAt: recipes.deletedAt,
+          deletedEventId: recipes.deletedEventId,
+        })
+        .from(recipes)
+        .where(
+          address.id
+            ? eq(recipes.id, address.id)
+            : eq(recipes.slug, address.slug!),
+        )
+        .limit(1);
+      const rows = await (lock ? read.for('update', { of: recipes }) : read);
+      const row = rows[0];
+      if (!row) throw missing();
+      record = {
+        ...base,
+        kind: 'recipe',
+        id: row.id,
+        address: { kind: 'recipe', id: row.id, slug: row.slug },
+        handle: `${row.title} (${row.slug})`,
+        deletedAt: row.deletedAt,
+        deletedEventId: row.deletedEventId,
+      };
+      break;
+    }
+    case 'revision': {
+      const read = tx
+        .select({
+          id: recipeRevisions.id,
+          number: recipeRevisions.revisionNumber,
+          deletedAt: recipeRevisions.deletedAt,
+          deletedEventId: recipeRevisions.deletedEventId,
+          recipeId: recipes.id,
+          recipeSlug: recipes.slug,
+          recipeTitle: recipes.title,
+        })
+        .from(recipeRevisions)
+        .innerJoin(recipes, eq(recipes.id, recipeRevisions.recipeId))
+        .where(
+          address.id
+            ? eq(recipeRevisions.id, address.id)
+            : and(
+                eq(recipes.slug, address.slug!),
+                eq(recipeRevisions.revisionNumber, address.revisionNumber!),
+              ),
+        )
+        .limit(1);
+      const rows = await (lock
+        ? read.for('update', { of: recipeRevisions })
+        : read);
+      const row = rows[0];
+      if (!row) throw missing();
+      record = {
+        ...base,
+        kind: 'revision',
+        id: row.id,
+        address: {
+          kind: 'revision',
+          id: row.id,
+          slug: row.recipeSlug,
+          revisionNumber: row.number,
+        },
+        handle: `${row.recipeTitle}, revision ${row.number}`,
+        deletedAt: row.deletedAt,
+        deletedEventId: row.deletedEventId,
+        recipeId: row.recipeId,
+      };
+      break;
+    }
+    case 'note': {
+      const read = tx
+        .select({
+          id: notes.id,
+          kind: notes.kind,
+          title: notes.title,
+          body: notes.body,
+          deletedAt: notes.deletedAt,
+          deletedEventId: notes.deletedEventId,
+          recipeId: notes.recipeId,
+          revisionId: notes.revisionId,
+          stepId: notes.stepId,
+          ingredientId: notes.ingredientId,
+          experimentId: notes.experimentId,
+        })
+        .from(notes)
+        .where(eq(notes.id, address.id!))
+        .limit(1);
+      const rows = await (lock ? read.for('update', { of: notes }) : read);
+      const row = rows[0];
+      if (!row) throw missing();
+      record = {
+        kind: 'note',
+        id: row.id,
+        address: { kind: 'note', id: row.id },
+        handle: noteHandle(row.kind, row.title, row.body),
+        deletedAt: row.deletedAt,
+        deletedEventId: row.deletedEventId,
+        recipeId: null,
+        revisionId: null,
+        subject: {
+          recipeId: row.recipeId,
+          revisionId: row.revisionId,
+          stepId: row.stepId,
+          ingredientId: row.ingredientId,
+          experimentId: row.experimentId,
+        },
+      };
+      break;
+    }
+    case 'experiment': {
+      const read = tx
+        .select({
+          id: experiments.id,
+          slug: experiments.slug,
+          title: experiments.title,
+          recipeId: experiments.recipeId,
+          revisionId: experiments.revisionId,
+          deletedAt: experiments.deletedAt,
+          deletedEventId: experiments.deletedEventId,
+        })
+        .from(experiments)
+        .where(
+          address.id
+            ? eq(experiments.id, address.id)
+            : eq(experiments.slug, address.slug!),
+        )
+        .limit(1);
+      const rows = await (lock
+        ? read.for('update', { of: experiments })
+        : read);
+      const row = rows[0];
+      if (!row) throw missing();
+      record = {
+        ...base,
+        kind: 'experiment',
+        id: row.id,
+        address: { kind: 'experiment', id: row.id, slug: row.slug },
+        handle: `${row.title} (${row.slug})`,
+        deletedAt: row.deletedAt,
+        deletedEventId: row.deletedEventId,
+        recipeId: row.recipeId,
+        revisionId: row.revisionId,
+      };
+      break;
+    }
+    case 'ingredient': {
+      const read = tx
+        .select({
+          id: ingredients.id,
+          slug: ingredients.slug,
+          name: ingredients.name,
+          deletedAt: ingredients.deletedAt,
+          deletedEventId: ingredients.deletedEventId,
+        })
+        .from(ingredients)
+        .where(
+          address.id
+            ? eq(ingredients.id, address.id)
+            : eq(ingredients.slug, address.slug!),
+        )
+        .limit(1);
+      const rows = await (lock
+        ? read.for('update', { of: ingredients })
+        : read);
+      const row = rows[0];
+      if (!row) throw missing();
+      record = {
+        ...base,
+        kind: 'ingredient',
+        id: row.id,
+        address: { kind: 'ingredient', id: row.id, slug: row.slug },
+        handle: `${row.name} (${row.slug})`,
+        deletedAt: row.deletedAt,
+        deletedEventId: row.deletedEventId,
+      };
+      break;
+    }
+    case 'tag': {
+      const read = tx
+        .select({
+          id: taxonomyTerms.id,
+          facet: taxonomyTerms.facet,
+          slug: taxonomyTerms.slug,
+          label: taxonomyTerms.label,
+          deletedAt: taxonomyTerms.deletedAt,
+          deletedEventId: taxonomyTerms.deletedEventId,
+        })
+        .from(taxonomyTerms)
+        .where(
+          address.id
+            ? eq(taxonomyTerms.id, address.id)
+            : and(
+                eq(taxonomyTerms.facet, address.categoryType!),
+                eq(taxonomyTerms.slug, address.slug!),
+              ),
+        )
+        .limit(1);
+      const rows = await (lock
+        ? read.for('update', { of: taxonomyTerms })
+        : read);
+      const row = rows[0];
+      if (!row) throw missing();
+      record = {
+        ...base,
+        kind: 'tag',
+        id: row.id,
+        address: {
+          kind: 'tag',
+          id: row.id,
+          slug: row.slug,
+          categoryType: row.facet,
+        },
+        handle: `${row.facet}/${row.slug} — ${row.label}`,
+        deletedAt: row.deletedAt,
+        deletedEventId: row.deletedEventId,
+      };
+      break;
+    }
+  }
+
+  if (record.deletedAt && !options.allowDeleted) {
+    throw new ConflictError(deletedRefusal(record.handle));
+  }
+  return record;
+}
+
+/** `restore_record` written out, so a refusal can say exactly what to send. */
+function restoreCall(address: RecordAddress): string {
+  const parts: string[] = [`kind: "${address.kind}"`];
+  if (address.slug) parts.push(`slug: "${address.slug}"`);
+  if (address.revisionNumber != null) {
+    parts.push(`revisionNumber: ${address.revisionNumber}`);
+  }
+  if (address.categoryType)
+    parts.push(`categoryType: "${address.categoryType}"`);
+  if (!address.slug) parts.push(`id: "${address.id}"`);
+  return `restore_record { ${parts.join(', ')} }`;
+}
+
+/** Count rows by kind, in the order `DELETABLE_KINDS` lists them. */
+function tally() {
+  const counts = new Map<DeletableKind, number>();
+  return {
+    add(kind: DeletableKind, n: number) {
+      if (n > 0) counts.set(kind, (counts.get(kind) ?? 0) + n);
+    },
+    /** Take the root back out: it is named beside the list, not inside it. */
+    drop(kind: DeletableKind, n: number) {
+      const left = (counts.get(kind) ?? 0) - n;
+      if (left > 0) counts.set(kind, left);
+      else counts.delete(kind);
+    },
+    list(): { kind: DeletableKind; count: number }[] {
+      return DELETABLE_KINDS.filter((kind) => counts.has(kind)).map((kind) => ({
+        kind,
+        count: counts.get(kind)!,
+      }));
+    },
+  };
+}
+
+/**
+ * Refresh the stored search vector of every recipe that carries this tag.
+ *
+ * NOT OPTIONAL, and the census in `e2e/data-deleted.spec.ts` cannot catch it.
+ * `recipes.search_vector` is a column: drizzle/0001_search_indexes.sql folds
+ * tag labels into weight B, and the triggers that maintain it fire on
+ * `recipe_terms`, not on the tag row. So without this a deleted tag's label
+ * stays in the index of every recipe it was on and `search_recipes` keeps
+ * matching a word that is nowhere on the site — nothing is *displayed*, which
+ * is exactly why a display census misses it. Migration 0007 teaches
+ * `recipe_search_vector` to skip deleted tags; this is what makes it re-run.
+ * The mirror runs on restore.
+ */
+async function refreshSearchForTerm(tx: Tx, termId: string): Promise<void> {
+  await tx.execute(
+    sql`SELECT refresh_recipe_search_vector(recipe_id)
+          FROM recipe_terms
+         WHERE term_id = ${termId}`,
+  );
+}
+
+/**
+ * The same, one table over: ingredient names are weight D, and only for the
+ * revision a recipe currently points at. DISTINCT because a recipe may name
+ * one ingredient on several lines and the function need only run once.
+ */
+async function refreshSearchForIngredient(
+  tx: Tx,
+  ingredientId: string,
+): Promise<void> {
+  await tx.execute(
+    sql`SELECT refresh_recipe_search_vector(id)
+          FROM (
+            SELECT DISTINCT r.id
+              FROM recipes r
+              JOIN recipe_ingredients ri ON ri.revision_id = r.current_revision_id
+             WHERE ri.ingredient_id = ${ingredientId}
+          ) AS affected`,
+  );
+}
+
+/**
+ * Clear the delete stamp from every row carrying `eventId`, across the six
+ * tables that have one. Returns what came back, by kind.
+ *
+ * This is the whole of a restore, and it is why the child-deleted-first case
+ * needs no bookkeeping: the set is exactly the rows one delete call stamped,
+ * because every UPDATE in that call carried `deleted_at IS NULL` and skipped
+ * anything that was already gone.
+ */
+async function clearDeleteEvent(
+  tx: Tx,
+  eventId: string,
+): Promise<ReturnType<typeof tally>> {
+  const back = tally();
+  const tables = [
+    ['recipe', recipes],
+    ['revision', recipeRevisions],
+    ['note', notes],
+    ['experiment', experiments],
+    ['ingredient', ingredients],
+    ['tag', taxonomyTerms],
+  ] as const;
+  for (const [kind, table] of tables) {
+    const rows = await tx
+      .update(table)
+      .set(LIVE)
+      .where(eq(table.deletedEventId, eventId))
+      .returning({ id: table.id });
+    back.add(kind, rows.length);
+  }
+  return back;
+}
+
+/**
+ * Bring one row back, with whatever went with it.
+ *
+ * A row with no `deleted_event_id` is one somebody stamped by hand — nothing
+ * in this file writes `deleted_at` without an event — so it is restored on
+ * its own rather than guessed at.
+ */
+async function clearDeleteStamp(
+  tx: Tx,
+  record: ResolvedRecord,
+): Promise<ReturnType<typeof tally>> {
+  if (record.deletedEventId) {
+    return clearDeleteEvent(tx, record.deletedEventId);
+  }
+  const back = tally();
+  const single = {
+    recipe: () => tx.update(recipes).set(LIVE).where(eq(recipes.id, record.id)),
+    revision: () =>
+      tx
+        .update(recipeRevisions)
+        .set(LIVE)
+        .where(eq(recipeRevisions.id, record.id)),
+    note: () => tx.update(notes).set(LIVE).where(eq(notes.id, record.id)),
+    experiment: () =>
+      tx.update(experiments).set(LIVE).where(eq(experiments.id, record.id)),
+    ingredient: () =>
+      tx.update(ingredients).set(LIVE).where(eq(ingredients.id, record.id)),
+    tag: () =>
+      tx.update(taxonomyTerms).set(LIVE).where(eq(taxonomyTerms.id, record.id)),
+  } as const;
+  await single[record.kind]();
+  back.add(record.kind, 1);
+  return back;
+}
+
+/**
+ * THE RESTORE RULE, stated once and uniform:
+ *
+ *   A restore is refused when the record the row belongs to is still
+ *   deleted. The refusal names what to restore first.
+ *
+ * This is what lets a restore never need to know the tree. A cascaded child's
+ * parent is always deleted in the same event, so addressing the child is
+ * refused and the message points at the parent; and a root's parent is always
+ * live, so clearing by event id is exactly the right set.
+ *
+ * Returns the refusal, or null when the restore may go ahead.
+ */
+async function restoreBlockedBy(
+  tx: Tx,
+  record: ResolvedRecord,
+): Promise<string | null> {
+  const blocker = async (
+    kind: DeletableKind,
+    id: string | null,
+  ): Promise<ResolvedRecord | null> => {
+    if (!id) return null;
+    const parent = await resolveAddress(tx, { kind, id }, SEE_DELETED);
+    return parent.deletedAt ? parent : null;
+  };
+  const refusal = (parent: ResolvedRecord, extra = '') =>
+    `${record.handle} belongs to ${parent.handle}, which is deleted. ` +
+    `Restore that first: ${restoreCall(parent.address)}.${extra}`;
+
+  switch (record.kind) {
+    // No parent. A recipe, an ingredient and a tag stand on their own.
+    case 'recipe':
+    case 'ingredient':
+    case 'tag':
+      return null;
+
+    case 'revision': {
+      const parent = await blocker('recipe', record.recipeId);
+      return parent ? refusal(parent) : null;
+    }
+
+    case 'note': {
+      const subject = record.subject!;
+      // The step case reaches one level further: a step carries no delete
+      // flag of its own — its lifetime is its revision's — so the record a
+      // step note belongs to is the revision the step is in.
+      if (subject.stepId) {
+        const rows = await tx
+          .select({ revisionId: recipeSteps.revisionId })
+          .from(recipeSteps)
+          .where(eq(recipeSteps.id, subject.stepId))
+          .limit(1);
+        const parent = await blocker('revision', rows[0]?.revisionId ?? null);
+        return parent ? refusal(parent) : null;
+      }
+      for (const [kind, id] of [
+        ['recipe', subject.recipeId],
+        ['revision', subject.revisionId],
+        ['ingredient', subject.ingredientId],
+        ['experiment', subject.experimentId],
+      ] as const) {
+        const parent = await blocker(kind, id);
+        if (parent) return refusal(parent);
+      }
+      return null;
+    }
+
+    case 'experiment': {
+      // Both links are optional — `experiments.recipe_id` is nullable by
+      // design, because a run may name no recipe at all. The escape hatch is
+      // named in the refusal: a run can be unlinked rather than wait.
+      const extra =
+        ' Or call log_experiment with recipeSlug: null to unlink the run ' +
+        'first.';
+      for (const [kind, id] of [
+        ['recipe', record.recipeId],
+        ['revision', record.revisionId],
+      ] as const) {
+        const parent = await blocker(kind, id);
+        if (parent) return refusal(parent, extra);
+      }
+      return null;
+    }
+  }
+}
+
+/**
+ * Restore ONE RUN and the notes that went with it, and nothing else.
+ *
+ * `log_experiment` is the only caller, and it cannot use `clearDeleteStamp`.
+ * A run reaches a deleted state two ways: deleted on its own, where it is the
+ * root of its event and clearing the event would be right; or CASCADED AWAY
+ * WITH ITS RECIPE, where the event also stamps the recipe, every revision and
+ * every other note — and clearing it would bring a whole recipe back because
+ * somebody re-logged one batch. That second case is reachable: the restore
+ * rule lets a run through whenever this call re-points it at a live recipe or
+ * unlinks it, which is exactly the escape hatch the refusal advertises.
+ *
+ * Scoping to the run and its own notes is identical to clearing the event in
+ * the first case — that event holds nothing else — and is the only correct
+ * answer in the second.
+ */
+async function restoreExperimentRow(
+  tx: Tx,
+  id: string,
+  eventId: string | null,
+): Promise<void> {
+  await tx.update(experiments).set(LIVE).where(eq(experiments.id, id));
+  if (!eventId) return;
+  await tx
+    .update(notes)
+    .set(LIVE)
+    .where(and(eq(notes.experimentId, id), eq(notes.deletedEventId, eventId)));
+}
+
+/** Restore one ingredient row and everything its delete took with it. */
+async function restoreIngredientRow(tx: Tx, id: string): Promise<void> {
+  const record = await resolveAddress(
+    tx,
+    { kind: 'ingredient', id },
+    SEE_DELETED,
+  );
+  if (!record.deletedAt) return;
+  await clearDeleteStamp(tx, record);
+  await refreshSearchForIngredient(tx, id);
+}
+
+/** The same for a tag. */
+async function restoreTermRow(tx: Tx, id: string): Promise<void> {
+  const record = await resolveAddress(tx, { kind: 'tag', id }, SEE_DELETED);
+  if (!record.deletedAt) return;
+  await clearDeleteStamp(tx, record);
+  await refreshSearchForTerm(tx, id);
+}
+
+/**
+ * Delete one record. The row stays; it stops being visible.
+ *
+ * `actor` is the new thing the write layer learns. Nothing here has ever
+ * known who was calling — `createRecipe(input, source)` takes an enum and
+ * nothing more — but the bin has to print a name beside a date and a reason,
+ * and `mcp_audit_log` is the wrong place to read it from: that write is
+ * fire-and-forget, nothing reads the table, it records tool CALLS rather than
+ * row state, and `pnpm ingest` reaches this layer with no principal at all.
+ * So it is passed in explicitly and stored, and it is nullable.
+ */
+export async function deleteRecord(
+  address: RecordAddress,
+  options: { reason?: string | null; actor?: string | null } = {},
+): Promise<DeleteResult> {
+  return withTransaction(async (tx) => {
+    // First statement, before any row lock. See `lockRecipeTree`.
+    const tree = await recipeTreeOf(tx, address);
+    if (tree) await lockRecipeTree(tx, tree);
+
+    const target = await resolveAddress(tx, address, SEE_DELETED_LOCKED);
+    if (target.deletedAt) {
+      throw new ConflictError(
+        `${target.handle} is deleted already, on ` +
+          `${target.deletedAt.toISOString().slice(0, 10)}. Call list_deleted ` +
+          `to see the bin, or ${restoreCall(target.address)} to bring it back.`,
+      );
+    }
+
+    const reason = options.reason?.trim();
+    const stamp: DeleteStamp = {
+      deletedAt: new Date(),
+      deletedBy: options.actor ?? null,
+      deletedReason: reason ? reason : null,
+      deletedEventId: crypto.randomUUID(),
+    };
+    const went = tally();
+
+    /** Stamp the live notes whose `column` is one of `ids`. */
+    const stampNotes = async (
+      column:
+        | typeof notes.recipeId
+        | typeof notes.revisionId
+        | typeof notes.stepId
+        | typeof notes.ingredientId
+        | typeof notes.experimentId,
+      ids: string[],
+    ) => {
+      if (ids.length === 0) return;
+      const rows = await tx
+        .update(notes)
+        .set(stamp)
+        .where(and(isNull(notes.deletedAt), inArray(column, ids)))
+        .returning({ id: notes.id });
+      went.add('note', rows.length);
+    };
+
+    /**
+     * Stamp the ROOT, and make the section comment above true.
+     *
+     * Every cascade UPDATE carried `deleted_at IS NULL` from the start; the
+     * six root UPDATEs did not, and that one gap is what let two concurrent
+     * deletes of one record both succeed. The winner stamped the children
+     * with its event, the loser then overwrote the root with its own, and
+     * `restore_record` — which clears by the ROOT's event id — brought back
+     * the root alone. `FOR UPDATE` in `resolveAddress` now serialises the
+     * pair, so this predicate can only fail if a row was deleted by some
+     * path that does not take that lock. It is the backstop, not the fix,
+     * and it refuses rather than reports a delete that wrote nothing.
+     */
+    const stampRoot = async (written: { id: string }[]) => {
+      if (written.length === 0) {
+        throw new ConflictError(
+          `${target.handle} was deleted by another call while this one ran. ` +
+            `Call list_deleted to see the bin, or ` +
+            `${restoreCall(target.address)} to bring it back.`,
+        );
+      }
+    };
+
+    /** The live revisions of a recipe, and the steps they hold. */
+    const liveRevisionIds = async (recipeId: string) =>
+      (
+        await tx
+          .select({ id: recipeRevisions.id })
+          .from(recipeRevisions)
+          .where(
+            and(
+              eq(recipeRevisions.recipeId, recipeId),
+              isNull(recipeRevisions.deletedAt),
+            ),
+          )
+      ).map((row) => row.id);
+
+    const stepIdsOf = async (revisionIds: string[]) =>
+      revisionIds.length === 0
+        ? []
+        : (
+            await tx
+              .select({ id: recipeSteps.id })
+              .from(recipeSteps)
+              .where(inArray(recipeSteps.revisionId, revisionIds))
+          ).map((row) => row.id);
+
+    switch (target.kind) {
+      case 'recipe': {
+        const recipeId = target.id;
+        // Children first, so every subquery still sees the rows it names.
+        //
+        // BATCH LOGS GO WITH THE RECIPE. A run is its own record with its own
+        // page, and leaving it would put a row on /batch-logs linking to a
+        // 404. The alternative — nulling `experiments.recipe_id` — is a
+        // destructive edit that cannot be undone and leaves the run saying
+        // "Not linked to a recipe" forever, which is a lie about the run.
+        // Cascading is reversible and stamped; an agent that wants the run
+        // without the recipe restores the run and re-points it with
+        // log_experiment.
+        const runIds = (
+          await tx
+            .select({ id: experiments.id })
+            .from(experiments)
+            .where(
+              and(
+                eq(experiments.recipeId, recipeId),
+                isNull(experiments.deletedAt),
+              ),
+            )
+        ).map((row) => row.id);
+        await stampNotes(notes.experimentId, runIds);
+        went.add(
+          'experiment',
+          (
+            await tx
+              .update(experiments)
+              .set(stamp)
+              .where(
+                and(
+                  isNull(experiments.deletedAt),
+                  eq(experiments.recipeId, recipeId),
+                ),
+              )
+              .returning({ id: experiments.id })
+          ).length,
+        );
+
+        const revisionIds = await liveRevisionIds(recipeId);
+        await stampNotes(notes.stepId, await stepIdsOf(revisionIds));
+        await stampNotes(notes.revisionId, revisionIds);
+        await stampNotes(notes.recipeId, [recipeId]);
+        went.add(
+          'revision',
+          (
+            await tx
+              .update(recipeRevisions)
+              .set(stamp)
+              .where(
+                and(
+                  isNull(recipeRevisions.deletedAt),
+                  eq(recipeRevisions.recipeId, recipeId),
+                ),
+              )
+              .returning({ id: recipeRevisions.id })
+          ).length,
+        );
+        await stampRoot(
+          await tx
+            .update(recipes)
+            .set(stamp)
+            .where(and(isNull(recipes.deletedAt), eq(recipes.id, recipeId)))
+            .returning({ id: recipes.id }),
+        );
+        break;
+      }
+
+      case 'revision': {
+        const recipeId = target.recipeId!;
+
+        /**
+         * THE POINTER IS READ UNDER THE RECIPE ROW'S OWN LOCK, and both the
+         * read and the write below are decided on what this read returns.
+         *
+         * Unlocked, this was a check-then-act across two rows and it lost.
+         * Two calls deleting two DIFFERENT revisions of one recipe both read
+         * the pointer before either committed: A deleted the revision the
+         * pointer named and moved it onto B's target; B, holding the value it
+         * read before A ran, saw a pointer that did not name its own target
+         * and left it alone. Both committed and `current_revision_id` named a
+         * deleted revision — the one invariant `src/db/schema.ts` states about
+         * this column. The recipe still drew, because `getRecipeBySlug` falls
+         * back to the newest live revision, but the page foot lost its
+         * effectivity line, `update_recipe` reported a deleted revision number
+         * as a success, and `reviseRecipe` carried the deleted revision's
+         * ingredients and steps forward into a new LIVE one. Deleted content
+         * was public again and nobody had called `restore_record`.
+         *
+         * `FOR UPDATE` makes the second caller wait here. READ COMMITTED then
+         * gives every statement after it a fresh snapshot, so the pointer, the
+         * survivor list and the "only version" refusal below are all computed
+         * from what the first caller actually committed. Nothing can move the
+         * pointer between this read and the write at the end of the branch: a
+         * pointer write needs at least an exclusive lock on this row, and this
+         * transaction holds it until it commits.
+         *
+         * ON THE ORDER: the revision was locked first, this recipe row
+         * second, which is the order every other writer in this file uses —
+         * see `THE LOCK ORDER`. The one writer that takes them the other way
+         * round is a delete or a restore addressing the RECIPE, and
+         * `lockRecipeTree` at the top of both functions means that call and
+         * this one are never in flight on the same recipe at the same time.
+         */
+        const recipeRows = await tx
+          .select({
+            slug: recipes.slug,
+            currentRevisionId: recipes.currentRevisionId,
+          })
+          .from(recipes)
+          .where(eq(recipes.id, recipeId))
+          .limit(1)
+          .for('update', { of: recipes });
+        const recipe = recipeRows[0]!;
+
+        /**
+         * The newest surviving version, by the order the history is already
+         * listed in. NOT `MAX(revision_number)`: a backfilled version carries
+         * a later number and an earlier date, so pointing at the highest
+         * number makes a recipe read as its own oldest version.
+         *
+         * Read after the lock above, so a sibling revision another call has
+         * just deleted is already excluded rather than chosen.
+         */
+        const survivors = await tx
+          .select({ id: recipeRevisions.id })
+          .from(recipeRevisions)
+          .where(
+            and(
+              eq(recipeRevisions.recipeId, recipeId),
+              isNull(recipeRevisions.deletedAt),
+              ne(recipeRevisions.id, target.id),
+            ),
+          )
+          .orderBy(
+            desc(
+              sql`COALESCE(${recipeRevisions.occurredAt}, ${recipeRevisions.createdAt})`,
+            ),
+            desc(recipeRevisions.revisionNumber),
+          )
+          .limit(1);
+
+        if (!survivors[0]) {
+          throw new ConflictError(
+            `This is the only version of "${recipe.slug}". A recipe with no ` +
+              'version cannot be read. Delete the recipe instead.',
+          );
+        }
+
+        await stampNotes(notes.stepId, await stepIdsOf([target.id]));
+        await stampNotes(notes.revisionId, [target.id]);
+        await stampRoot(
+          await tx
+            .update(recipeRevisions)
+            .set(stamp)
+            .where(
+              and(
+                isNull(recipeRevisions.deletedAt),
+                eq(recipeRevisions.id, target.id),
+              ),
+            )
+            .returning({ id: recipeRevisions.id }),
+        );
+
+        // Runs pinned to this version are deliberately NOT touched: the run
+        // happened. `experiments.revision_id` still points at a row that
+        // still exists, so the run keeps its number and reads "withdrawn".
+        if (recipe.currentRevisionId === target.id) {
+          await tx
+            .update(recipes)
+            .set({ currentRevisionId: survivors[0].id, updatedAt: new Date() })
+            .where(eq(recipes.id, recipeId));
+        }
+        break;
+      }
+
+      case 'experiment': {
+        await stampNotes(notes.experimentId, [target.id]);
+        await stampRoot(
+          await tx
+            .update(experiments)
+            .set(stamp)
+            .where(
+              and(isNull(experiments.deletedAt), eq(experiments.id, target.id)),
+            )
+            .returning({ id: experiments.id }),
+        );
+        break;
+      }
+
+      case 'ingredient': {
+        await stampNotes(notes.ingredientId, [target.id]);
+        await stampRoot(
+          await tx
+            .update(ingredients)
+            .set(stamp)
+            .where(
+              and(isNull(ingredients.deletedAt), eq(ingredients.id, target.id)),
+            )
+            .returning({ id: ingredients.id }),
+        );
+        await refreshSearchForIngredient(tx, target.id);
+        break;
+      }
+
+      case 'tag': {
+        await stampRoot(
+          await tx
+            .update(taxonomyTerms)
+            .set(stamp)
+            .where(
+              and(
+                isNull(taxonomyTerms.deletedAt),
+                eq(taxonomyTerms.id, target.id),
+              ),
+            )
+            .returning({ id: taxonomyTerms.id }),
+        );
+        await refreshSearchForTerm(tx, target.id);
+        break;
+      }
+
+      case 'note': {
+        await stampRoot(
+          await tx
+            .update(notes)
+            .set(stamp)
+            .where(and(isNull(notes.deletedAt), eq(notes.id, target.id)))
+            .returning({ id: notes.id }),
+        );
+        break;
+      }
+    }
+
+    return {
+      kind: target.kind,
+      id: target.id,
+      handle: target.handle,
+      deletedAt: stamp.deletedAt.toISOString(),
+      eventId: stamp.deletedEventId,
+      cascaded: went.list(),
+    };
+  });
+}
+
+/**
+ * Bring back a record that is deleted, with the set one delete removed.
+ *
+ * It does NOT move the current revision pointer back. Restoring a version
+ * returns it to the history; it does not decide what people read, and
+ * `update_recipe { currentRevisionNumber: n }` is the explicit way to say
+ * that. It also does not bring back a record that somebody deleted on its own
+ * before this one — that row carries its own stamp and needs its own restore.
+ *
+ * `actor` is accepted so the call site matches `deleteRecord` and is not
+ * stored. There is no `restored_by` column: nothing displays one, so the
+ * audit log is enough, which is exactly the argument `deleted_by` fails.
+ */
+export async function restoreRecord(
+  address: RecordAddress,
+  _options: { actor?: string | null } = {},
+): Promise<RestoreResult> {
+  return withTransaction(async (tx) => {
+    // First statement, before any row lock, and for the same reason the
+    // delete takes it: a restore of a recipe clears the revisions with it.
+    const tree = await recipeTreeOf(tx, address);
+    if (tree) await lockRecipeTree(tx, tree);
+
+    const target = await resolveAddress(tx, address, SEE_DELETED_LOCKED);
+    if (!target.deletedAt) {
+      throw new ConflictError(
+        `${target.handle} is not deleted, so there is nothing to restore.`,
+      );
+    }
+
+    const blocked = await restoreBlockedBy(tx, target);
+    if (blocked) throw new ConflictError(blocked);
+
+    const back = await clearDeleteStamp(tx, target);
+    back.drop(target.kind, 1);
+
+    // The mirror of the two refreshes a delete runs. A tag's label and an
+    // ingredient's name are folded into `recipes.search_vector`, and nothing
+    // fires when the tag row or the ingredient row changes.
+    if (target.kind === 'tag') await refreshSearchForTerm(tx, target.id);
+    if (target.kind === 'ingredient') {
+      await refreshSearchForIngredient(tx, target.id);
+    }
+
+    return {
+      kind: target.kind,
+      id: target.id,
+      handle: target.handle,
+      restored: back.list(),
+    };
   });
 }

@@ -9,10 +9,21 @@ import { mcpClient, tokens } from './helpers';
  * revision is what it was, and a write either lands whole or does not land.
  * Both are invisible when they hold. This file makes each one observable.
  *
+ * WHAT THIS FILE DEFENDS CHANGED WITH THE CRUD SURFACE, AND ITS NAME DID
+ * NOT. `update_recipe`, `update_revision` and `update_note` exist now, so
+ * "nothing is ever edited" is no longer the promise. The promise is
+ * narrower and it is still the one this repository rests on: a write
+ * lands whole or not at all, a later version does not reach back into an
+ * earlier one, and a FILL-ONCE TOOL STAYS FILL-ONCE — `add_mass_flow` and
+ * `describe_mechanism` may still only turn absent into present, and each
+ * refusal now names the tool that corrects a value instead.
+ *
  * Three shapes of promise are covered, and they fail differently:
  *
- * - **Never edited.** A later revision does not reach back into an earlier
- *   one, and a note pinned to a version stays on that version.
+ * - **Never edited by accident.** A later revision does not reach back into
+ *   an earlier one, and a note pinned to a version stays on that version.
+ *   A correction is a deliberate act with a tool of its own; carry-forward
+ *   is not.
  * - **Written once.** `add_mass_flow` and `describe_mechanism` are the only
  *   two writes that reach a record that already exists. Each may turn
  *   absent into present and nothing else. `e2e/mcp-contract.spec.ts` covers
@@ -372,6 +383,32 @@ test.describe('what a stored record refuses', () => {
     // by a different batch, with nothing to say it happened.
     expect(winners).toHaveLength(1);
 
+    // THE REFUSAL NAMES WHAT TO DO INSTEAD, and that sentence had to move
+    // with this branch. It used to end "a figure cannot be changed once it
+    // is written", which `update_revision` makes false. add_mass_flow stays
+    // fill-once — what it defends is that a figure is a measurement of ONE
+    // batch — but a caller meeting the refusal now needs two different
+    // answers depending on which it meant, and the message names both.
+    //
+    // Asserted on a call of its own rather than on the racers. A loser in
+    // the race above can be refused by either of two guards: the read-guard,
+    // which composes this sentence, or the unique index behind it, which
+    // raises a database error the tool reports as an internal fault. Which
+    // one a given caller meets is a matter of timing, so the SENTENCE is
+    // checked here, where a figure is already stored and the read-guard is
+    // certain to answer.
+    await expect(
+      mcp.call('add_mass_flow', {
+        slug: RACE_FLOW_SLUG,
+        stages: [
+          { label: 'Raw again', quantity: 4, unit: 'kg' },
+          { label: 'Dried', quantity: 2, unit: 'kg' },
+        ],
+      }),
+    ).rejects.toThrow(
+      /already has a mass flow figure[\s\S]*revise_recipe[\s\S]*update_revision/,
+    );
+
     const stored = await mcp.call<RecipeResult>('get_recipe', {
       slug: RACE_FLOW_SLUG,
     });
@@ -422,6 +459,20 @@ test.describe('what a stored record refuses', () => {
     );
     expect(winners).toHaveLength(1);
 
+    // The same move, on the other fill-once tool, and on a call of its own
+    // for the same reason. This refusal used to say conditions "cannot be
+    // changed", and `update_note` makes that false. It names both answers:
+    // correct the note when the note itself was wrong, and add a note of
+    // kind "correction" when the old claim has to stay readable.
+    await expect(
+      mcp.call('describe_mechanism', {
+        noteId: note.noteId,
+        conditions: ['one more caller'],
+      }),
+    ).rejects.toThrow(
+      /already states its conditions[\s\S]*update_note[\s\S]*correction/,
+    );
+
     // …and what is stored is what the caller that succeeded was told it
     // stored. A second writer that quietly replaced the first would leave
     // the winner holding a receipt for conditions nobody can read back.
@@ -446,10 +497,11 @@ test.describe('what a stored record refuses', () => {
       slug: MECHANISM_SLUG,
     });
 
-    // Both are there. The model's answer to a wrong note is another note,
-    // so the write layer offers no path that would remove or rewrite one —
-    // and a reader can see that the claim was revised rather than silently
-    // swapped.
+    // Both are there. A `correction` note is the answer when the old claim
+    // must stay readable, and that is still the usual answer — `update_note`
+    // is for a note that was never true, a typo or a wrong number, where
+    // nothing is lost by writing over it. A reader can see that this claim
+    // was revised rather than silently swapped.
     const titles = recipe.notes.map((note) => note.title);
     expect(titles).toContain('Why a copper bowl helps');
     expect(titles).toContain('The copper claim overstates it');

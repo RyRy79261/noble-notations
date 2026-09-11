@@ -7,6 +7,46 @@ import 'server-only';
  * the site and the connector can never disagree about what a recipe is.
  * Results are plain serialisable objects — numerics are converted out of
  * Postgres' string representation here rather than in twelve call sites.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * NOTHING IN THIS FILE READS A DELETED ROW.
+ * ─────────────────────────────────────────────────────────────────────────
+ *
+ * Six tables carry a soft delete, and each has a `*_live` view over it in
+ * `src/db/schema.ts` that is `WHERE deleted_at IS NULL` and nothing else.
+ * This file selects from those views. A read that names the base table by
+ * mistake publishes a record somebody deleted, and it fails silently:
+ * nothing throws, the page renders, and the row is back.
+ *
+ * Three things hold that, in decreasing order of strength:
+ *
+ * 1. **`eslint.config.mjs` bans the six base tables from this file.** A new
+ *    query CANNOT name one, and `pnpm lint` is a CI gate. This was chosen
+ *    over a shared `and(live(t), …)` helper for one reason: a helper can be
+ *    left out of a new query, an import ban cannot.
+ * 2. **The raw SQL below names the views.** There are four sites the lint
+ *    rule cannot see inside — `searchRecipes`, `listIngredients`,
+ *    `getStats`, and the two note-rule fragments. Each one says `_live`.
+ * 3. **`e2e/data-deleted.spec.ts` calls every exported function** against a
+ *    fixture whose deleted records carry a sentinel string, and fails when
+ *    the set of exported functions and the set it calls are not equal. A
+ *    sixteenth read that nobody added to that table fails the suite on the
+ *    day it lands, naming itself.
+ *
+ * TWO DELIBERATE EXCEPTIONS, and both are named where they are used:
+ *
+ * - `listExperiments` and `getExperiment` join `recipeRevisionsAll` — the
+ *   base table — because a batch log outlives the version it cooked. They
+ *   read the number and `revisionWithdrawn` from it, nothing else.
+ * - `listDeleted` is NOT in this file. It lives in `./deleted`, which is the
+ *   one read module allowed to see deleted rows, because listing the bin is
+ *   its whole job. Keeping the ban here absolute is the mechanism; an
+ *   exception inside this file is the hole the next query walks through.
+ *
+ * The child tables — `recipe_ingredients`, `recipe_steps`, `note_sources`,
+ * `experiment_items`, `experiment_observations`, the mass flow and the link
+ * tables — carry no flag and need none. Their lifetime is their parent's,
+ * and every child read below starts from a live parent.
  */
 import { and, asc, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
@@ -15,22 +55,25 @@ import { db } from '@/db/client';
 import {
   experimentItems,
   experimentObservations,
-  experiments,
+  experimentsLive,
   ingredientRelations,
-  ingredients,
+  ingredientsLive,
   noteSources,
-  notes,
+  notesLive,
   recipeIngredients,
   recipeLinks,
   recipeMassFlowStages,
   recipeMassFlows,
-  recipeRevisions,
+  recipeRevisionsLive,
   recipeStepIngredients,
   recipeSteps,
   recipeTerms,
-  recipes,
-  taxonomyTerms,
+  recipesLive,
+  taxonomyTermsLive,
 } from '@/db/schema';
+// `recipe_revisions` unfiltered, for the two experiment reads and nothing
+// else. The alias is the warning; `./live` says why it exists.
+import { recipeRevisionsAll } from '@/lib/queries/live';
 import { slugify } from '@/lib/domain/slug';
 import {
   formatAggregate,
@@ -38,6 +81,8 @@ import {
   formatQuantity,
   pluraliseUnit,
   quantityBucket,
+  unresolvedLineName,
+  unresolvedLineNeeds,
   type QuantityBucket,
 } from '@/lib/domain/units';
 import { categoryRank } from '@/lib/site';
@@ -211,16 +256,16 @@ export interface RecipeView extends RecipeSummaryView {
 // ─────────────────────────────────────────────────────────────────────────
 
 const recipeSummaryColumns = {
-  id: recipes.id,
-  slug: recipes.slug,
-  title: recipes.title,
-  subtitle: recipes.subtitle,
-  summary: recipes.summary,
-  kind: recipes.kind,
-  heroImageUrl: recipes.heroImageUrl,
-  heroImageAlt: recipes.heroImageAlt,
-  updatedAt: recipes.updatedAt,
-  revisionNumber: recipeRevisions.revisionNumber,
+  id: recipesLive.id,
+  slug: recipesLive.slug,
+  title: recipesLive.title,
+  subtitle: recipesLive.subtitle,
+  summary: recipesLive.summary,
+  kind: recipesLive.kind,
+  heroImageUrl: recipesLive.heroImageUrl,
+  heroImageAlt: recipesLive.heroImageAlt,
+  updatedAt: recipesLive.updatedAt,
+  revisionNumber: recipeRevisionsLive.revisionNumber,
 };
 
 /** Attach taxonomy terms to a batch of recipes in one extra query. */
@@ -234,14 +279,14 @@ async function attachTerms<T extends { id: string }>(
     .select({
       recipeId: recipeTerms.recipeId,
       isPrimary: recipeTerms.isPrimary,
-      id: taxonomyTerms.id,
-      facet: taxonomyTerms.facet,
-      slug: taxonomyTerms.slug,
-      label: taxonomyTerms.label,
-      description: taxonomyTerms.description,
+      id: taxonomyTermsLive.id,
+      facet: taxonomyTermsLive.facet,
+      slug: taxonomyTermsLive.slug,
+      label: taxonomyTermsLive.label,
+      description: taxonomyTermsLive.description,
     })
     .from(recipeTerms)
-    .innerJoin(taxonomyTerms, eq(taxonomyTerms.id, recipeTerms.termId))
+    .innerJoin(taxonomyTermsLive, eq(taxonomyTermsLive.id, recipeTerms.termId))
     .where(
       inArray(
         recipeTerms.recipeId,
@@ -256,9 +301,9 @@ async function attachTerms<T extends { id: string }>(
     // makes the two of them together unique, so the four columns are total.
     .orderBy(
       desc(recipeTerms.isPrimary),
-      asc(taxonomyTerms.label),
-      asc(taxonomyTerms.facet),
-      asc(taxonomyTerms.slug),
+      asc(taxonomyTermsLive.label),
+      asc(taxonomyTermsLive.facet),
+      asc(taxonomyTermsLive.slug),
     );
 
   for (const row of termRows) {
@@ -316,20 +361,20 @@ export async function listRecipes(options?: {
 }): Promise<RecipeSummaryView[]> {
   const rows = await db
     .select(recipeSummaryColumns)
-    .from(recipes)
+    .from(recipesLive)
     .leftJoin(
-      recipeRevisions,
-      eq(recipeRevisions.id, recipes.currentRevisionId),
+      recipeRevisionsLive,
+      eq(recipeRevisionsLive.id, recipesLive.currentRevisionId),
     )
     .where(
       options?.kind
         ? and(
-            eq(recipes.status, 'active'),
-            eq(recipes.kind, options.kind as 'recipe'),
+            eq(recipesLive.status, 'active'),
+            eq(recipesLive.kind, options.kind as 'recipe'),
           )
-        : eq(recipes.status, 'active'),
+        : eq(recipesLive.status, 'active'),
     )
-    .orderBy(desc(recipes.updatedAt))
+    .orderBy(desc(recipesLive.updatedAt))
     .limit(options?.limit ?? 200)
     .offset(options?.offset ?? 0);
 
@@ -369,7 +414,7 @@ export async function searchRecipes(
       const slug = slugify(label);
       conditions.push(sql`EXISTS (
         SELECT 1 FROM recipe_terms rt
-          JOIN taxonomy_terms t ON t.id = rt.term_id
+          JOIN taxonomy_terms_live t ON t.id = rt.term_id
          WHERE rt.recipe_id = r.id
            AND t.facet = ${facet}
            AND (t.slug = ${slug} OR lower(t.label) = ${label.toLowerCase()})
@@ -381,7 +426,7 @@ export async function searchRecipes(
     const slug = slugify(name);
     return sql`EXISTS (
       SELECT 1 FROM recipe_ingredients ri
-        LEFT JOIN ingredients i ON i.id = ri.ingredient_id
+        LEFT JOIN ingredients_live i ON i.id = ri.ingredient_id
        WHERE ri.revision_id = r.current_revision_id
          AND (
            i.slug = ${slug}
@@ -431,8 +476,8 @@ export async function searchRecipes(
            rev.revision_number,
            ${rank} AS rank,
            COUNT(*) OVER () AS total
-      FROM recipes r
-      LEFT JOIN recipe_revisions rev ON rev.id = r.current_revision_id
+      FROM recipes_live r
+      LEFT JOIN recipe_revisions_live rev ON rev.id = r.current_revision_id
      WHERE ${where}
      ORDER BY ${ordering}
      LIMIT ${input.limit ?? 20}
@@ -579,22 +624,22 @@ export async function getRecipeBySlug(
 ): Promise<RecipeView | null> {
   const found = await db
     .select({
-      id: recipes.id,
-      slug: recipes.slug,
-      title: recipes.title,
-      subtitle: recipes.subtitle,
-      summary: recipes.summary,
-      kind: recipes.kind,
-      status: recipes.status,
-      heroImageUrl: recipes.heroImageUrl,
-      heroImageAlt: recipes.heroImageAlt,
-      originNote: recipes.originNote,
-      currentRevisionId: recipes.currentRevisionId,
-      createdAt: recipes.createdAt,
-      updatedAt: recipes.updatedAt,
+      id: recipesLive.id,
+      slug: recipesLive.slug,
+      title: recipesLive.title,
+      subtitle: recipesLive.subtitle,
+      summary: recipesLive.summary,
+      kind: recipesLive.kind,
+      status: recipesLive.status,
+      heroImageUrl: recipesLive.heroImageUrl,
+      heroImageAlt: recipesLive.heroImageAlt,
+      originNote: recipesLive.originNote,
+      currentRevisionId: recipesLive.currentRevisionId,
+      createdAt: recipesLive.createdAt,
+      updatedAt: recipesLive.updatedAt,
     })
-    .from(recipes)
-    .where(eq(recipes.slug, slug))
+    .from(recipesLive)
+    .where(eq(recipesLive.slug, slug))
     .limit(1);
 
   const recipe = found[0];
@@ -606,13 +651,13 @@ export async function getRecipeBySlug(
   // The revision number breaks ties and keeps the order stable.
   const revisionRows = await db
     .select()
-    .from(recipeRevisions)
-    .where(eq(recipeRevisions.recipeId, recipe.id))
+    .from(recipeRevisionsLive)
+    .where(eq(recipeRevisionsLive.recipeId, recipe.id))
     .orderBy(
       desc(
-        sql`COALESCE(${recipeRevisions.occurredAt}, ${recipeRevisions.createdAt})`,
+        sql`COALESCE(${recipeRevisionsLive.occurredAt}, ${recipeRevisionsLive.createdAt})`,
       ),
-      desc(recipeRevisions.revisionNumber),
+      desc(recipeRevisionsLive.revisionNumber),
     );
 
   const revision =
@@ -636,14 +681,14 @@ export async function getRecipeBySlug(
           optional: recipeIngredients.optional,
           note: recipeIngredients.note,
           rawText: recipeIngredients.rawText,
-          ingredientSlug: ingredients.slug,
-          ingredientName: ingredients.name,
-          ingredientCategory: ingredients.category,
+          ingredientSlug: ingredientsLive.slug,
+          ingredientName: ingredientsLive.name,
+          ingredientCategory: ingredientsLive.category,
         })
         .from(recipeIngredients)
         .leftJoin(
-          ingredients,
-          eq(ingredients.id, recipeIngredients.ingredientId),
+          ingredientsLive,
+          eq(ingredientsLive.id, recipeIngredients.ingredientId),
         )
         .where(eq(recipeIngredients.revisionId, revision.id))
         .orderBy(asc(recipeIngredients.position)),
@@ -660,29 +705,29 @@ export async function getRecipeBySlug(
           imageUrl: recipeSteps.imageUrl,
           imageAlt: recipeSteps.imageAlt,
           note: recipeSteps.note,
-          techniqueSlug: taxonomyTerms.slug,
-          techniqueLabel: taxonomyTerms.label,
+          techniqueSlug: taxonomyTermsLive.slug,
+          techniqueLabel: taxonomyTermsLive.label,
         })
         .from(recipeSteps)
         .leftJoin(
-          taxonomyTerms,
-          eq(taxonomyTerms.id, recipeSteps.techniqueTermId),
+          taxonomyTermsLive,
+          eq(taxonomyTermsLive.id, recipeSteps.techniqueTermId),
         )
         .where(eq(recipeSteps.revisionId, revision.id))
         .orderBy(asc(recipeSteps.position)),
       // Notes on the recipe itself and on the revision being displayed.
       db
         .select({
-          id: notes.id,
-          kind: notes.kind,
-          title: notes.title,
-          body: notes.body,
-          conditions: notes.conditions,
-          createdAt: notes.createdAt,
+          id: notesLive.id,
+          kind: notesLive.kind,
+          title: notesLive.title,
+          body: notesLive.body,
+          conditions: notesLive.conditions,
+          createdAt: notesLive.createdAt,
         })
-        .from(notes)
+        .from(notesLive)
         .where(
-          sql`${notes.recipeId} = ${recipe.id} OR ${notes.revisionId} = ${revision.id}`,
+          sql`${notesLive.recipeId} = ${recipe.id} OR ${notesLive.revisionId} = ${revision.id}`,
         )
         // THE NOTE ORDER. `created_at` first, `position` second, `id` last —
         // the same three columns in the same order in all five reads that
@@ -699,7 +744,11 @@ export async function getRecipeBySlug(
         // `writeNotes`. Before it, the tiebreak was `asc(notes.id)`, a random
         // uuid, so the Wellington's four mechanisms were renumbered on every
         // ingest. `id` stays on the end so the sort is total.
-        .orderBy(asc(notes.createdAt), asc(notes.position), asc(notes.id)),
+        .orderBy(
+          asc(notesLive.createdAt),
+          asc(notesLive.position),
+          asc(notesLive.id),
+        ),
       // One flow at most — `uq_mass_flow_revision` — so the head repeats on
       // every stage row and a left join costs one statement instead of two.
       db
@@ -740,7 +789,7 @@ export async function getRecipeBySlug(
         .select({
           stepId: recipeStepIngredients.stepId,
           recipeIngredientId: recipeStepIngredients.recipeIngredientId,
-          name: sql<string>`COALESCE(${ingredients.name}, ${recipeIngredients.rawText})`,
+          name: sql<string>`COALESCE(${ingredientsLive.name}, ${recipeIngredients.rawText})`,
         })
         .from(recipeStepIngredients)
         .innerJoin(
@@ -748,8 +797,8 @@ export async function getRecipeBySlug(
           eq(recipeIngredients.id, recipeStepIngredients.recipeIngredientId),
         )
         .leftJoin(
-          ingredients,
-          eq(ingredients.id, recipeIngredients.ingredientId),
+          ingredientsLive,
+          eq(ingredientsLive.id, recipeIngredients.ingredientId),
         )
         .where(
           inArray(
@@ -810,30 +859,30 @@ export async function getRecipeBySlug(
         ...recipeSummaryColumns,
       })
       .from(recipeLinks)
-      .innerJoin(recipes, eq(recipes.id, recipeLinks.toRecipeId))
+      .innerJoin(recipesLive, eq(recipesLive.id, recipeLinks.toRecipeId))
       .leftJoin(
-        recipeRevisions,
-        eq(recipeRevisions.id, recipes.currentRevisionId),
+        recipeRevisionsLive,
+        eq(recipeRevisionsLive.id, recipesLive.currentRevisionId),
       )
       .where(eq(recipeLinks.fromRecipeId, recipe.id)),
     db
       .select({ linkKind: recipeLinks.kind, ...recipeSummaryColumns })
       .from(recipeLinks)
-      .innerJoin(recipes, eq(recipes.id, recipeLinks.fromRecipeId))
+      .innerJoin(recipesLive, eq(recipesLive.id, recipeLinks.fromRecipeId))
       .leftJoin(
-        recipeRevisions,
-        eq(recipeRevisions.id, recipes.currentRevisionId),
+        recipeRevisionsLive,
+        eq(recipeRevisionsLive.id, recipesLive.currentRevisionId),
       )
       .where(eq(recipeLinks.toRecipeId, recipe.id)),
     db
       .select({
-        slug: experiments.slug,
-        title: experiments.title,
-        startedAt: experiments.startedAt,
+        slug: experimentsLive.slug,
+        title: experimentsLive.title,
+        startedAt: experimentsLive.startedAt,
       })
-      .from(experiments)
-      .where(eq(experiments.recipeId, recipe.id))
-      .orderBy(desc(experiments.startedAt)),
+      .from(experimentsLive)
+      .where(eq(experimentsLive.recipeId, recipe.id))
+      .orderBy(desc(experimentsLive.startedAt)),
   ]);
 
   const linkedTerms = await attachTerms([...linkRows, ...backlinkRows]);
@@ -928,7 +977,19 @@ export async function getRecipeBySlug(
       source: r.source,
       createdAt: r.createdAt.toISOString(),
       occurredAt: r.occurredAt ? r.occurredAt.toISOString() : null,
-      backfilled: r.occurredAt !== null,
+      /**
+       * R-SCR-08's badge reads "Recorded later — written down <date>", so it
+       * may only be set when the version existed BEFORE the row was written.
+       *
+       * `occurred_at IS NOT NULL` used to be the same statement, because
+       * `backfillRevision` was its only writer and it refuses a date that is
+       * not older than everything stored. `update_revision` writes the
+       * column too, and its `occurredAt` is unconstrained, so a correction
+       * could put a date on or after `created_at` and make the page assert
+       * that a version was recorded later than a day it had already been
+       * recorded on. The relation the badge claims is asked for directly.
+       */
+      backfilled: r.occurredAt !== null && r.occurredAt < r.createdAt,
     })),
     links: linkRows.map((row) => ({
       kind: row.linkKind,
@@ -973,16 +1034,16 @@ export async function getRecipeIdentity(slug: string): Promise<{
 } | null> {
   const rows = await db
     .select({
-      slug: recipes.slug,
-      title: recipes.title,
-      revisionNumber: recipeRevisions.revisionNumber,
+      slug: recipesLive.slug,
+      title: recipesLive.title,
+      revisionNumber: recipeRevisionsLive.revisionNumber,
     })
-    .from(recipes)
+    .from(recipesLive)
     .leftJoin(
-      recipeRevisions,
-      eq(recipeRevisions.id, recipes.currentRevisionId),
+      recipeRevisionsLive,
+      eq(recipeRevisionsLive.id, recipesLive.currentRevisionId),
     )
-    .where(eq(recipes.slug, slug))
+    .where(eq(recipesLive.slug, slug))
     .limit(1);
 
   const row = rows[0];
@@ -996,13 +1057,13 @@ export async function getRecipeIdentity(slug: string): Promise<{
 
 export async function listRecipeSlugs(): Promise<string[]> {
   const rows = await db
-    .select({ slug: recipes.slug })
-    .from(recipes)
-    .where(eq(recipes.status, 'active'))
+    .select({ slug: recipesLive.slug })
+    .from(recipesLive)
+    .where(eq(recipesLive.status, 'active'))
     // `pnpm export` walks this list and writes content/generated/README.md
     // from it in order. With no ORDER BY the index reshuffled between two
     // loads of one seed even when every recipe in it was identical.
-    .orderBy(asc(recipes.slug));
+    .orderBy(asc(recipesLive.slug));
   return rows.map((r) => r.slug);
 }
 
@@ -1030,35 +1091,39 @@ export async function listCategories(
 ): Promise<TermWithCount[]> {
   // A term has at most one parent, so this join adds no rows and the
   // COUNT below still counts recipes.
-  const parentTerm = alias(taxonomyTerms, 'parent_term');
+  // `alias()` takes a view as well as a table — `PgTable | PgViewBase` — so
+  // the parent join filters too. A tag whose parent was deleted then reads
+  // as `parent: null`, which is the right degradation: the tag is still
+  // there and no longer claims to sit under something nobody can open.
+  const parentTerm = alias(taxonomyTermsLive, 'parent_term');
 
   const rows = await db
     .select({
-      id: taxonomyTerms.id,
-      facet: taxonomyTerms.facet,
-      slug: taxonomyTerms.slug,
-      label: taxonomyTerms.label,
-      description: taxonomyTerms.description,
+      id: taxonomyTermsLive.id,
+      facet: taxonomyTermsLive.facet,
+      slug: taxonomyTermsLive.slug,
+      label: taxonomyTermsLive.label,
+      description: taxonomyTermsLive.description,
       parentSlug: parentTerm.slug,
       parentLabel: parentTerm.label,
       recipeCount: sql<number>`COUNT(${recipeTerms.recipeId})`,
     })
-    .from(taxonomyTerms)
-    .leftJoin(parentTerm, eq(parentTerm.id, taxonomyTerms.parentId))
-    .leftJoin(recipeTerms, eq(recipeTerms.termId, taxonomyTerms.id))
-    .where(facet ? eq(taxonomyTerms.facet, facet) : sql`true`)
+    .from(taxonomyTermsLive)
+    .leftJoin(parentTerm, eq(parentTerm.id, taxonomyTermsLive.parentId))
+    .leftJoin(recipeTerms, eq(recipeTerms.termId, taxonomyTermsLive.id))
+    .where(facet ? eq(taxonomyTermsLive.facet, facet) : sql`true`)
     .groupBy(
-      taxonomyTerms.id,
-      taxonomyTerms.facet,
-      taxonomyTerms.slug,
-      taxonomyTerms.label,
-      taxonomyTerms.description,
+      taxonomyTermsLive.id,
+      taxonomyTermsLive.facet,
+      taxonomyTermsLive.slug,
+      taxonomyTermsLive.label,
+      taxonomyTermsLive.description,
       parentTerm.slug,
       parentTerm.label,
     )
     .orderBy(
       desc(sql`COUNT(${recipeTerms.recipeId})`),
-      asc(taxonomyTerms.label),
+      asc(taxonomyTermsLive.label),
     );
 
   return rows.map((r) => ({
@@ -1088,8 +1153,10 @@ export async function getTerm(
 } | null> {
   const found = await db
     .select()
-    .from(taxonomyTerms)
-    .where(and(eq(taxonomyTerms.facet, facet), eq(taxonomyTerms.slug, slug)))
+    .from(taxonomyTermsLive)
+    .where(
+      and(eq(taxonomyTermsLive.facet, facet), eq(taxonomyTermsLive.slug, slug)),
+    )
     .limit(1);
   const term = found[0];
   if (!term) return null;
@@ -1097,13 +1164,15 @@ export async function getTerm(
   const rows = await db
     .select(recipeSummaryColumns)
     .from(recipeTerms)
-    .innerJoin(recipes, eq(recipes.id, recipeTerms.recipeId))
+    .innerJoin(recipesLive, eq(recipesLive.id, recipeTerms.recipeId))
     .leftJoin(
-      recipeRevisions,
-      eq(recipeRevisions.id, recipes.currentRevisionId),
+      recipeRevisionsLive,
+      eq(recipeRevisionsLive.id, recipesLive.currentRevisionId),
     )
-    .where(and(eq(recipeTerms.termId, term.id), eq(recipes.status, 'active')))
-    .orderBy(desc(recipes.updatedAt));
+    .where(
+      and(eq(recipeTerms.termId, term.id), eq(recipesLive.status, 'active')),
+    )
+    .orderBy(desc(recipesLive.updatedAt));
 
   const terms = await attachTerms(rows);
 
@@ -1124,16 +1193,16 @@ export async function getTerm(
   const parentRows = term.parentId
     ? await db
         .select()
-        .from(taxonomyTerms)
-        .where(eq(taxonomyTerms.id, term.parentId))
+        .from(taxonomyTermsLive)
+        .where(eq(taxonomyTermsLive.id, term.parentId))
         .limit(1)
     : [];
 
   const childRows = await db
     .select()
-    .from(taxonomyTerms)
-    .where(eq(taxonomyTerms.parentId, term.id))
-    .orderBy(taxonomyTerms.label);
+    .from(taxonomyTermsLive)
+    .where(eq(taxonomyTermsLive.parentId, term.id))
+    .orderBy(taxonomyTermsLive.label);
 
   return {
     term: toTermView(term),
@@ -1162,37 +1231,37 @@ export interface IngredientWithUsage {
 export async function listIngredients(): Promise<IngredientWithUsage[]> {
   const rows = await db
     .select({
-      slug: ingredients.slug,
-      name: ingredients.name,
-      plural: ingredients.plural,
-      category: ingredients.category,
-      description: ingredients.description,
-      densityGPerMl: ingredients.densityGPerMl,
-      defaultUnit: ingredients.defaultUnit,
-      aliases: ingredients.aliases,
+      slug: ingredientsLive.slug,
+      name: ingredientsLive.name,
+      plural: ingredientsLive.plural,
+      category: ingredientsLive.category,
+      description: ingredientsLive.description,
+      densityGPerMl: ingredientsLive.densityGPerMl,
+      defaultUnit: ingredientsLive.defaultUnit,
+      aliases: ingredientsLive.aliases,
       recipeCount: sql<number>`COUNT(DISTINCT r.id)`,
     })
-    .from(ingredients)
+    .from(ingredientsLive)
     .leftJoin(
       sql`recipe_ingredients ri`,
-      sql`ri.ingredient_id = ${ingredients.id}`,
+      sql`ri.ingredient_id = ${ingredientsLive.id}`,
     )
     .leftJoin(
-      sql`recipes r`,
+      sql`recipes_live r`,
       sql`r.current_revision_id = ri.revision_id AND r.status = 'active'`,
     )
     .groupBy(
-      ingredients.id,
-      ingredients.slug,
-      ingredients.name,
-      ingredients.plural,
-      ingredients.category,
-      ingredients.description,
-      ingredients.densityGPerMl,
-      ingredients.defaultUnit,
-      ingredients.aliases,
+      ingredientsLive.id,
+      ingredientsLive.slug,
+      ingredientsLive.name,
+      ingredientsLive.plural,
+      ingredientsLive.category,
+      ingredientsLive.description,
+      ingredientsLive.densityGPerMl,
+      ingredientsLive.defaultUnit,
+      ingredientsLive.aliases,
     )
-    .orderBy(desc(sql`COUNT(DISTINCT r.id)`), asc(ingredients.name));
+    .orderBy(desc(sql`COUNT(DISTINCT r.id)`), asc(ingredientsLive.name));
 
   return rows.map((r) => ({
     ...r,
@@ -1209,8 +1278,8 @@ export async function getIngredient(slug: string): Promise<{
 } | null> {
   const found = await db
     .select()
-    .from(ingredients)
-    .where(eq(ingredients.slug, slug))
+    .from(ingredientsLive)
+    .where(eq(ingredientsLive.slug, slug))
     .limit(1);
   const row = found[0];
   if (!row) return null;
@@ -1220,42 +1289,42 @@ export async function getIngredient(slug: string): Promise<{
       .select(recipeSummaryColumns)
       .from(recipeIngredients)
       .innerJoin(
-        recipes,
-        eq(recipes.currentRevisionId, recipeIngredients.revisionId),
+        recipesLive,
+        eq(recipesLive.currentRevisionId, recipeIngredients.revisionId),
       )
       .leftJoin(
-        recipeRevisions,
-        eq(recipeRevisions.id, recipes.currentRevisionId),
+        recipeRevisionsLive,
+        eq(recipeRevisionsLive.id, recipesLive.currentRevisionId),
       )
       .where(
         and(
           eq(recipeIngredients.ingredientId, row.id),
-          eq(recipes.status, 'active'),
+          eq(recipesLive.status, 'active'),
         ),
       )
       .groupBy(
-        recipes.id,
-        recipes.slug,
-        recipes.title,
-        recipes.subtitle,
-        recipes.summary,
-        recipes.kind,
-        recipes.heroImageUrl,
-        recipes.heroImageAlt,
-        recipes.updatedAt,
-        recipeRevisions.revisionNumber,
+        recipesLive.id,
+        recipesLive.slug,
+        recipesLive.title,
+        recipesLive.subtitle,
+        recipesLive.summary,
+        recipesLive.kind,
+        recipesLive.heroImageUrl,
+        recipesLive.heroImageAlt,
+        recipesLive.updatedAt,
+        recipeRevisionsLive.revisionNumber,
       )
-      .orderBy(desc(recipes.updatedAt)),
+      .orderBy(desc(recipesLive.updatedAt)),
     db
       .select({
-        slug: ingredients.slug,
-        name: ingredients.name,
+        slug: ingredientsLive.slug,
+        name: ingredientsLive.name,
         note: ingredientRelations.note,
       })
       .from(ingredientRelations)
       .innerJoin(
-        ingredients,
-        eq(ingredients.id, ingredientRelations.toIngredientId),
+        ingredientsLive,
+        eq(ingredientsLive.id, ingredientRelations.toIngredientId),
       )
       .where(
         and(
@@ -1265,18 +1334,22 @@ export async function getIngredient(slug: string): Promise<{
       ),
     db
       .select({
-        id: notes.id,
-        kind: notes.kind,
-        title: notes.title,
-        body: notes.body,
-        conditions: notes.conditions,
-        createdAt: notes.createdAt,
+        id: notesLive.id,
+        kind: notesLive.kind,
+        title: notesLive.title,
+        body: notesLive.body,
+        conditions: notesLive.conditions,
+        createdAt: notesLive.createdAt,
       })
-      .from(notes)
-      .where(eq(notes.ingredientId, row.id))
+      .from(notesLive)
+      .where(eq(notesLive.ingredientId, row.id))
       // The note order — see `getRecipeBySlug`. `created_at` alone left
       // several notes written against one ingredient in planner order.
-      .orderBy(asc(notes.createdAt), asc(notes.position), asc(notes.id)),
+      .orderBy(
+        asc(notesLive.createdAt),
+        asc(notesLive.position),
+        asc(notesLive.id),
+      ),
   ]);
 
   const terms = await attachTerms(usedIn);
@@ -1321,6 +1394,18 @@ export interface ExperimentView {
   outcome: string | null;
   costTotal: number | null;
   currency: string | null;
+  /** The revision this run was cooking, when the run named one. */
+  revisionNumber: number | null;
+  /**
+   * True when that revision has since been deleted — §4.3.
+   *
+   * The run is not deleted with it and must not read as though it cooked
+   * nothing. The number stays, and the reader is told the version is gone.
+   * A hard delete would have fired `experiments.revision_id`'s
+   * `ON DELETE SET NULL` and left the run saying "no version recorded",
+   * which is a false statement about a run that recorded one.
+   */
+  revisionWithdrawn: boolean;
   recipe: { slug: string; title: string } | null;
   items: { label: string; note: string | null }[];
   observations: {
@@ -1347,11 +1432,13 @@ export interface ExperimentSummary {
   title: string;
   summary: string | null;
   startedAt: string | null;
-  /** `experiments.cost_total`, and the currency it was recorded in. */
+  /** `experimentsLive.cost_total`, and the currency it was recorded in. */
   costTotal: number | null;
   currency: string | null;
   /** The revision this run was cooking, when the run named one. */
   revisionNumber: number | null;
+  /** True when that revision has since been deleted — §4.3, `ExperimentView`. */
+  revisionWithdrawn: boolean;
   /** What went in, summed, in the unit it was recorded in. */
   raw: { value: number; unit: string } | null;
   /** What came out. `null` when the run never weighed anything out. */
@@ -1377,27 +1464,37 @@ export async function listExperiments(options?: {
 }): Promise<ExperimentSummary[]> {
   const rows = await db
     .select({
-      id: experiments.id,
-      slug: experiments.slug,
-      title: experiments.title,
-      summary: experiments.summary,
-      startedAt: experiments.startedAt,
-      costTotal: experiments.costTotal,
-      currency: experiments.currency,
-      revisionNumber: recipeRevisions.revisionNumber,
-      recipeSlug: recipes.slug,
-      recipeTitle: recipes.title,
+      id: experimentsLive.id,
+      slug: experimentsLive.slug,
+      title: experimentsLive.title,
+      summary: experimentsLive.summary,
+      startedAt: experimentsLive.startedAt,
+      costTotal: experimentsLive.costTotal,
+      currency: experimentsLive.currency,
+      revisionNumber: recipeRevisionsAll.revisionNumber,
+      // THE ONE JOIN IN THIS FILE THAT READS A DELETED ROW ON PURPOSE.
+      // See `recipeRevisionsAll` in `./live` and §4.3: a run outlives the
+      // version it cooked, so the number stays readable and the run says
+      // the version was withdrawn.
+      revisionWithdrawn: sql<boolean>`${recipeRevisionsAll.deletedAt} IS NOT NULL`,
+      recipeSlug: recipesLive.slug,
+      recipeTitle: recipesLive.title,
     })
-    .from(experiments)
-    .leftJoin(recipes, eq(recipes.id, experiments.recipeId))
-    .leftJoin(recipeRevisions, eq(recipeRevisions.id, experiments.revisionId))
+    .from(experimentsLive)
+    .leftJoin(recipesLive, eq(recipesLive.id, experimentsLive.recipeId))
+    .leftJoin(
+      recipeRevisionsAll,
+      eq(recipeRevisionsAll.id, experimentsLive.revisionId),
+    )
     .where(
-      options?.recipeSlug ? eq(recipes.slug, options.recipeSlug) : undefined,
+      options?.recipeSlug
+        ? eq(recipesLive.slug, options.recipeSlug)
+        : undefined,
     )
     // Newest first. The slug breaks the tie, because two runs started on
     // the same day are otherwise ordered by whatever the planner returns
     // and the grid reshuffles between renders.
-    .orderBy(desc(experiments.startedAt), asc(experiments.slug));
+    .orderBy(desc(experimentsLive.startedAt), asc(experimentsLive.slug));
 
   const weights = await experimentWeights(rows.map((r) => r.id));
 
@@ -1409,6 +1506,7 @@ export async function listExperiments(options?: {
     costTotal: n(r.costTotal),
     currency: r.currency,
     revisionNumber: r.revisionNumber ?? null,
+    revisionWithdrawn: r.revisionWithdrawn ?? false,
     raw: weights.get(r.id)?.raw ?? null,
     finished: weights.get(r.id)?.finished ?? null,
     recipe: r.recipeSlug ? { slug: r.recipeSlug, title: r.recipeTitle! } : null,
@@ -1530,22 +1628,29 @@ export async function getExperiment(
 ): Promise<ExperimentView | null> {
   const found = await db
     .select({
-      id: experiments.id,
-      slug: experiments.slug,
-      title: experiments.title,
-      summary: experiments.summary,
-      startedAt: experiments.startedAt,
-      completedAt: experiments.completedAt,
-      scaleFactor: experiments.scaleFactor,
-      outcome: experiments.outcome,
-      costTotal: experiments.costTotal,
-      currency: experiments.currency,
-      recipeSlug: recipes.slug,
-      recipeTitle: recipes.title,
+      id: experimentsLive.id,
+      slug: experimentsLive.slug,
+      title: experimentsLive.title,
+      summary: experimentsLive.summary,
+      startedAt: experimentsLive.startedAt,
+      completedAt: experimentsLive.completedAt,
+      scaleFactor: experimentsLive.scaleFactor,
+      outcome: experimentsLive.outcome,
+      costTotal: experimentsLive.costTotal,
+      currency: experimentsLive.currency,
+      // The second of the two deliberate exceptions — see `listExperiments`.
+      revisionNumber: recipeRevisionsAll.revisionNumber,
+      revisionWithdrawn: sql<boolean>`${recipeRevisionsAll.deletedAt} IS NOT NULL`,
+      recipeSlug: recipesLive.slug,
+      recipeTitle: recipesLive.title,
     })
-    .from(experiments)
-    .leftJoin(recipes, eq(recipes.id, experiments.recipeId))
-    .where(eq(experiments.slug, slug))
+    .from(experimentsLive)
+    .leftJoin(recipesLive, eq(recipesLive.id, experimentsLive.recipeId))
+    .leftJoin(
+      recipeRevisionsAll,
+      eq(recipeRevisionsAll.id, experimentsLive.revisionId),
+    )
+    .where(eq(experimentsLive.slug, slug))
     .limit(1);
 
   const row = found[0];
@@ -1578,19 +1683,23 @@ export async function getExperiment(
       ),
     db
       .select({
-        id: notes.id,
-        kind: notes.kind,
-        title: notes.title,
-        body: notes.body,
-        conditions: notes.conditions,
-        createdAt: notes.createdAt,
+        id: notesLive.id,
+        kind: notesLive.kind,
+        title: notesLive.title,
+        body: notesLive.body,
+        conditions: notesLive.conditions,
+        createdAt: notesLive.createdAt,
       })
-      .from(notes)
-      .where(eq(notes.experimentId, row.id))
+      .from(notesLive)
+      .where(eq(notesLive.experimentId, row.id))
       // The note order — see `getRecipeBySlug`. `logExperiment` writes every
       // note on a run in one transaction, so this list was the one most
       // exposed to the tie: batch 2 carries three.
-      .orderBy(asc(notes.createdAt), asc(notes.position), asc(notes.id)),
+      .orderBy(
+        asc(notesLive.createdAt),
+        asc(notesLive.position),
+        asc(notesLive.id),
+      ),
   ]);
 
   return {
@@ -1603,6 +1712,8 @@ export async function getExperiment(
     outcome: row.outcome,
     costTotal: n(row.costTotal),
     currency: row.currency,
+    revisionNumber: row.revisionNumber ?? null,
+    revisionWithdrawn: row.revisionWithdrawn ?? false,
     recipe: row.recipeSlug
       ? { slug: row.recipeSlug, title: row.recipeTitle! }
       : null,
@@ -1658,15 +1769,15 @@ export async function getExperiment(
  * instead.
  */
 const noteRecipeId = sql<string | null>`COALESCE(
-  ${notes.recipeId},
-  (SELECT r.id FROM recipes r
-     JOIN recipe_revisions rev ON rev.id = r.current_revision_id
-    WHERE rev.id = ${notes.revisionId}),
-  (SELECT r.id FROM recipes r
+  ${notesLive.recipeId},
+  (SELECT r.id FROM recipes_live r
+     JOIN recipe_revisions_live rev ON rev.id = r.current_revision_id
+    WHERE rev.id = ${notesLive.revisionId}),
+  (SELECT r.id FROM recipes_live r
      JOIN recipe_steps st ON st.revision_id = r.current_revision_id
-    WHERE st.id = ${notes.stepId}),
-  (SELECT ex.recipe_id FROM experiments ex
-    WHERE ex.id = ${notes.experimentId})
+    WHERE st.id = ${notesLive.stepId}),
+  (SELECT ex.recipe_id FROM experiments_live ex
+    WHERE ex.id = ${notesLive.experimentId})
 )`;
 
 /**
@@ -1684,15 +1795,15 @@ const noteRecipeId = sql<string | null>`COALESCE(
  */
 function noteBelongsToRecipe(recipeId: SQLWrapper | string) {
   return sql`(
-    ${notes.recipeId} = ${recipeId}
-    OR ${notes.revisionId} = (
-      SELECT r.current_revision_id FROM recipes r WHERE r.id = ${recipeId})
-    OR ${notes.stepId} IN (
+    ${notesLive.recipeId} = ${recipeId}
+    OR ${notesLive.revisionId} = (
+      SELECT r.current_revision_id FROM recipes_live r WHERE r.id = ${recipeId})
+    OR ${notesLive.stepId} IN (
       SELECT st.id FROM recipe_steps st
-        JOIN recipes r ON r.current_revision_id = st.revision_id
+        JOIN recipes_live r ON r.current_revision_id = st.revision_id
        WHERE r.id = ${recipeId})
-    OR ${notes.experimentId} IN (
-      SELECT ex.id FROM experiments ex WHERE ex.recipe_id = ${recipeId})
+    OR ${notesLive.experimentId} IN (
+      SELECT ex.id FROM experiments_live ex WHERE ex.recipe_id = ${recipeId})
   )`;
 }
 
@@ -1809,20 +1920,20 @@ export async function listScienceIndex(): Promise<ScienceIndexView> {
   const [noteRows, studyRows] = await Promise.all([
     db
       .select({
-        id: notes.id,
-        kind: notes.kind,
-        title: notes.title,
-        body: notes.body,
-        conditions: notes.conditions,
-        recipeSlug: recipes.slug,
-        recipeTitle: recipes.title,
+        id: notesLive.id,
+        kind: notesLive.kind,
+        title: notesLive.title,
+        body: notesLive.body,
+        conditions: notesLive.conditions,
+        recipeSlug: recipesLive.slug,
+        recipeTitle: recipesLive.title,
       })
-      .from(notes)
-      .innerJoin(recipes, eq(recipes.id, noteRecipeId))
+      .from(notesLive)
+      .innerJoin(recipesLive, eq(recipesLive.id, noteRecipeId))
       .where(
         and(
-          inArray(notes.kind, ['science', 'research']),
-          eq(recipes.status, 'active'),
+          inArray(notesLive.kind, ['science', 'research']),
+          eq(recipesLive.status, 'active'),
         ),
       )
       // Recipe first, then the note order — see `getRecipeBySlug`. The
@@ -1831,35 +1942,35 @@ export async function listScienceIndex(): Promise<ScienceIndexView> {
       // this order and a badge that reads M3 on one and M1 on the next names
       // two different things to a reader.
       .orderBy(
-        asc(recipes.title),
-        asc(notes.createdAt),
-        asc(notes.position),
-        asc(notes.id),
+        asc(recipesLive.title),
+        asc(notesLive.createdAt),
+        asc(notesLive.position),
+        asc(notesLive.id),
       ),
     db
       .select({
-        slug: recipes.slug,
-        title: recipes.title,
-        summary: recipes.summary,
-        kind: recipes.kind,
+        slug: recipesLive.slug,
+        title: recipesLive.title,
+        summary: recipesLive.summary,
+        kind: recipesLive.kind,
       })
-      .from(recipes)
+      .from(recipesLive)
       .where(
         and(
-          eq(recipes.status, 'active'),
+          eq(recipesLive.status, 'active'),
           or(
-            eq(recipes.kind, 'research'),
+            eq(recipesLive.kind, 'research'),
             // A preparation with a mechanism on it is a study too — the
             // demi-glace case the design draws. Listing only the research
             // recipes left `/science/demi-glace` answering with no card
             // anywhere that reaches it.
-            sql`EXISTS (SELECT 1 FROM ${notes}
-                  WHERE ${notes.kind} = 'science'
-                    AND ${noteBelongsToRecipe(recipes.id)})`,
+            sql`EXISTS (SELECT 1 FROM ${notesLive}
+                  WHERE ${notesLive.kind} = 'science'
+                    AND ${noteBelongsToRecipe(recipesLive.id)})`,
           ),
         ),
       )
-      .orderBy(asc(recipes.title)),
+      .orderBy(asc(recipesLive.title)),
   ]);
 
   const mechanisms: MechanismView[] = [];
@@ -1927,15 +2038,15 @@ export async function getScienceStudy(
 ): Promise<ScienceStudyView | null> {
   const found = await db
     .select({
-      id: recipes.id,
-      slug: recipes.slug,
-      title: recipes.title,
-      subtitle: recipes.subtitle,
-      summary: recipes.summary,
-      kind: recipes.kind,
+      id: recipesLive.id,
+      slug: recipesLive.slug,
+      title: recipesLive.title,
+      subtitle: recipesLive.subtitle,
+      summary: recipesLive.summary,
+      kind: recipesLive.kind,
     })
-    .from(recipes)
-    .where(eq(recipes.slug, recipeSlug))
+    .from(recipesLive)
+    .where(eq(recipesLive.slug, recipeSlug))
     .limit(1);
 
   const recipe = found[0];
@@ -1946,20 +2057,24 @@ export async function getScienceStudy(
   // required to carry sources where a science note is not.
   const noteRows = await db
     .select({
-      id: notes.id,
-      kind: notes.kind,
-      title: notes.title,
-      body: notes.body,
-      conditions: notes.conditions,
-      experimentId: notes.experimentId,
+      id: notesLive.id,
+      kind: notesLive.kind,
+      title: notesLive.title,
+      body: notesLive.body,
+      conditions: notesLive.conditions,
+      experimentId: notesLive.experimentId,
     })
-    .from(notes)
+    .from(notesLive)
     .where(noteBelongsToRecipe(recipe.id))
     // The note order — see `getRecipeBySlug`. This read spans four subjects
     // (the recipe, its current revision, its steps and its runs), which is
     // why `created_at` leads: it is what puts the groups in the order they
     // were written, and `position` orders inside each one.
-    .orderBy(asc(notes.createdAt), asc(notes.position), asc(notes.id));
+    .orderBy(
+      asc(notesLive.createdAt),
+      asc(notesLive.position),
+      asc(notesLive.id),
+    );
 
   const mechanisms: MechanismView[] = noteRows
     .filter((row) => row.kind === 'science')
@@ -2026,10 +2141,10 @@ export async function getScienceStudy(
       .select(recipeSummaryColumns)
       .from(recipeLinks)
       .innerJoin(
-        recipes,
+        recipesLive,
         or(
           and(
-            eq(recipes.id, recipeLinks.fromRecipeId),
+            eq(recipesLive.id, recipeLinks.fromRecipeId),
             eq(recipeLinks.toRecipeId, recipe.id),
             inArray(recipeLinks.kind, [
               'references',
@@ -2038,15 +2153,15 @@ export async function getScienceStudy(
             ]),
           ),
           and(
-            eq(recipes.id, recipeLinks.toRecipeId),
+            eq(recipesLive.id, recipeLinks.toRecipeId),
             eq(recipeLinks.fromRecipeId, recipe.id),
             eq(recipeLinks.kind, 'component_of'),
           ),
         ),
       )
       .leftJoin(
-        recipeRevisions,
-        eq(recipeRevisions.id, recipes.currentRevisionId),
+        recipeRevisionsLive,
+        eq(recipeRevisionsLive.id, recipesLive.currentRevisionId),
       )
       .where(
         or(
@@ -2054,7 +2169,7 @@ export async function getScienceStudy(
           eq(recipeLinks.fromRecipeId, recipe.id),
         ),
       )
-      .orderBy(asc(recipes.title)),
+      .orderBy(asc(recipesLive.title)),
   ]);
 
   // Note order first, then the order the sources were written in. Sort is
@@ -2126,12 +2241,12 @@ export async function getStats(): Promise<{
     experiments: string;
   }>(sql`
     SELECT
-      (SELECT COUNT(*) FROM recipes WHERE status = 'active') AS recipes,
-      (SELECT COUNT(*) FROM recipe_revisions)                AS revisions,
-      (SELECT COUNT(*) FROM ingredients)                     AS ingredients,
-      (SELECT COUNT(*) FROM taxonomy_terms)                  AS terms,
-      (SELECT COUNT(*) FROM notes)                           AS notes,
-      (SELECT COUNT(*) FROM experiments)                     AS experiments
+      (SELECT COUNT(*) FROM recipes_live WHERE status = 'active') AS recipes,
+      (SELECT COUNT(*) FROM recipe_revisions_live)                AS revisions,
+      (SELECT COUNT(*) FROM ingredients_live)                     AS ingredients,
+      (SELECT COUNT(*) FROM taxonomy_terms_live)                  AS terms,
+      (SELECT COUNT(*) FROM notes_live)                           AS notes,
+      (SELECT COUNT(*) FROM experiments_live)                     AS experiments
   `);
 
   const row = statsResult.rows[0];
@@ -2198,12 +2313,12 @@ export async function buildShoppingList(
 
   const recipeRows = await db
     .select({
-      slug: recipes.slug,
-      title: recipes.title,
-      revisionId: recipes.currentRevisionId,
+      slug: recipesLive.slug,
+      title: recipesLive.title,
+      revisionId: recipesLive.currentRevisionId,
     })
-    .from(recipes)
-    .where(inArray(recipes.slug, wanted));
+    .from(recipesLive)
+    .where(inArray(recipesLive.slug, wanted));
 
   const found = recipeRows.filter((r) => r.revisionId !== null);
   const missing = wanted.filter(
@@ -2227,16 +2342,23 @@ export async function buildShoppingList(
     .select({
       revisionId: recipeIngredients.revisionId,
       quantity: recipeIngredients.quantity,
+      // Read only so `unresolvedLineNeeds` can ask whether the stored
+      // `raw_text` already states a RANGE. The totals below sum `quantity`
+      // alone, as they always have.
+      quantityMax: recipeIngredients.quantityMax,
       unit: recipeIngredients.unit,
       optional: recipeIngredients.optional,
       rawText: recipeIngredients.rawText,
       preparation: recipeIngredients.preparation,
-      ingredientSlug: ingredients.slug,
-      ingredientName: ingredients.name,
-      ingredientCategory: ingredients.category,
+      ingredientSlug: ingredientsLive.slug,
+      ingredientName: ingredientsLive.name,
+      ingredientCategory: ingredientsLive.category,
     })
     .from(recipeIngredients)
-    .leftJoin(ingredients, eq(ingredients.id, recipeIngredients.ingredientId))
+    .leftJoin(
+      ingredientsLive,
+      eq(ingredientsLive.id, recipeIngredients.ingredientId),
+    )
     .where(
       inArray(
         recipeIngredients.revisionId,
@@ -2272,8 +2394,29 @@ export async function buildShoppingList(
     if (!source) continue;
 
     // Unresolved lines still belong on the list — they are things to buy —
-    // so they key on their own text rather than being dropped.
-    const name = line.ingredientName ?? line.rawText;
+    // so they key on their own text rather than being dropped. On the NAME
+    // the text has first had the measure it states taken off it: this list
+    // prints the amount in a column of its own, and a row reading `50 kg`
+    // beside `50–60 kg Crayfish, live` states the measure twice and gets it
+    // wrong the second time, because the amount is a sum across every recipe
+    // asked for and the raw text is one recipe's line. `unresolvedLineName`
+    // carries the reasoning; the line as each recipe wrote it survives
+    // verbatim in `from` below.
+    //
+    // `wording` is the other half and they are not the same string: the NAME
+    // is what to buy, the WORDING is what one recipe asked for, and `from`
+    // below prints the second verbatim. Taking the measure off that one too
+    // would lose the only place this row still says how much THIS recipe
+    // wanted.
+    const wording = line.ingredientName ?? line.rawText;
+    const name =
+      line.ingredientName ??
+      unresolvedLineName({
+        rawText: line.rawText,
+        quantity: line.quantity == null ? null : Number(line.quantity),
+        quantityMax: line.quantityMax == null ? null : Number(line.quantityMax),
+        unit: line.unit,
+      });
     const key = line.ingredientSlug ?? `raw:${name.trim().toLowerCase()}`;
 
     let entry = byIngredient.get(key);
@@ -2320,15 +2463,41 @@ export async function buildShoppingList(
       }
     }
 
+    // WHAT THIS RECIPE ASKED FOR, in its own words.
+    //
+    // The amount is restated only when the name came from the canonical
+    // ingredient. `raw_text` IS the line as it was written, amount and all,
+    // so prepending the measure to it reads `10 pod 10 pod Star anise`. The
+    // archive has no unresolved line, which is why that was never seen; soft
+    // delete makes the state reachable, because deleting an ingredient
+    // leaves every line that named it on its revision and the line degrades
+    // to its own text. `recipeToMarkdown` carries the same note.
+    //
+    // WHICH of the three the text already carries is asked of the text, not
+    // inferred from whether the ingredient resolved. A caller-supplied
+    // `rawText` is routinely the name alone, and dropping the measure there
+    // made this line disagree with the total above it, which still counts
+    // the amount. `unresolvedLineNeeds` carries the reasoning.
+    const needs = line.ingredientName
+      ? { measure: true, preparation: true, optional: true }
+      : unresolvedLineNeeds({
+          rawText: line.rawText,
+          quantity,
+          quantityMax:
+            line.quantityMax == null ? null : Number(line.quantityMax),
+          unit: line.unit,
+          preparation: line.preparation,
+          optional: line.optional,
+        });
     entry.from.push({
       slug: source.slug,
       title: source.title,
       text: formatIngredientLine({
-        quantity,
-        unit: line.unit,
-        name,
-        preparation: line.preparation,
-        optional: line.optional,
+        quantity: needs.measure ? quantity : null,
+        unit: needs.measure ? line.unit : null,
+        name: wording,
+        preparation: needs.preparation ? line.preparation : null,
+        optional: needs.optional && line.optional,
       }),
     });
   }

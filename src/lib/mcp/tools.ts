@@ -23,12 +23,18 @@ import {
   addNoteShape,
   createRecipeSchema,
   createRecipeShape,
+  deleteRecordSchema,
+  deleteRecordShape,
   describeMechanismSchema,
   describeMechanismShape,
+  listDeletedSchema,
+  listDeletedShape,
   logExperimentSchema,
   logExperimentShape,
   reportIssueSchema,
   reportIssueShape,
+  restoreRecordSchema,
+  restoreRecordShape,
   reviseRecipeSchema,
   reviseRecipeShape,
   backfillRevisionSchema,
@@ -37,34 +43,54 @@ import {
   buildShoppingListShape,
   searchRecipesSchema,
   searchRecipesShape,
+  updateNoteSchema,
+  updateNoteShape,
+  updateRecipeSchema,
+  updateRecipeShape,
+  updateRevisionSchema,
+  updateRevisionShape,
   CATEGORY_TYPES,
   upsertIngredientSchema,
   upsertIngredientShape,
   upsertCategorySchema,
   upsertCategoryShape,
   type CategoryType,
+  type DeletableKind,
 } from '@/lib/domain/schemas';
 import {
   buildShoppingList,
   getExperiment,
   getIngredient,
   getRecipeBySlug,
+  getRecipeIdentity,
   getStats,
   listExperiments,
   listIngredients,
   listCategories,
   searchRecipes,
 } from '@/lib/queries/read';
+/**
+ * The one read module that sees deleted rows, imported by the one tool that
+ * shows them. `src/lib/queries/read.ts` cannot name a base table at all —
+ * `eslint.config.mjs` refuses the import — so the bin lives in its own file
+ * and reaches the registry from there.
+ */
+import { isDeletedRecipe, listDeleted } from '@/lib/queries/deleted';
 import {
   addMassFlow,
   addNote,
   ConflictError,
   createRecipe,
+  deleteRecord,
   describeMechanism,
   logExperiment,
   NotFoundError,
+  restoreRecord,
   reviseRecipe,
   backfillRevision,
+  updateNote,
+  updateRecipe,
+  updateRevision,
   upsertIngredient,
   upsertCategory,
 } from '@/lib/queries/write';
@@ -162,6 +188,37 @@ function followUpMessage(headline: string, result: WriteResult): string {
   }
 
   return parts.join(' ');
+}
+
+/**
+ * The word a person reads for one of the six deletable kinds.
+ *
+ * The enum says `revision` and `experiment`; every sentence this connector
+ * writes says "version" and "run", because that is the vocabulary of the
+ * guide, the site and the other tool descriptions. Nothing is lost by writing
+ * the readable word in the prose: the structured `kind` sits beside it in the
+ * same result, and `restore_record` takes the enum value from there.
+ */
+const KIND_WORDS: Record<DeletableKind, readonly [string, string]> = {
+  recipe: ['recipe', 'recipes'],
+  revision: ['version', 'versions'],
+  note: ['note', 'notes'],
+  experiment: ['run', 'runs'],
+  ingredient: ['ingredient', 'ingredients'],
+  tag: ['tag', 'tags'],
+};
+
+/** "1 version, 3 notes and 2 runs", or null when the list is empty. */
+function countsInWords(
+  entries: { kind: DeletableKind; count: number }[],
+): string | null {
+  const parts = entries.map(({ kind, count }) => {
+    const [one, many] = KIND_WORDS[kind];
+    return `${count} ${count === 1 ? one : many}`;
+  });
+  if (parts.length === 0) return null;
+  if (parts.length === 1) return parts[0]!;
+  return `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)!}`;
 }
 
 function ok(payload: unknown) {
@@ -344,8 +401,35 @@ export function registerTools(server: McpServer): void {
     async (args, extra) =>
       runTool(extra as AuthCtx, 'get_recipe', { slug: args.slug }, async () => {
         const recipe = await getRecipeBySlug(args.slug, args.revisionNumber);
-        if (!recipe)
+        if (!recipe) {
+          // A numbered read of a LIVE recipe misses when that one version is
+          // deleted, and `getRecipeBySlug` cannot tell the two apart — it
+          // returns null either way. Saying the recipe does not exist would
+          // be false, and it is the one answer that stops a model looking.
+          if (args.revisionNumber && (await getRecipeIdentity(args.slug))) {
+            throw new NotFoundError(
+              `Recipe "${args.slug}" has no revision ${args.revisionNumber} ` +
+                'that can be read. Call list_deleted to see whether it was ' +
+                'deleted, or get_recipe without revisionNumber for the ' +
+                'current version.',
+            );
+          }
+          // The same answer one level up. A deleted RECIPE also returns null
+          // from `getRecipeBySlug`, and `No recipe with slug "x"` is the one
+          // sentence that stops a model looking — it reads as "this never
+          // existed" for a record that is sitting in the bin with a reason
+          // written on it, one call from coming back. The refusal for a
+          // deleted VERSION has named `list_deleted` since it was written;
+          // these two are the same event at two scales and now say so.
+          if (await isDeletedRecipe(args.slug)) {
+            throw new NotFoundError(
+              `Recipe "${args.slug}" is deleted, so there is nothing to ` +
+                'read. Call list_deleted to see the bin, or restore_record ' +
+                `{ kind: "recipe", slug: "${args.slug}" } to bring it back.`,
+            );
+          }
           throw new NotFoundError(`No recipe with slug "${args.slug}".`);
+        }
         return recipe;
       }),
   );
@@ -503,6 +587,44 @@ export function registerTools(server: McpServer): void {
       ),
   );
 
+  /**
+   * The bin, and the only read in the registry that reports a row the site
+   * does not show.
+   *
+   * IT IS IN THE READ SCOPE, deliberately. A caller that can delete can
+   * already see what it deleted in the delete's own result; the value of this
+   * tool is to the caller that arrives afterwards and has to find out what is
+   * missing and why. The read scope already grants archived recipes, and
+   * `ALLOWED_EMAILS` means one administrator approves every connector — so
+   * the rows are not hidden from a different audience, they are hidden from
+   * the public site. Putting the bin behind write would mean a read-only
+   * agent could see that a recipe is absent and never learn that it is
+   * recoverable.
+   */
+  server.registerTool(
+    'list_deleted',
+    {
+      title: 'What is in the bin',
+      description:
+        'List the records that are deleted. Each row gives the kind, a name ' +
+        'that you can read, the date, who deleted it, and the reason.\n\n' +
+        'Each row also gives the arguments for restore_record, ready to ' +
+        'send. A row that must wait names the record to restore first.\n\n' +
+        'Give `kind` to see one kind only.',
+      inputSchema: listDeletedShape,
+    },
+    async (args, extra) =>
+      runTool(
+        extra as AuthCtx,
+        'list_deleted',
+        { kind: args.kind },
+        async () => {
+          const input = listDeletedSchema.parse(args);
+          return listDeleted(input);
+        },
+      ),
+  );
+
   // ───────────────────────────────────────────────────────────────────────
   // Write
   // ───────────────────────────────────────────────────────────────────────
@@ -561,9 +683,8 @@ export function registerTools(server: McpServer): void {
       title: 'Revise a recipe',
       description:
         'Append a revision to an existing recipe. This is the tool to reach ' +
-        'for whenever a recipe changes — ingredients and steps are never ' +
-        'edited in place, so a revision costs nothing and preserves what ' +
-        'came before.\n\n' +
+        'for whenever the dish changes. A revision costs nothing and the ' +
+        'version it supersedes stays readable.\n\n' +
         'Omitted fields carry forward from the current revision, so changing ' +
         'one spice ratio means sending `slug`, `rationale` and `ingredients` ' +
         'only. `ingredients`, `steps` and `categories` each replace their ' +
@@ -592,7 +713,23 @@ export function registerTools(server: McpServer): void {
         '`massFlow` does NOT carry forward. Ingredients and steps say what a ' +
         'cook intends, so an unchanged intent stays true. A mass flow says ' +
         'what one batch weighed. Send it again only when you weighed this ' +
-        'version. To give a stored version its figure, call add_mass_flow.',
+        'version. To give a stored version its figure, call add_mass_flow.\n\n' +
+        /*
+         * THE ONE PARAGRAPH THAT DECIDES BETWEEN TWO TOOLS, and it is in both
+         * descriptions in the same words. An agent that reaches for
+         * update_revision when it means this tool overwrites the version a
+         * person cooked from and loses the history this repository exists to
+         * keep. The question is put first because a model picks a tool from
+         * the top of a description far more often than from the bottom of
+         * one, and the answer is a fact about the food rather than about the
+         * database — which is the only thing the caller reliably knows.
+         */
+        'Use this tool when the dish changed. It adds a new version and ' +
+        'moves the recipe to it. The old version stays and people can still ' +
+        'read it.\n\n' +
+        'If the dish did not change, and the record is wrong, call ' +
+        'update_revision. It corrects the stored version. It makes no new ' +
+        'version and it moves no number.',
       inputSchema: reviseRecipeShape,
     },
     async (args, extra) =>
@@ -725,8 +862,15 @@ export function registerTools(server: McpServer): void {
    * revision whose only change is a diagram has no reason to exist and would
    * move a number that is in URLs and in the ticked-ingredient keys.
    *
-   * Neither is an edit. Both refuse a second write, so a value goes from
-   * absent to present exactly once and can never be quietly replaced.
+   * NEITHER IS AN EDIT, AND THAT PROMISE IS NOW LOCAL TO THEM. Both still
+   * refuse a second write, so a value goes from absent to present exactly
+   * once and neither of these two tools can quietly replace a measurement —
+   * which is the whole reason they are shaped this way. What changed is that
+   * the repository now has a general correction path: `update_revision`
+   * replaces a stored figure and `update_note` replaces a stored set of
+   * conditions. So the refusals here no longer say "this cannot be changed",
+   * which was true when they were written and would now be a lie in the one
+   * place a model has no way to check. They name the tool that does it.
    */
   server.registerTool(
     'add_mass_flow',
@@ -757,7 +901,8 @@ export function registerTools(server: McpServer): void {
         'and the last stage do not have to share a unit.\n\n' +
         'A version takes one figure. The tool refuses a second one. The ' +
         'numbers record a batch that a person weighed. To record a ' +
-        'different batch, call revise_recipe and send `massFlow` with it.',
+        'different batch, call revise_recipe and send `massFlow` with it. ' +
+        'To correct a figure that is wrong, call update_revision.',
       inputSchema: addMassFlowShape,
     },
     async (args, extra) =>
@@ -775,7 +920,8 @@ export function registerTools(server: McpServer): void {
             message:
               `Added the mass flow figure to revision ${result.revisionNumber}. ` +
               'The current revision did not move. A revision takes one ' +
-              'figure, so this one cannot be changed.',
+              'figure, so this tool refuses a second one. To correct this ' +
+              'figure, call update_revision.',
           };
         },
       ),
@@ -798,8 +944,8 @@ export function registerTools(server: McpServer): void {
         'get_recipe gives the id of each note on a recipe. Use that id ' +
         'here.\n\n' +
         'A note states its conditions once. The tool refuses a second set. ' +
-        'If the conditions are wrong, call add_note with the kind ' +
-        '"correction" and say what is wrong.\n\n' +
+        'To correct them, call update_note. To leave the old claim readable, ' +
+        'call add_note with the kind "correction" and say what is wrong.\n\n' +
         'When you write a new note, send `conditions` to add_note instead. ' +
         'This tool is for a note that was written before.',
       inputSchema: describeMechanismShape,
@@ -819,7 +965,8 @@ export function registerTools(server: McpServer): void {
             message:
               `The mechanism now states ${count} ` +
               `${count === 1 ? 'condition' : 'conditions'}. ` +
-              'They cannot be changed.',
+              'This tool refuses a second set. To correct them, call ' +
+              'update_note.',
           };
         },
       ),
@@ -972,6 +1119,290 @@ export function registerTools(server: McpServer): void {
   );
 
   // ───────────────────────────────────────────────────────────────────────
+  // Correcting a record
+  //
+  // Three tools, not six. `log_experiment`, `upsert_ingredient` and
+  // `upsert_category` are already the update path for their own records —
+  // each one merges the keys the caller sent onto the stored row — so a
+  // second tool for those three would be two tools writing one row under two
+  // different merge rules.
+  //
+  // TYPED, ONE PER RECORD, WHERE DELETE AND RESTORE ARE GENERIC. Delete and
+  // restore take a kind and an address, which is genuinely uniform. An update
+  // carries a body, and a generic `update(kind, id, patch)` would have to
+  // take that body as an opaque object — which throws away
+  // `src/lib/domain/schemas.ts`, where the raw SHAPE is the advertised JSON
+  // Schema and the assembled SCHEMA enforces it, so the signature a model
+  // reads and the contract the server keeps cannot drift.
+  // ───────────────────────────────────────────────────────────────────────
+
+  server.registerTool(
+    'update_recipe',
+    {
+      title: 'Correct a recipe',
+      description:
+        'Correct the record of a recipe. This tool changes the name, the ' +
+        'summary, the tags, the links, the kind and the status. It touches ' +
+        'no version and it makes no version.\n\n' +
+        'Use revise_recipe when the dish changed. Use this tool when the ' +
+        'record is wrong: a typo in the title, a summary that says the ' +
+        'wrong thing, a tag that does not belong.\n\n' +
+        'You cannot change the slug. The slug is the public address of the ' +
+        'recipe.\n\n' +
+        '`categories` and `links` each replace the whole list. Call ' +
+        'get_recipe first. Then send back each one that you want to keep.\n\n' +
+        '`currentRevisionNumber` moves the recipe to another stored ' +
+        'version. People then read that version. Every version stays.',
+      inputSchema: updateRecipeShape,
+    },
+    async (args, extra) =>
+      runTool(
+        extra as AuthCtx,
+        'update_recipe',
+        { slug: args.slug },
+        async (principal) => {
+          requireWrite(principal);
+          const input = updateRecipeSchema.parse(args);
+          const result = await updateRecipe(input);
+          return {
+            ...result,
+            url: `/recipes/${result.slug}`,
+            // The same follow-up text `create_recipe` gets, for the same
+            // reason: `categories` replaces the whole list and names what it
+            // creates, so a correction can mint a bare tag exactly as a
+            // creation can, and it owes the same description.
+            message: followUpMessage('Corrected.', result),
+          };
+        },
+      ),
+  );
+
+  server.registerTool(
+    'update_revision',
+    {
+      title: 'Correct a version',
+      description:
+        'Correct a version that is already stored. This tool changes the ' +
+        'version in place. It makes no new version. It moves no number.\n\n' +
+        'Ask one question first: did the food change, or is the record ' +
+        'wrong? If the food changed, call revise_recipe. It adds a new ' +
+        'version and keeps the old one. If the record is wrong, call this ' +
+        'tool. Use it for a typo, for an amount that nobody cooked, or for ' +
+        'a version that two chats wrote twice.\n\n' +
+        '`ingredients`, `steps` and `massFlow` each replace the whole list. ' +
+        'A list that you leave out stays as it is. Send `steps` with ' +
+        '`ingredients` when you change a line that a step names. Send ' +
+        '`massFlow` as null to remove the figure.\n\n' +
+        '`occurredAt` says when this version existed. The history is ' +
+        'ordered by it, so the history re-orders.\n\n' +
+        'You do not need to give a reason.',
+      inputSchema: updateRevisionShape,
+    },
+    async (args, extra) =>
+      runTool(
+        extra as AuthCtx,
+        'update_revision',
+        { slug: args.slug, revisionNumber: args.revisionNumber },
+        async (principal) => {
+          requireWrite(principal);
+          const input = updateRevisionSchema.parse(args);
+          const result = await updateRevision(input);
+          return {
+            ...result,
+            url: `/recipes/${result.slug}/revisions/${result.revisionNumber}`,
+            message: followUpMessage(
+              `Corrected revision ${result.revisionNumber}. No version was ` +
+                'made and no number moved.',
+              result,
+            ),
+          };
+        },
+      ),
+  );
+
+  server.registerTool(
+    'update_note',
+    {
+      title: 'Correct a note',
+      description:
+        'Correct a note that is already stored. This tool changes the kind, ' +
+        'the title, the body, the conditions and the sources. It can also ' +
+        'move the note to another recipe, version, ingredient or run.\n\n' +
+        '`conditions` and `sources` each replace the whole list. Send an ' +
+        'empty list to clear one.\n\n' +
+        'Add a note of kind "correction" when you want the old claim to ' +
+        'stay readable. Use this tool when the note itself is wrong: a ' +
+        'typo, a wrong number, the wrong recipe.\n\n' +
+        'get_recipe gives the id of each note on a recipe. Use that id ' +
+        'here.\n\n' +
+        'You do not need to give a reason.',
+      inputSchema: updateNoteShape,
+    },
+    async (args, extra) =>
+      runTool(
+        extra as AuthCtx,
+        'update_note',
+        { noteId: args.noteId },
+        async (principal) => {
+          requireWrite(principal);
+          const input = updateNoteSchema.parse(args);
+          const result = await updateNote(input);
+          return { ...result, message: 'Corrected.' };
+        },
+      ),
+  );
+
+  // ───────────────────────────────────────────────────────────────────────
+  // Delete and restore
+  //
+  // TWO TOOLS FOR SIX KINDS, AND NOT TWELVE. The argument list of a delete
+  // is a kind and an address, which is the same for every record — so a pair
+  // per kind would be twelve definitions of roughly a hundred tokens each,
+  // about a thousand tokens on every `tools/list` in every conversation,
+  // forever, to carry a distinction the `kind` argument already carries. The
+  // enum is in the schema the model reads beside the name, so the six legal
+  // values are as visible as six registry entries would be, and strictly
+  // more visible for the question "what can I delete?", which is one enum
+  // instead of a scan of the whole list.
+  //
+  // The counter-argument is blast radius: `delete_record` is easier to call
+  // by accident than `delete_tag`. It is bounded by construction. Every
+  // delete is soft, the result names everything that went with it,
+  // `list_deleted` shows the bin, and `restore_record` takes the same
+  // arguments back.
+  //
+  // THE NAMES ARE NOT `delete` AND `restore`. Every tool in this registry is
+  // verb_noun, and a bare `delete` is the single most likely name in this
+  // surface to collide with another connector in a session that has several.
+  // ───────────────────────────────────────────────────────────────────────
+
+  server.registerTool(
+    'delete_record',
+    {
+      title: 'Delete a record',
+      description:
+        'Delete one record. The record stops being visible: the site does ' +
+        'not show it and the read tools do not return it. It is not ' +
+        'destroyed. Call restore_record to bring it back.\n\n' +
+        'ONE ADDRESS IS NOT COVERED, and it is not a fault. A recipe that ' +
+        'came from the frozen Markdown archive is also served at ' +
+        '/archive/<path>, which reads the file off disk and never the ' +
+        'database. Deleting the record does not change that page. To take ' +
+        'the archived text down, remove the file.\n\n' +
+        'Name the kind, then say which record. Use `id` for any kind. Use ' +
+        '`slug` for a recipe, a run or an ingredient. Use `slug` with ' +
+        '`revisionNumber` for a version. Use `slug` with `categoryType` for ' +
+        'a tag. A note has only an `id`.\n\n' +
+        'Some records take others with them. A recipe takes its versions, ' +
+        'its notes and its runs. A version takes its notes. A run takes its ' +
+        'notes. The result names what went with it, and one restore brings ' +
+        'back the same set.\n\n' +
+        'Give a `reason`. The bin shows it. It is the only thing that tells ' +
+        'the next reader why the record went.\n\n' +
+        'Delete a duplicate. Delete a record that somebody wrote by ' +
+        'mistake. Do not delete a version because the dish changed: call ' +
+        'revise_recipe for that.',
+      inputSchema: deleteRecordShape,
+    },
+    async (args, extra) =>
+      runTool(
+        extra as AuthCtx,
+        'delete_record',
+        // The audit rule holds: identifying primitives only. `reason` is
+        // free-form text the caller wrote, so it is not logged here — it is
+        // stored on the row itself, which is where the bin reads it.
+        {
+          kind: args.kind,
+          id: args.id,
+          slug: args.slug,
+          revisionNumber: args.revisionNumber,
+          categoryType: args.categoryType,
+        },
+        async (principal) => {
+          requireWrite(principal);
+          const input = deleteRecordSchema.parse(args);
+          const { reason, ...address } = input;
+          const result = await deleteRecord(address, {
+            reason,
+            // The one new thing the write layer learns. `deleted_by` is
+            // denormalised on purpose: the bin prints it beside the date and
+            // the reason, and `mcp_audit_log` cannot be asked for it — that
+            // write is fire-and-forget, nothing reads the table, and it
+            // records tool CALLS rather than the state of a row.
+            actor: principal.userId,
+          });
+          const went = countsInWords(result.cascaded);
+          return {
+            ...result,
+            message: [
+              `Deleted ${result.handle}. It is not destroyed: the site does`,
+              'not show it and the read tools do not return it.',
+              ...(went ? [`${went} went with it.`] : []),
+              'Call restore_record with the same arguments to bring back the',
+              'same set.',
+            ].join(' '),
+          };
+        },
+      ),
+  );
+
+  server.registerTool(
+    'restore_record',
+    {
+      title: 'Restore a record',
+      description:
+        'Bring back a record that is deleted. It becomes visible again. ' +
+        'Name the record the same way you name it in delete_record.\n\n' +
+        'A restore brings back the set that one delete removed. It does not ' +
+        'bring back a record that somebody deleted on its own before that. ' +
+        'Call list_deleted to see what is still in the bin.\n\n' +
+        'You cannot restore a record while the record it belongs to is ' +
+        'still deleted. The refusal names what to restore first.',
+      inputSchema: restoreRecordShape,
+    },
+    async (args, extra) =>
+      runTool(
+        extra as AuthCtx,
+        'restore_record',
+        {
+          kind: args.kind,
+          id: args.id,
+          slug: args.slug,
+          revisionNumber: args.revisionNumber,
+          categoryType: args.categoryType,
+        },
+        async (principal) => {
+          requireWrite(principal);
+          const input = restoreRecordSchema.parse(args);
+          const result = await restoreRecord(input, {
+            actor: principal.userId,
+          });
+          const back = countsInWords(result.restored);
+          return {
+            ...result,
+            message: [
+              `Restored ${result.handle}. It is visible again.`,
+              ...(back ? [`${back} came back with it.`] : []),
+              // Only for a version, and it is the one part of a restore that
+              // surprises a caller: deleting the current version moved the
+              // recipe to the newest survivor, and bringing it back does not
+              // move the recipe on to it again. The version returns to the
+              // history; what people read is a separate decision, and
+              // somebody has to state it.
+              ...(result.kind === 'revision'
+                ? [
+                    'A restore does not decide which version people read.',
+                    'Call update_recipe with `currentRevisionNumber` to move',
+                    'the recipe to this version.',
+                  ]
+                : []),
+            ].join(' '),
+          };
+        },
+      ),
+  );
+
+  // ───────────────────────────────────────────────────────────────────────
   // Reporting a fault
   // ───────────────────────────────────────────────────────────────────────
 
@@ -995,7 +1426,7 @@ export function registerTools(server: McpServer): void {
    * would file into a void and consider the problem reported.
    *
    * NO SCOPE CHECK, AND DELIBERATELY SO. Do not add `requireWrite` here.
-   * `noble-notations:write` means "may add and revise content in this
+   * `noble-notations:write` means "may change the content of this
    * repository"; this tool writes no row and reads none. Worse, gating on it
    * fails the use case: a read-only agent is exactly the one that meets a
    * read tool's bug, and the reports we most want would be the ones we could
