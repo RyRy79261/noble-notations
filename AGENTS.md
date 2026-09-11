@@ -240,17 +240,43 @@ Five labels must exist before the first report (`agent-report`,
 ## Quality gates
 
 `.github/workflows/ci.yml` runs on every push and PR and must stay green:
-format check → lint → typecheck → production build, plus an end-to-end job
-against a throwaway Postgres. The build step needs no database — the
-migration it runs skips itself when `DATABASE_URL` is absent. Before
-pushing:
+
+| Job               | What it does                                       |
+| ----------------- | -------------------------------------------------- |
+| `changes`         | Path filter; only gates `e2e`                      |
+| `quality`         | format check → lint → typecheck → production build |
+| `e2e`             | Playwright against a throwaway Postgres service    |
+| `migration-drift` | `pnpm db:generate` must leave `drizzle/` unchanged |
+| `supply-chain`    | `pnpm audit --audit-level high`                    |
+| `ci-pass`         | Aggregate; **this is the required status check**   |
+
+Before pushing:
 
 ```bash
 pnpm format && pnpm lint && pnpm typecheck && pnpm build
 ```
 
 The build does not need a database: its migration step skips when
-`DATABASE_URL` is absent.
+`DATABASE_URL` is absent. Neither does `migration-drift` — `drizzle-kit
+generate` reads `src/db/schema.ts`, not a server.
+
+Require `ci-pass` in branch protection, not the individual jobs. A skipped
+job never reports a status, so requiring a job that is allowed to skip
+(`e2e`, on a docs-only PR) blocks the PR forever. `ci-pass` always reports
+and checks the others itself.
+
+`.github/workflows/neon-pr-cleanup.yml` deletes the `preview/<branch>` Neon
+branch that the Vercel integration creates for a PR's preview deployment,
+when the PR closes. It needs the `NEON_API_KEY` and `NEON_PROJECT_ID` repo
+secrets and fails loudly without them — an unnoticed leak fills the project's
+branch quota. CI itself never touches Neon: every DB-backed job brings its
+own throwaway Postgres.
+
+Dependency updates come from `.github/dependabot.yml`, weekly and grouped.
+The grouping is load-bearing rather than cosmetic: `next`, `react`,
+`tailwindcss` and `@playwright/test` are each exact-pinned alongside a
+package that must carry the same version, so an ungrouped bump opens two PRs
+that each fail on their own. Add to a group before pinning something new.
 
 ## Words and writing style
 

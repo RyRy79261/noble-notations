@@ -7,6 +7,12 @@ name: CI
 # degrades to a notice when DATABASE_URL is unset, and the build's migration
 # step skips itself. The `e2e` job does need one, and brings its own
 # throwaway Postgres service rather than touching Neon.
+#
+# `ci-pass` is the single job to require in branch protection. Requiring the
+# individual jobs instead would deadlock the moment one of them is allowed to
+# skip: a skipped job never reports, so a required-but-skipped check waits
+# forever. `ci-pass` reports either way and does the success-or-skipped
+# arithmetic itself.
 on:
   push:
     branches: [main]
@@ -17,7 +23,54 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
+  # Which of the expensive jobs need to run at all. The filter step runs only
+  # on pull_request — `dorny/paths-filter` needs a base to diff against, and a
+  # push or a manual dispatch has no meaningful one — so on every other event
+  # the outputs fall back to "changed" and nothing is skipped. The comparison
+  # is against 'false' rather than 'true' so a skipped step reads as changed.
+  changes:
+    name: Changed paths
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      src: ${{ steps.filter.outputs.src != 'false' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Filter changed paths
+        id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v4
+        with:
+          # Deliberately a positive list: a docs-only or design-only PR skips
+          # the e2e suite, and anything else runs it. `quality` is NOT gated on
+          # this — Prettier formats the Markdown too, so a docs-only PR still
+          # has to pass format:check.
+          filters: |
+            src:
+              - 'src/**'
+              - 'e2e/**'
+              - 'scripts/**'
+              - 'drizzle/**'
+              - 'content/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'next.config.ts'
+              - 'playwright.config.ts'
+              - 'drizzle.config.ts'
+              - 'eslint.config.mjs'
+              - 'postcss.config.mjs'
+              - 'tsconfig.json'
+              - 'components.json'
+              - 'vercel.json'
+              - '.github/workflows/**'
+
   quality:
     name: Format, lint, typecheck, build
     runs-on: ubuntu-latest
@@ -51,6 +104,8 @@ jobs:
 
   e2e:
     name: End-to-end
+    needs: [changes]
+    if: needs.changes.outputs.src == 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -104,3 +159,114 @@ jobs:
             playwright-report/
             e2e/.results/
           retention-days: 7
+
+  # Fail if src/db/schema.ts changed without regenerating the committed SQL.
+  # The schema is the source of truth and drizzle/ is its build output, so a
+  # PR that edits one without the other produces a database that no longer
+  # matches the types it is read through — and nothing else in CI notices,
+  # because the e2e suite migrates from the same stale files.
+  #
+  # `drizzle-kit generate` never reads the database (drizzle.config.ts only
+  # passes DATABASE_URL through for `studio`), so this job needs no service.
+  migration-drift:
+    name: Migration drift
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Regenerate migrations from schema.ts
+        run: pnpm db:generate
+
+      - name: Assert drizzle/ is in sync with schema.ts
+        # The whole directory, meta/_journal.json included: a generated
+        # migration that never got committed shows up there first.
+        run: |
+          if [ -n "$(git status --porcelain drizzle)" ]; then
+            echo "::error::Migration drift — schema.ts changed without regenerating. Run 'pnpm db:generate' and commit drizzle/."
+            git status --porcelain drizzle
+            git --no-pager diff -- drizzle
+            exit 1
+          fi
+          echo "drizzle/ is in sync with src/db/schema.ts"
+
+  # High-severity dependency audit. Fails only on >= high; moderate advisories
+  # are allowed through, which is what keeps this from going red every other
+  # week over a devDependency nobody ships.
+  #
+  # This job can go red on a PR that changed nothing relevant, because an
+  # advisory published overnight applies to the whole tree. That is the deal:
+  # the alternative is finding out at deploy time. When an advisory genuinely
+  # cannot be actioned (an unfixed transitive pin, say), add its GHSA to
+  # `pnpm.auditConfig.ignoreGhsas` in package.json with a comment saying why,
+  # rather than lowering --audit-level.
+  supply-chain:
+    name: Supply chain audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit dependencies
+        run: pnpm audit --audit-level high
+
+  # The one required status check. Everything above is either unconditional
+  # (must succeed) or gated by `changes` (must succeed or be skipped); a
+  # failure or a cancellation in either set fails the run.
+  ci-pass:
+    name: CI pass
+    if: always()
+    needs: [changes, quality, e2e, migration-drift, supply-chain]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check all jobs passed
+        run: |
+          echo "=== Unconditional ==="
+          echo "changes:         ${{ needs.changes.result }}"
+          echo "quality:         ${{ needs.quality.result }}"
+          echo "migration-drift: ${{ needs.migration-drift.result }}"
+          echo "supply-chain:    ${{ needs.supply-chain.result }}"
+
+          if [[ "${{ needs.changes.result }}" != "success" ||
+                "${{ needs.quality.result }}" != "success" ||
+                "${{ needs.migration-drift.result }}" != "success" ||
+                "${{ needs.supply-chain.result }}" != "success" ]]; then
+            echo "::error::An unconditional job did not succeed"
+            exit 1
+          fi
+
+          echo "=== Gated (success or skipped) ==="
+          echo "e2e:             ${{ needs.e2e.result }}"
+
+          for result in "${{ needs.e2e.result }}"; do
+            if [[ "$result" != "success" && "$result" != "skipped" ]]; then
+              echo "::error::A gated job did not succeed or skip: $result"
+              exit 1
+            fi
+          done
+
+          echo "All jobs passed"
