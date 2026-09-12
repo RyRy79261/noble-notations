@@ -209,6 +209,90 @@ export function revisionOrdinal(revisionNumber: number): string | undefined {
 }
 
 /**
+ * How much of a summary a card shows, in characters. C-05 of the
+ * specification says 160; M4 removed the cut (D-11) and this restores it,
+ * on the terms D-11 itself set out.
+ *
+ * D-11 weighed the cut against the summaries the DESIGN drew, 181 and 245
+ * characters, and at that length the cut is the wrong trade. The summaries
+ * the repository STORES are a different case: they are multi-paragraph, and
+ * the longest is 1,028 characters — four times anything the design drew, and
+ * fourteen lines of body text under a 26px title, because a card flattens
+ * the paragraphs into one block. A grid of three of those is a wall of prose
+ * with the titles lost in it.
+ *
+ * It is a ceiling and not a target. Nothing is padded up to it, and a
+ * summary shorter than it is drawn exactly as written.
+ */
+export const CARD_SUMMARY = 160;
+
+/**
+ * A quarter of the limit, used twice below and meaning the same thing both
+ * times: roughly one line of the card's 14px body in a 286px column. It is
+ * the smallest piece of text worth treating as a unit.
+ */
+const CARD_SUMMARY_LINE = CARD_SUMMARY / 4;
+
+/**
+ * The card-length reading of a summary. Long text is cut; short text is
+ * returned whole.
+ *
+ * THE CUT LANDS ON A SENTENCE, not on a character count. A card that stops
+ * mid-clause reads as damaged, and these summaries are written as whole
+ * sentences, so the boundary is free and it is better. It takes as many
+ * sentences as fit within `limit` and stops there, appending nothing — the
+ * result is a complete sentence, and the ellipsis is a mark the design draws
+ * nowhere.
+ *
+ * TWO CASES CANNOT END ON A SENTENCE, and both fall through to a word cut
+ * with an ellipsis: a first sentence long enough to swallow the card on its
+ * own, and an opening so short that the sentences which fit add up to less
+ * than a line — a three-word lede in front of a hundred-word second sentence
+ * would otherwise leave the card almost blank. Outside those two, a whole
+ * sentence wins however far short of the limit it stops.
+ *
+ * TEXT THAT OVERRUNS BY LESS THAN A LINE IS LEFT WHOLE. Trading an ellipsis
+ * for fourteen characters is a bad trade: one more line costs the grid less
+ * than a mark that says "there is more" about almost nothing. Two of the ten
+ * stored summaries are in that band, and the design's own 181-character card
+ * is too — so it still draws whole, which is what D-11 was protecting.
+ *
+ * Paragraph breaks collapse to single spaces, because the card draws one
+ * `<p>` and a raw newline renders as a space there anyway.
+ *
+ * Returns `undefined` for an empty summary, so the card drops the slot
+ * instead of drawing an empty paragraph (R-STA-05).
+ */
+export function cardSummary(
+  text: string | null | undefined,
+  limit: number = CARD_SUMMARY,
+): string | undefined {
+  const whole = text?.trim().replace(/\s+/g, ' ');
+  if (!whole) return undefined;
+  if (whole.length <= limit) return whole;
+
+  /* Every sentence ending that finishes at or before the limit, keeping the
+     last one. A closing quote or bracket belongs to the sentence it ends. */
+  const endings = /[.!?]['")\]]*(?=\s|$)/g;
+  let cut = 0;
+  for (let m = endings.exec(whole); m; m = endings.exec(whole)) {
+    const end = m.index + m[0].length;
+    if (end > limit) break;
+    cut = end;
+  }
+  if (cut >= CARD_SUMMARY_LINE) return whole.slice(0, cut);
+
+  /* No sentence to stop at. An overrun shorter than a line is not worth an
+     ellipsis; anything longer is cut on a word. */
+  if (whole.length <= limit + CARD_SUMMARY_LINE) return whole;
+
+  const head = whole.slice(0, limit);
+  const lastSpace = head.lastIndexOf(' ');
+  const word = lastSpace > 0 ? head.slice(0, lastSpace) : head;
+  return `${word.replace(/[\s,;:.]+$/, '')}\u2026`;
+}
+
+/**
  * `1` → `I`, `4` → `IV`. The ordinal in F/Section label's 40px column.
  *
  * The design numbers every page-level section of a document screen in roman

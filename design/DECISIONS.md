@@ -20,7 +20,7 @@ An entry that a later milestone settled says so in place.
 | D-08 | An explanation on a tag requires a term page                | Built in M3. The unreachable shape is not representable.                                   |
 | D-09 | The bridge carries colour, not the faces or the radius      | **Done. The bridge is gone. M7 deleted it with the stylesheet it fed.**                    |
 | D-10 | The body link is an underline                               | Built in M4.                                                                               |
-| D-11 | A card summary is not cut at 160 characters                 | Built in M4. C-05 of the specification is corrected in §20.7.                              |
+| D-11 | A card summary is not cut at 160 characters                 | **Reversed after M7. The cut is back, on a sentence, in the data layer. C-05 stands.**     |
 | D-12 | Three things the design draws that the data cannot fill     | The figure is built. The other two stay out. **The 360 readout is still open.**            |
 | D-13 | A note's location is not covered by the immutability rule   | Built after M7. `reattach_note` moves a note; `notes.previous_subjects` keeps each move.   |
 | D-14 | The site does not explain itself, and neither does a recipe | Built after M7. The home page's fifth band is gone; the connector states the writing rule. |
@@ -584,8 +584,9 @@ Change `PROSE_LINK` in `src/components/f/button.tsx`. Both callers —
 
 ## D-11 — A card summary is not cut at 160 characters
 
-**Status:** Decided. **Worth your eye.**
-**Date:** 2026-09-09
+**Status:** **Reversed after M7 — the cut is back. The entry below is kept
+as written, and the reversal is the last section.**
+**Date:** 2026-09-09, reversed 2026-09-12
 **Touches:** C-05, §9.2, R-BLD-03
 
 ### The problem
@@ -619,6 +620,55 @@ Restore `truncate(text, 160)` in `src/components/recipe-card.tsx` and pass
 `summary={truncate(recipe.summary, 160)}`. Do not put it in
 `src/components/f/recipe-card.tsx`: that file is the drawing and holds no
 data rule.
+
+### Reversed — 2026-09-12
+
+It was changed, on the terms this entry set out.
+
+The decision above weighed a 160-character cut against summaries of 181 and
+245 characters, and at that length it is the wrong trade: the cut buys a few
+words and costs two of the design's own cards. The summaries the repository
+went on to store are not that length. They are multi-paragraph, and a card
+flattens them into one block: Gai Ob Hom Yai's is **1,028 characters**, four
+times the longest the design drew and around fourteen lines of body text in
+a 286px column, under a 26px title. A grid of three of those is a wall of
+prose with the titles lost in it, and the index stops being an index. That
+is a different case from the one decided, not a change of taste about the
+one that was.
+
+What the reversal keeps:
+
+- **The cut is on the data, not on the card.** `src/components/f/recipe-card.tsx`
+  is untouched. It still has no `line-clamp`, no `text-overflow` and no
+  `truncate`, still draws what it is given, and still wraps freely. This
+  entry named that as the condition and it holds.
+- **One length, everywhere a summary meets a card.** `cardSummary` in
+  `src/lib/site.ts`, used by `src/components/recipe-card.tsx`, the
+  `/cuisines/[slug]` list, the `/classes/[type]/[slug]` row and the related
+  cards on the recipe screen. `RecipeSummaryView.summary` itself is left
+  whole, because `/recipes` filters on it and the OG image takes its own
+  170-character cut.
+- **The design's own cards still draw whole.** Anything shorter than the
+  limit reaches the card untouched, and text that overruns it by less than a
+  line with no sentence to stop at is left whole too — an ellipsis is not
+  worth fourteen characters. The design's 181-character card is in that
+  band. Two of the ten stored summaries are as well.
+
+Measured over all ten stored summaries: six are already short enough and
+reach the card unchanged, four are cut, and exactly one of those needs an
+ellipsis.
+
+What it changes from C-05: the cut stops on a SENTENCE at or before 160
+characters rather than on the 160th character. A card that ends mid-clause
+reads as damaged, and these summaries are written as whole sentences — a
+sentence boundary is free and it is better. The ellipsis, which the design
+draws nowhere, is therefore drawn only when a first sentence alone overruns
+the card. Gai Ob Hom Yai's card now reads "Four chicken Marylands braise on
+1000 g of onions cooked to deep gold." and stops: 70 characters, two lines,
+no ellipsis.
+
+The recipe screen is unaffected — `recipe-detail.tsx` draws the summary
+whole, because there the summary is the thing you came for.
 
 ---
 

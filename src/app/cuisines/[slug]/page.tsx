@@ -15,7 +15,13 @@ import { TermHierarchy } from '@/components/term-hierarchy';
 import { TermTag } from '@/components/tags';
 import { getTerm, type RecipeSummaryView } from '@/lib/queries/read';
 import { safeRead } from '@/lib/safe';
-import { cardinal, revisionOrdinal, roman, site } from '@/lib/site';
+import {
+  cardSummary,
+  cardinal,
+  revisionOrdinal,
+  roman,
+  site,
+} from '@/lib/site';
 import { cn } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
@@ -293,7 +299,7 @@ export default async function CuisinePage({ params }: Params) {
                   title={recipe.title}
                   href={`/recipes/${recipe.slug}`}
                   subtitle={recipe.subtitle}
-                  summary={recipe.summary}
+                  summary={cardSummary(recipe.summary)}
                   terms={recipe.terms.map((term) => (
                     <TermTag key={term.id} term={term} showFacet />
                   ))}
