@@ -21,6 +21,7 @@ import {
 import { safeRead } from '@/lib/safe';
 import {
   CATEGORY_TYPE_LABELS,
+  cardSummary,
   cardinal,
   revisionOrdinal,
   roman,
@@ -157,6 +158,7 @@ function NarrowerRow({
 /** One recipe. `classes-cuisines-1280.html:2077`. */
 function RecipeRow({ recipe }: { recipe: RecipeSummaryView }) {
   const revision = revisionOrdinal(recipe.revisionNumber);
+  const summary = cardSummary(recipe.summary);
   /*
    * The design's meta run holds three values and no more:
    * `SOUTH AFRICAN · AIR-DRYING · SIXTH REVISION`
@@ -212,9 +214,13 @@ function RecipeRow({ recipe }: { recipe: RecipeSummaryView }) {
             {recipe.title}
           </Link>
         </h3>
-        {recipe.summary ? (
+        {/* The same cut the card takes, for the same reason and from the
+            same helper: this row is a list entry, not the recipe, and a
+            stored summary runs past a thousand characters. Point 3 of
+            `src/components/recipe-card.tsx` has the whole note. */}
+        {summary ? (
           <p className="m-0 w-full text-13 leading-170 font-sans tracking-flat text-ink-2 shell:text-14 shell:leading-170">
-            {recipe.summary}
+            {summary}
           </p>
         ) : null}
         {terms.length > 0 ? (
