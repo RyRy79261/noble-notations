@@ -125,6 +125,32 @@ updates:
       # until it can be taken deliberately. Same blocker intake-tracker hit.
       - dependency-name: 'typescript'
         update-types: ['version-update:semver-major']
+      # mcp-handler 2 and the MCP SDK 2 are one migration, not two bumps, and
+      # they are ignored together because either one alone leaves a PR that
+      # cannot go green. What v2 changes, from the inside out:
+      #
+      #   * The peer dependency is `@modelcontextprotocol/server` ^2, not
+      #     `@modelcontextprotocol/sdk`. Two files import types from the old
+      #     package by name.
+      #   * `extra.authInfo` becomes `ctx.http?.authInfo`, and `runTool` reads
+      #     it on every one of the twenty-eight tools.
+      #   * `createMcpHandler(fn, serverOptions, config)` becomes
+      #     `createMcpHandler(fn, options)`. The third argument is gone, and
+      #     with it `basePath` and `disableSse` — which is what makes the
+      #     endpoint `/api/mcp/mcp` today. The handler mounts directly at its
+      #     route in v2, so the address a connector was added with changes
+      #     unless a shim keeps the old path answering. That is a decision
+      #     about people's existing connectors, not a dependency bump.
+      #
+      # #36 was the bump alone: `Format, lint, typecheck, build` and
+      # `End-to-end` both failed. Nothing on 1.x is broken, so the upgrade is
+      # worth taking deliberately — the wins are dropping the unused `redis`
+      # dependency v1 carries and the 2026-07-28 spec — and it is tracked as
+      # an issue rather than re-proposed every Monday.
+      - dependency-name: 'mcp-handler'
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@modelcontextprotocol/sdk'
+        update-types: ['version-update:semver-major']
   - package-ecosystem: 'github-actions'
     directory: '/'
     schedule:
