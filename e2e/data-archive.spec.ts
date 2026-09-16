@@ -125,6 +125,140 @@ test.describe('the archive round trips', () => {
     expect(biltongAfter.revisions).toHaveLength(biltongBefore.revisions.length);
   });
 
+  test('an ingest does not resurrect a tag or an ingredient somebody deleted', async () => {
+    const mcp = rw();
+
+    // THE RECIPE AND THE EXPERIMENT PASSES read the base table for what is
+    // already present, so a deleted row counts as present and is skipped.
+    // These two passes had no such check and both write through an upsert,
+    // and `upsertCategory` and `upsertIngredient` RESTORE by design. So a
+    // seeded tag and a seeded ingredient came back on the next load, with
+    // the notes their delete cascaded, logging the same word they log for a
+    // live row. `pnpm build` runs `pnpm ingest:deploy`, so it was a deploy
+    // undoing an owner's delete with nothing in the build log to say so.
+    //
+    // The test above cannot catch it: it asserts row COUNTS, and a restore
+    // changes no count.
+    await mcp.call('delete_record', {
+      kind: 'tag',
+      slug: 'german',
+      categoryType: 'cuisine',
+      reason: 'Deleted on purpose by e2e/data-archive.spec.ts.',
+    });
+    await mcp.call('delete_record', {
+      kind: 'ingredient',
+      slug: 'star-anise',
+      reason: 'Deleted on purpose by e2e/data-archive.spec.ts.',
+    });
+
+    const log = execFileSync('pnpm', ['ingest'], {
+      stdio: 'pipe',
+      env: process.env,
+    }).toString();
+
+    // A visible skip an operator can act on, not a silent write.
+    expect(log).toContain('skip cuisine/german (deleted on');
+    expect(log).toContain('skip star-anise (deleted on');
+    expect(log).toContain('restore_record');
+
+    await expect(
+      mcp.call('get_ingredient', { slug: 'star-anise' }),
+    ).rejects.toThrow();
+    const categories = await mcp.call<{ slug: string }[]>('list_categories', {
+      categoryType: 'cuisine',
+    });
+    expect(categories.some((row) => row.slug === 'german')).toBe(false);
+
+    // Put both back, so the two exports below run against the whole archive.
+    await mcp.call('restore_record', {
+      kind: 'tag',
+      slug: 'german',
+      categoryType: 'cuisine',
+    });
+    await mcp.call('restore_record', {
+      kind: 'ingredient',
+      slug: 'star-anise',
+    });
+  });
+
+  test('an ingest --force does not resurrect a recipe or a run, and does not abort', async () => {
+    const mcp = rw();
+
+    // `--force` IS THE HOLE THE TEST ABOVE CANNOT SEE. That one runs plain
+    // `pnpm ingest`, where the recipe and the experiment passes skip
+    // anything already present and a deleted row counts as present. `--force`
+    // is exactly the flag that turns "already present" off, and AGENTS.md
+    // documents it as the supported way to add revisions from a terminal.
+    //
+    // Both passes broke, differently:
+    //
+    // - The RUN: `logExperiment` restores a deleted run by design — that is
+    //   the escape hatch a run whose recipe is still deleted needs — so a
+    //   withdrawn seeded run came back with the notes its delete cascaded,
+    //   logged as a success.
+    // - The RECIPE: `reviseRecipe` refuses a deleted recipe, so the load
+    //   died on an unhandled ConflictError with a raw stack trace at exit 1,
+    //   AFTER the taxonomy and ingredient passes had committed and BEFORE
+    //   the links and experiments passes ran.
+    //
+    // The run goes first and on its own, so it carries its own event and the
+    // recipe's cascade skips it — which is also what makes the restore order
+    // at the end exact.
+    await mcp.call('delete_record', {
+      kind: 'experiment',
+      slug: 'biltong-batch-4',
+      reason: 'Deleted on purpose by e2e/data-archive.spec.ts.',
+    });
+    await mcp.call('delete_record', {
+      kind: 'recipe',
+      slug: 'baumy-biltong',
+      reason: 'Deleted on purpose by e2e/data-archive.spec.ts.',
+    });
+
+    // execFileSync throws on a non-zero exit, so reaching the next line is
+    // itself the assertion that the load no longer aborts.
+    const log = execFileSync('pnpm', ['ingest', '--force'], {
+      stdio: 'pipe',
+      env: process.env,
+    }).toString();
+
+    // The same skip the taxonomy and ingredient passes print, from the
+    // recipe and experiment passes, and BEFORE `force` is consulted. The
+    // wording is what says the pass read `deleted_at` itself rather than
+    // relying on a downstream tool to refuse.
+    expect(log).toContain('skip baumy-biltong (deleted on');
+    expect(log).toContain('skip biltong-batch-4 (deleted on');
+    expect(log).toContain('restore_record');
+
+    // Every pass after the one that used to throw ran to the end.
+    expect(log).toContain('Recipe links…');
+    expect(log).toContain('Experiments…');
+    expect(log.trimEnd().endsWith('Done.')).toBe(true);
+
+    // And nothing came back.
+    await expect(
+      mcp.call('get_recipe', { slug: 'baumy-biltong' }),
+    ).rejects.toThrow();
+    await expect(
+      mcp.call('get_experiment', { slug: 'biltong-batch-4' }),
+    ).rejects.toThrow();
+
+    // The recipe first: a run cannot be restored while the recipe it names
+    // is still deleted, and the run carries its own event so the recipe's
+    // restore does not reach it.
+    await mcp.call('restore_record', { kind: 'recipe', slug: 'baumy-biltong' });
+    await mcp.call('restore_record', {
+      kind: 'experiment',
+      slug: 'biltong-batch-4',
+    });
+    const back = await mcp.call<RecipeResult>('get_recipe', {
+      slug: 'baumy-biltong',
+    });
+    // Six, not eleven: `--force` skipped the recipe rather than appending
+    // its five seeded revisions to a record somebody had withdrawn.
+    expect(back.revisions).toHaveLength(6);
+  });
+
   test('two exports of one database are byte-identical', async () => {
     const first = mkdtempSync(path.join(tmpdir(), 'nn-export-a-'));
     const second = mkdtempSync(path.join(tmpdir(), 'nn-export-b-'));

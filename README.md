@@ -2,11 +2,19 @@
 
 A structured repository of recipes, ingredients, techniques and batch logs.
 
-Every recipe is versioned. Its ingredients and steps belong to an immutable
-revision, and each revision records _why_ it exists — so a dish gets refined
-across revisions instead of being re-derived from scratch every time somebody
-asks for it. That is the entire point: the history of how something got good
-is the most valuable part of it.
+Every recipe is versioned. Its ingredients and steps belong to a revision,
+and each revision records _why_ it exists — so a dish gets refined across
+revisions instead of being re-derived from scratch every time somebody asks
+for it. That is the entire point: the history of how something got good is
+the most valuable part of it.
+
+A revision is **append-only, not immutable**, and the difference is the
+question _did the food change, or is the record wrong?_ A dish that changed
+gets a new revision. A revision that was written down wrong gets a correction
+in place, which makes no version and moves no number. A record that should
+never have been written gets deleted — softly: the row stays, it stops being
+visible, and it can be restored. See [AGENTS.md](./AGENTS.md) for the three
+acts and the tools that perform them.
 
 Live at **[noble-notations.ryanjnoble.dev](https://noble-notations.ryanjnoble.dev)**.
 

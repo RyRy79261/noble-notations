@@ -88,10 +88,19 @@ string, so a `redirect_uri` still in flight survives the rename.
 
 ## Scopes
 
-| Scope                   | Grants                                                                                                                                                                              |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `noble-notations:read`  | Every read tool                                                                                                                                                                     |
-| `noble-notations:write` | `create_recipe`, `revise_recipe`, `backfill_revision`, `add_note`, `add_mass_flow`, `describe_mechanism`, `upsert_ingredient`, `upsert_category`, `log_experiment`, `reattach_note` |
+| Scope                   | Grants                                                                                                                                                                                                                                                                    |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `noble-notations:read`  | Every read tool, including `list_deleted`                                                                                                                                                                                                                                 |
+| `noble-notations:write` | `create_recipe`, `revise_recipe`, `backfill_revision`, `add_note`, `add_mass_flow`, `describe_mechanism`, `upsert_ingredient`, `upsert_category`, `log_experiment`, `reattach_note`, `update_recipe`, `update_revision`, `update_note`, `delete_record`, `restore_record` |
+
+**`list_deleted` is a read, and it is in the read scope.** It reports rows
+the public site does not show, which is why that looks wrong at first
+glance. Three things settle it: the read scope already grants a recipe whose
+status is `archived`; `ALLOWED_EMAILS` means a single administrator approves
+every connector, so there is no second audience to withhold it from; and the
+caller who most needs it is the read-only one that arrives after a delete
+and has to find out what is missing and whether it is recoverable. Behind
+write, that agent would see an absence and never learn it was reversible.
 
 `report_issue` is in neither scope. It needs authentication and nothing
 else, so a read-only connector can file a report — a read-only agent is
@@ -106,11 +115,13 @@ every tool call, not just at authorization.
 
 Read: `get_started`, `search_recipes`, `get_recipe`, `list_categories`,
 `list_ingredients`, `get_ingredient`, `list_experiments`, `get_experiment`,
-`search_notes`, `build_shopping_list`, `get_repository_stats`.
+`search_notes`, `build_shopping_list`, `get_repository_stats`,
+`list_deleted`.
 
 Write: `create_recipe`, `revise_recipe`, `backfill_revision`, `add_note`,
 `add_mass_flow`, `describe_mechanism`, `upsert_ingredient`,
-`upsert_category`, `log_experiment`, `reattach_note`.
+`upsert_category`, `log_experiment`, `reattach_note`, `update_recipe`,
+`update_revision`, `update_note`, `delete_record`, `restore_record`.
 
 Neither: `report_issue`.
 
@@ -120,8 +131,8 @@ experiments; the website calls the same record a batch log and serves it at
 mapping, because one that knew only the tool word reported the page as
 missing.
 
-Twenty-two tools. `/connect` and `TOOLS` in `e2e/mcp-contract.spec.ts` name the
-same set; a tool that appears or disappears without all three moving is
+Twenty-eight tools. `/connect` and `TOOLS` in `e2e/mcp-contract.spec.ts` name
+the same set; a tool that appears or disappears without all three moving is
 drift, and that test is the line that says so.
 
 Tool descriptions are the only instructions the model gets, and they are
@@ -156,7 +167,18 @@ on the recipe, which duplicates the text and lets the two copies drift.
 
 A note pinned to one revision is refused rather than moved. That note is a
 statement about that version, and moving it would make a stored version say
-something it never said — which is the revision rule itself.
+something it never said — which is the revision rule itself. `update_note`
+is the one way past that refusal, and it is the right one: it is the tool
+for a record that is WRONG, and a note filed against a version it was never
+about is wrong rather than moved.
+
+`update_note` therefore writes what a move writes. It sets `sort_at`, so a
+note written years ago does not land at the front of its new subject's list
+and renumber the mechanisms below it, and it appends the home the note is
+leaving to `previous_subjects` when that home has one of the three forms the
+column stores. Two tools can move a note and they leave the same trail
+behind; the difference between them is the question at the top of this file,
+not the bookkeeping.
 
 The move is recorded, not silent. `notes.previous_subjects` keeps every
 record the note has hung off, oldest first. The audit log cannot carry that
@@ -170,8 +192,33 @@ Neither is an update path in the sense the revision rule forbids. Each
 fills a field that has never held a value, so it can only turn absent into
 present — and R-SCR-39 makes the figure optional, so a revision without one
 is already rendered correctly. Each refuses a second write, which is what
-keeps a measurement from being quietly replaced. The answer to a wrong
-condition is a note of kind `correction`, exactly as it is for a wrong note.
+keeps a measurement from being quietly replaced.
+
+**Their one-shot promise is now local to them, and their refusals had to
+move.** Both still refuse a second write, and that is still the point of
+their shape: neither of these two tools can replace a measurement. What
+changed is that the repository has a general correction path.
+`update_revision` replaces a stored mass flow figure and `update_note`
+replaces a stored set of conditions, so the old refusals — "this cannot be
+changed", "they cannot be changed" — became false in the one place a model
+has no way to check. They now name the tool that does it:
+
+- `writeMassFlow`: _"…This tool does not replace a figure: it records what a
+  batch weighed. To record a different batch, call revise_recipe and send the
+  figure with it. To correct a figure that is wrong, call update_revision."_
+- `describeMechanism`, on both the read guard and the `WHERE`-clause
+  backstop: _"…This tool does not replace them. To correct them, call
+  update_note. To leave the old claim readable, add a note of kind
+  'correction' that says so."_
+
+Both tools stay registered. They are the ergonomic path for filling one
+field on a stored record, and they are the only path an agent finds by name
+when that is what it wants to do.
+
+A note of kind `correction` is still a different act from correcting the
+note, and both are still right. The correction note leaves the old claim
+readable, which is what you want when somebody acted on it. `update_note` is
+the statement that the stored text was never true.
 
 **The two refusals are enforced differently, and the second one had to be.**
 `add_mass_flow` reads the stored row so the caller is told what is already

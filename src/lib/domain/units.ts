@@ -301,6 +301,92 @@ export function formatIngredientLine(line: {
   return text;
 }
 
+/**
+ * What a line whose canonical ingredient has gone must still draw for itself.
+ *
+ * A deleted ingredient leaves every line that named it on its revision, and
+ * the line then degrades to its stored `raw_text`. Whether the measure, the
+ * preparation and the "(optional)" mark belong BESIDE that text depends on
+ * who wrote it, and nothing records which:
+ *
+ * - `writeRevisionBody` generates it with `formatIngredientLine` when the
+ *   caller sends none, and that form already states all three. Drawing them
+ *   again reads `10 pod` `10 pod Star anise`, or `(optional) _(optional)_`.
+ * - A caller MAY send its own `rawText` — the field is public, and its own
+ *   description is "Overrides the rendered line if the original wording
+ *   matters" — and that text says whatever the caller wrote, which is
+ *   routinely the name alone. Dropping the three then loses the amount, and
+ *   a shopping list whose total counts an amount its own line does not show
+ *   disagrees with itself.
+ *
+ * So the text is asked. The measure is the prefix `formatIngredientLine`
+ * writes, the preparation the `, <prep>` it appends and the mark the
+ * ` (optional)` after that — a generated line answers yes to all three and a
+ * bare name to none.
+ *
+ * `true` means the raw text does NOT state it, so the renderer draws it.
+ */
+function measureOf(line: {
+  quantity?: number | null;
+  quantityMax?: number | null;
+  unit?: string | null;
+}): string | null {
+  const amount = formatQuantity(line.quantity, line.quantityMax);
+  if (!amount) return null;
+  return line.unit ? `${amount} ${line.unit}` : amount;
+}
+
+export function unresolvedLineNeeds(line: {
+  rawText: string;
+  quantity?: number | null;
+  quantityMax?: number | null;
+  unit?: string | null;
+  preparation?: string | null;
+  optional?: boolean | null;
+}): { measure: boolean; preparation: boolean; optional: boolean } {
+  const text = line.rawText.trim();
+  const measure = measureOf(line);
+  return {
+    measure: measure !== null && !text.startsWith(measure),
+    preparation:
+      !!line.preparation && !text.includes(`, ${line.preparation.trim()}`),
+    optional: !!line.optional && !text.endsWith('(optional)'),
+  };
+}
+
+/**
+ * What to CALL a line whose canonical ingredient has gone.
+ *
+ * The sibling above answers "what does this text already say", for a
+ * renderer drawing one line. This one answers "what is the thing", for a
+ * surface that draws the measure in a column of its own — the shopping list,
+ * which sums amounts across recipes and prints the total beside the name.
+ * There the raw text is the wrong answer twice over: `50 kg` in the amount
+ * column beside `50–60 kg Crayfish, live` as the name states the measure
+ * twice and disagrees with itself while doing it, because the total is a sum
+ * and the raw text is one recipe's line.
+ *
+ * It is also what makes two recipes asking for the same withdrawn ingredient
+ * add up: keyed on the raw text they are two rows, and keyed on the name they
+ * are one row and one trip to the shop — which is what the list does for an
+ * ingredient that still exists.
+ *
+ * Only the measure comes off, and only when the text opens with exactly the
+ * one this line stores. A preparation stays: `Crayfish, live` is the name of
+ * a thing to buy, and nothing else on the row says it.
+ */
+export function unresolvedLineName(line: {
+  rawText: string;
+  quantity?: number | null;
+  quantityMax?: number | null;
+  unit?: string | null;
+}): string {
+  const text = line.rawText.trim();
+  const measure = measureOf(line);
+  if (!measure || !text.startsWith(measure)) return text;
+  return text.slice(measure.length).trim() || text;
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Aggregation, for shopping lists
 // ─────────────────────────────────────────────────────────────────────────

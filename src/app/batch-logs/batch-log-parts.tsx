@@ -99,7 +99,16 @@ function rowMeta(log: BatchLogRow): string | undefined {
     log.revisionNumber != null
       ? revisionOrdinal(log.revisionNumber)
       : undefined;
-  if (ordinal) parts.push(ordinal);
+  // THE RUN KEEPS THE NUMBER AND SAYS THE VERSION WAS WITHDRAWN.
+  //
+  // Deleting a revision does not delete a run pinned to it: the run happened.
+  // The row still reads `third revision`, with `withdrawn` after it, because
+  // the alternative states something false about the run either way — a hard
+  // delete would have nulled `experiments.revision_id` and left the row
+  // saying no version was recorded, and hiding the fact would send the reader
+  // to a version that 404s with no warning.
+  if (ordinal)
+    parts.push(log.revisionWithdrawn ? `${ordinal} · withdrawn` : ordinal);
   if (!log.recipe) parts.push('Not linked to a recipe');
 
   return parts.length > 0 ? parts.join(' · ') : undefined;
