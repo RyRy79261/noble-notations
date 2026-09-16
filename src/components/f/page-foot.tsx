@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 
 import { site } from '@/lib/site';
 import { cn } from '@/lib/utils';
+import { ThemeToggle } from '@/components/f/theme-toggle';
 
 /** See the note on the same constant in `nav-drawer.tsx`. R-ACC-05. */
 const FOCUS =
@@ -131,6 +132,28 @@ export function PageFoot({ left = site.issue, right = 'NN' }: PageFootProps) {
         <FootLink href="/llms.txt" external>
           llms.txt
         </FootLink>
+        <Separator />
+        {/*
+         * THE THEME CONTROL IS THE FOURTH WORD IN THE MIDDLE RUN. D-16.
+         *
+         * It goes inside this run rather than beside it, and the reason is
+         * the note above `PageFoot`: the foot is `justify-between` with
+         * three children because the drawing puts the middle slot's centre
+         * at 673.3 in a 1280 box. A fourth flex child would move that centre
+         * on every screen in the site. Inside the run, the three slots are
+         * still three, and what changes is the width of the middle one —
+         * which is the smallest change that can carry a control the drawing
+         * does not have.
+         *
+         * It is last because it is the only one of the four that is not a
+         * destination. C-04's three words take a reader somewhere; this one
+         * changes what they are looking at, and a control in front of three
+         * links reads as a fourth link until it is used.
+         *
+         * The designer owns where this finally sits. This build will not
+         * answer that by leaving the control out.
+         */}
+        <ThemeToggle />
       </div>
 
       <div className={cn(slot, 'shrink-0 uppercase')}>{right}</div>

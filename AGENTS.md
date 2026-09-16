@@ -61,6 +61,9 @@ pnpm export             # write the database back out to content/generated/
 ## Repository layout
 
 ```
+.claude/skills/           repository skills. writing-style/ holds the ASD STE
+                          rule; the connector serves the same rule as the
+                          resource noble-notations://writing-style
 content/                  frozen Markdown archive (provenance; see its README)
   generated/              machine-written export from the database
 drizzle/                  committed SQL migrations
@@ -602,6 +605,22 @@ write tool that stores prose, and the short instructions carry a paragraph
 of it. Those three move together, and `e2e/auth-guide.spec.ts` fails if one
 of them loses it; `/llms.txt` states it once more, for an agent that only
 ever scrapes the site. This is D-14.
+
+**The rule is also a skill and a document you can load.**
+`.claude/skills/writing-style/SKILL.md` is the copy a person working in this
+repository reads, and the copy Claude Code loads when it is about to write
+or review any word a reader sees. The connector serves the same rule as the
+MCP resource `noble-notations://writing-style`, so an agent can pull it in
+once and hold it for a session instead of re-reading the whole guide.
+
+Those two are separate copies ON PURPOSE, and
+`src/lib/mcp/resources.ts` gives the reason: the connector runs in a Vercel
+function, Next traces the files a route needs from its imports, and a path
+built at runtime traces nothing — a connector that read the skill file off
+disk would fail in production and pass every local test. The copies cannot
+drift in silence: `e2e/writing-style.spec.ts` enumerates the rules and
+fails, naming the rule, when one copy states something the other does not.
+Change one and change the other in the same commit.
 
 **A screen says what it found, not how it works.** Issue #21 is the record:
 `/search` printed its HTTP method, the query string its form produced and

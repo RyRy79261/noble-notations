@@ -169,8 +169,12 @@ deviation.
 - R-BLD-05: All database access **MUST** go through `src/lib/queries/`.
 - R-BLD-06: A renamed route **MUST** keep a permanent redirect from its old
   address.
-- R-BLD-07: The dark theme comes from `prefers-color-scheme`. There is no
-  theme control.
+- R-BLD-07: The dark theme comes from `prefers-color-scheme` unless the
+  reader has chosen. ~~There is no theme control.~~ **Amended by D-16:** the
+  page foot carries a three-state control and its default state is the
+  system's. Each colour is one `light-dark()` on `:root` and the control
+  switches `color-scheme`, so no component carries a `dark:` prefix and no
+  `.dark` class exists.
 - R-BLD-08: Do not hand-edit `content/biltong`, `content/recipes` or
   `content/research`. They are a frozen archive. `content/generated` is
   machine-written: change it only by running `pnpm export`.

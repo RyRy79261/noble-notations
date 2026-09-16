@@ -56,11 +56,13 @@
  *    `src/lib/utils.ts` repeats these lists to teach it. Add or rename a
  *    token here and change that file in the same commit.
  *
- * 5. The design is dark first (R-CON-07). The dark palette is on plain
- *    `:root` and the light palette comes from `prefers-color-scheme: light`.
- *    Media Queries Level 5 makes that query match when the reader has
- *    expressed no preference, so a reader with no preference still gets the
- *    light theme.
+ * 5. The design is dark first (R-CON-07), and since D-16 the reader can
+ *    choose. Each colour is one `light-dark()` declaration on `:root`, and
+ *    `color-scheme` on `:root` is what picks the half that is drawn:
+ *    `light dark` follows the system, and `:root[data-theme='light'|'dark']`
+ *    narrows it to the reader's choice. A reader who has never touched the
+ *    control gets what they got before — "no preference" resolves to light.
+ *    See the Colour section for the whole of it.
  */
 
 @import 'tailwindcss';
@@ -457,54 +459,87 @@
  * These are plain custom properties, not `@theme` values, because `@theme`
  * cannot be nested in a media query and one of the two themes has to be.
  *
- * R-CON-07: the design is dark first. The dark values are on plain `:root`
- * and the light values come from `prefers-color-scheme: light`. R-BLD-07
- * and R-CON-08: there is no theme control, so shadcn/ui's
- * `@custom-variant dark (&:is(.dark *))` is deliberately absent — nothing
- * ever adds that class.
+ * R-CON-07: the design is dark first. R-CON-08 said there is no theme
+ * control; D-16 reverses that and the reader can now choose. What follows
+ * is how both facts are true at once.
+ *
+ * EACH PAIR IS ONE DECLARATION, through `light-dark()`. The function reads
+ * the USED value of `color-scheme` on the element, and `color-scheme` is
+ * inherited, so declaring every token on `:root` and switching
+ * `color-scheme` there switches the whole page. That is the whole mechanism:
+ * three rules, one line each, and nothing below them changes.
+ *
+ * It replaces a dark block on `:root` and a light block inside
+ * `@media (prefers-color-scheme: light)`. That shape cannot carry a control
+ * — an explicit choice has to beat a media query, which means a third and a
+ * fourth copy of all fourteen values, and a colour with four homes is a
+ * colour that will be wrong in one of them.
+ *
+ * THE DEFAULT IS UNCHANGED. `color-scheme: light dark` follows the system,
+ * and Media Queries Level 5 resolves "no preference" to light — which is
+ * what the media query did, for the same reason. A reader who has never
+ * touched the control sees exactly what they saw before.
+ *
+ * `@custom-variant dark (&:is(.dark *))` is still deliberately absent.
+ * shadcn/ui's variant needs a class on an ancestor and a `dark:` prefix on
+ * every utility that differs; these tokens differ by themselves, so nothing
+ * in the components has to know which theme is drawn. The control writes
+ * `data-theme` and nothing reads it but the two rules below.
+ *
+ * `src/app/icon.svg` is the one thing the control does not reach. A favicon
+ * is a separate document with its own `prefers-color-scheme` query and no
+ * access to this one's attributes, so it follows the system even when the
+ * reader has forced the other theme. Known, and the alternative is serving
+ * the icon from a route that reads a cookie.
  */
 :root {
   /* `color-scheme` makes the native controls, the scrollbar and the form
-     widgets follow the theme. */
-  color-scheme: dark;
+     widgets follow the theme — and, since D-16, it is also what picks the
+     value out of every `light-dark()` below. Two values: follow the system.
+     The two rules under this one narrow it to a single value when the
+     reader has chosen. */
+  color-scheme: light dark;
 
-  --f-paper: #17191b; /* the page ground */
-  --f-desk: #101214; /* the recessed fill: tick boxes, fields, filters */
-  --f-ink: #edeff1; /* primary text */
-  --f-ink-2: #b7bcc0; /* secondary text */
-  --f-ink-3: #8c9297; /* quiet text */
-  --f-hair: #2c3033; /* the rule and the border */
-  --f-hair-2: #222629; /* the quiet rule, on a table row */
-  --f-accent: #ff7a6b; /* the accent */
+  --f-paper: light-dark(#fcfaf6, #17191b); /* the page ground */
+  --f-desk: light-dark(
+    #f3ede5,
+    #101214
+  ); /* the recessed fill: tick boxes, fields, filters */
+  --f-ink: light-dark(#2b1f1c, #edeff1); /* primary text */
+  --f-ink-2: light-dark(#574843, #b7bcc0); /* secondary text */
+  --f-ink-3: light-dark(#79655f, #8c9297); /* quiet text */
+  --f-hair: light-dark(#e4d8d0, #2c3033); /* the rule and the border */
+  --f-hair-2: light-dark(#f0e7de, #222629); /* the quiet rule, on a table row */
+  --f-accent: light-dark(#8e2a1e, #ff7a6b); /* the accent */
   /* The two washes stay translucent in the dark theme. They are drawn over
      both the paper and the desk and composite differently on each. */
-  --f-accent-wash: #ff7a6b1f; /* the accent ground */
-  --f-on-accent: #17191b; /* text on the accent */
-  --f-warn: #ff6f5e; /* the WARNING tier */
-  --f-warn-wash: #ff6f5e1f; /* the WARNING ground */
-  --f-caution: #e8b24e; /* the CAUTION tier; it has no ground */
-  --f-cta-line: #666f73; /* the outline on a tag pill */
+  --f-accent-wash: light-dark(#f7e8e3, #ff7a6b1f); /* the accent ground */
+  --f-on-accent: light-dark(#fcfaf6, #17191b); /* text on the accent */
+  --f-warn: light-dark(#c42b1c, #ff6f5e); /* the WARNING tier */
+  --f-warn-wash: light-dark(#fbede9, #ff6f5e1f); /* the WARNING ground */
+  --f-caution: light-dark(
+    #8a5a12,
+    #e8b24e
+  ); /* the CAUTION tier; it has no ground */
+  --f-cta-line: light-dark(#b0857a, #666f73); /* the outline on a tag pill */
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color-scheme: light;
+/*
+ * The reader's choice. D-16.
+ *
+ * `data-theme` is written on `<html>` by the inline script in
+ * `src/app/layout.tsx` before the first paint, and by
+ * `src/components/f/theme-toggle.tsx` when the reader picks. The attribute
+ * is ABSENT when the reader follows the system, rather than set to
+ * "system": absent is the state a reader who has never used the control is
+ * in, and one state for "no choice" cannot then disagree with itself.
+ */
+:root[data-theme='light'] {
+  color-scheme: light;
+}
 
-    --f-paper: #fcfaf6;
-    --f-desk: #f3ede5;
-    --f-ink: #2b1f1c;
-    --f-ink-2: #574843;
-    --f-ink-3: #79655f;
-    --f-hair: #e4d8d0;
-    --f-hair-2: #f0e7de;
-    --f-accent: #8e2a1e;
-    --f-accent-wash: #f7e8e3;
-    --f-on-accent: #fcfaf6;
-    --f-warn: #c42b1c;
-    --f-warn-wash: #fbede9;
-    --f-caution: #8a5a12;
-    --f-cta-line: #b0857a;
-  }
+:root[data-theme='dark'] {
+  color-scheme: dark;
 }
 
 /* R-ACC-09: the design MUST obey `prefers-reduced-motion: reduce`.

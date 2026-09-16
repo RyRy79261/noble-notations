@@ -21,6 +21,15 @@ export interface AdvertisedTool {
   inputSchema?: Record<string, unknown>;
 }
 
+/** One document as `resources/list` advertises it. */
+export interface AdvertisedResource {
+  uri: string;
+  name: string;
+  title?: string;
+  description?: string;
+  mimeType?: string;
+}
+
 export interface McpClient {
   call<T = unknown>(tool: string, args: Record<string, unknown>): Promise<T>;
   listTools(): Promise<string[]>;
@@ -33,6 +42,16 @@ export interface McpClient {
    * how a test reads what the caller reads.
    */
   listToolSchemas(): Promise<AdvertisedTool[]>;
+  /** The documents the connector serves, as `resources/list` gives them. */
+  listResources(): Promise<AdvertisedResource[]>;
+  /**
+   * One document, as `resources/read` gives it.
+   *
+   * Returns the text of the first content block. A resource that carried
+   * several blocks would need more than this; the one document here does
+   * not, and a helper that pretended otherwise would be untested code.
+   */
+  readResource(uri: string): Promise<string>;
   raw(body: unknown): Promise<Response>;
 }
 
@@ -41,6 +60,8 @@ interface JsonRpcResponse {
     content?: { type: string; text: string }[];
     isError?: boolean;
     tools?: AdvertisedTool[];
+    resources?: AdvertisedResource[];
+    contents?: { uri: string; mimeType?: string; text?: string }[];
   };
   error?: { code: number; message: string };
 }
@@ -137,6 +158,18 @@ export function mcpClient(baseURL: string, token: string): McpClient {
     return parsed.result?.tools ?? [];
   }
 
+  async function listResources(): Promise<AdvertisedResource[]> {
+    await ensureSession();
+    const res = await post({
+      jsonrpc: '2.0',
+      id: nextId++,
+      method: 'resources/list',
+      params: {},
+    });
+    const parsed = parseBody(await res.text());
+    return parsed.result?.resources ?? [];
+  }
+
   return {
     async raw(body) {
       await ensureSession();
@@ -148,6 +181,27 @@ export function mcpClient(baseURL: string, token: string): McpClient {
     },
 
     listToolSchemas,
+
+    listResources,
+
+    async readResource(uri: string) {
+      await ensureSession();
+      const res = await post({
+        jsonrpc: '2.0',
+        id: nextId++,
+        method: 'resources/read',
+        params: { uri },
+      });
+      const parsed = parseBody(await res.text());
+      if (parsed.error) {
+        throw new Error(`resources/read failed: ${parsed.error.message}`);
+      }
+      const first = parsed.result?.contents?.[0];
+      if (!first || typeof first.text !== 'string') {
+        throw new Error(`resources/read returned no text for ${uri}`);
+      }
+      return first.text;
+    },
 
     async call<T>(tool: string, args: Record<string, unknown>) {
       await ensureSession();
