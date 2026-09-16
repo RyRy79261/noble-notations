@@ -238,6 +238,41 @@ When a new record is being written, the fields ride along instead:
 forward by `revise_recipe`, because it records what one batch weighed and
 copying it into a version nobody weighed would invent a measurement.
 
+## Documents
+
+A tool is something a model DOES. A resource is something it READS, and a
+client offers it as a document to load rather than as an action to take.
+The connector serves one:
+
+| URI                               | What it is                                  |
+| --------------------------------- | ------------------------------------------- |
+| `noble-notations://writing-style` | The writing rule, as a document of its own. |
+
+It is `text/markdown`, it is behind `noble-notations:read`, and it is the
+same text `get_started` returns as `howToWrite` with a title on it. The
+reason it exists as a resource as well as a field of the guide: an agent
+that wants the house style should not have to pull the whole eighteen-section
+guide back to get it, and a client that can pin a document can keep the rule
+in context for a whole session.
+
+**The read scope, not the write scope.** The agent that most needs the
+writing rule is the one about to be granted write access, and it reads this
+before that happens. A document stating how to write discloses nothing about
+the archive.
+
+**The text is in TypeScript, not read from `.claude/`.**
+`.claude/skills/writing-style/SKILL.md` states the same rule for a person
+working in the repository, and this connector does not read it. Next traces
+the files a route needs from its imports, and a path built at runtime traces
+nothing — `.claude/` would not be in the Vercel bundle, so a connector that
+read the skill file would fail in production while passing every local test.
+The two copies are held together by `e2e/writing-style.spec.ts`, which
+enumerates the rules and fails naming the one that drifted.
+
+Resources are not tools and they do not move the tool count: the registry
+still holds twenty-eight. `resources/list` advertises this document and
+`resources/read` serves it.
+
 ## Reporting a fault
 
 `report_issue` is the one tool whose effect lands outside this system. It
