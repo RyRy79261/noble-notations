@@ -548,7 +548,10 @@ export async function submitReport(
   // context right now and is gone the moment its turn ends. A duplicate
   // costs a maintainer one click, and every body carries the fingerprint, so
   // duplicates are findable and closable in bulk afterwards.
-  let existing: IssueSummary[] | null = null;
+  /* No initialiser: both arms of the try/catch below assign it, so a null
+     here is written and never read. The `| null` stays — the catch is what
+     puts it there, and every reader below tests for it. */
+  let existing: IssueSummary[] | null;
   // Taken BEFORE the read, which is the whole of its meaning: it dates the
   // snapshot that comes back. See `createsCompleted`.
   const createsAtRead = createsCompleted;
