@@ -42,13 +42,13 @@
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "server-only": "^0.0.1",
-    "tailwind-merge": "3.6.0",
+    "tailwind-merge": "3.7.0",
     "ws": "^8.21.3",
-    "zod": "^4.5.4"
+    "zod": "^4.6.4"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
-    "@next/eslint-plugin-next": "16.3.4",
+    "@next/eslint-plugin-next": "16.3.5",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "4.3.3",
     "@types/node": "^26.5.1",
@@ -58,7 +58,7 @@
     "@types/ws": "^8.18.1",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9.18.0",
-    "eslint-config-next": "16.3.4",
+    "eslint-config-next": "16.3.5",
     "globals": "^15.14.0",
     "playwright-core": "^1.63.0",
     "prettier": "^3.4.2",
