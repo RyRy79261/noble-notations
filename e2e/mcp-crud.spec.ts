@@ -125,6 +125,8 @@ interface RecipeResult {
     body: string;
     conditions: string[];
     sources: { url: string | null; title: string | null }[];
+    /** The homes the note has left, oldest first. D-13. */
+    movedFrom: string[];
   }[];
   revisions: { revisionNumber: number; rationale: string | null }[];
   links: { kind: string; recipe: { slug: string } }[];
@@ -451,6 +453,16 @@ test('update_note corrects a note and moves it to another recipe', async () => {
       (n) => n.id,
     ),
   ).toContain(note.noteId);
+
+  // A move through this tool leaves the trail a `reattach_note` move
+  // leaves. Two tools can move a note; only one of them records it would
+  // make `previous_subjects` a record of which tool was used rather than of
+  // where the note has been.
+  expect(
+    (await mcp.call<RecipeResult>('get_recipe', { slug: to })).notes.find(
+      (n) => n.id === note.noteId,
+    )!.movedFrom,
+  ).toEqual([`recipe:${from}`]);
 
   // An empty list clears one, which is the only way to say "there are none".
   await mcp.call('update_note', { noteId: note.noteId, conditions: [] });

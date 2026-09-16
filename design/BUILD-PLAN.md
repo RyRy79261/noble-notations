@@ -515,7 +515,7 @@ The cause is the trigger, not the data. `trg_recipes_search_vector` is a
 `BEFORE` trigger and `recipe_search_vector` reads `FROM recipes r`, so during
 `createRecipe`'s closing `SET current_revision_id` the function still sees
 the table's old NULL pointer and the weight-D half comes out empty. Migration
-`0007`'s replacement behaves the same way; it changed which rows the function
+`0009`'s replacement behaves the same way; it changed which rows the function
 skips, not where it reads the pointer from.
 
 It surfaced on `feat/crud` and that branch is not the cause. `deleteRecord`
@@ -560,5 +560,5 @@ no such slot. The cheapest honest version surfaces the fact that already
 exists: add `updatedAt` to the history entry in `read.ts` and have
 `src/components/f/revision.tsx` print "corrected &lt;date&gt;" when
 `updatedAt > createdAt`, in the slot the "Recorded later" badge uses. No
-schema change — the column is written and migration `0007` backfilled it to
+schema change — the column is written and migration `0009` backfilled it to
 `created_at`. It belongs to the designer first.

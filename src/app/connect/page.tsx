@@ -43,7 +43,7 @@ export const metadata: Metadata = {
  * THE TOOL LISTS ARE THE REAL ONES. The design draws four read tools and
  * three write tools with invented names — `search_entries`, `add_state`.
  * This list is the one a person reads before approving write access, so it
- * names every tool the scope grants and not a sample: eleven, fourteen and
+ * names every tool the scope grants and not a sample: twelve, fifteen and
  * the one that is in neither scope, from `src/lib/mcp/tools.ts`.
  * `docs/mcp-connector.md` §Tools and that file are the other two places the
  * set is written down; all three move together, and `TOOLS` in
@@ -193,10 +193,12 @@ export default function ConnectPage() {
          *
          * It first read "Nothing is ever deleted or edited in place", which
          * was never true of the whole connector: `upsert_ingredient` and
-         * `upsert_category` have always written over a stored label. It was
-         * narrowed to "the write path only ever adds", which was true on the
-         * day it was written and stopped being true the day the write scope
-         * gained three corrections and a delete.
+         * `upsert_category` have always written over a stored label,
+         * `describe_mechanism` fills a field on a stored note, and
+         * `reattach_note` moves a note to another record. It was narrowed to
+         * "the write path only ever adds", which was true on the day it was
+         * written and stopped being true the day the write scope gained three
+         * corrections and a delete.
          *
          * The lesson is that a promise about what the connector CANNOT do
          * ages badly, because it is a claim about every tool that will ever
@@ -220,9 +222,28 @@ export default function ConnectPage() {
           adds a revision and leaves every earlier one where it was, and{' '}
           <code className="[font-size:inherit] font-mono">update_revision</code>{' '}
           corrects a revision that was recorded wrongly. The question that
-          separates them is whether the dish changed or the record is wrong.
-          Every tool call is written to an audit log, and nothing can delete
-          that.
+          separates them is whether the dish changed or the record is wrong. A
+          note can also be moved to another record: the text of the note does
+          not change, and the store keeps each record it was on before. Every
+          tool call is written to an audit log, and nothing can delete that.
+        </Warning>
+
+        {/*
+         * D-14. A person approving write access is handing a model the copy
+         * of this site, and the reader at the other end is a cook holding a
+         * phone. The rule an agent is given is stated here so that the
+         * person can see what was asked for, and hold the result to it.
+         */}
+        <Warning title="An agent is asked to write in plain English">
+          Every recipe here is written in ASD Simplified Technical English:
+          short sentences, one idea in each, active voice, and the same word for
+          the same thing. A step reads as one instruction —{' '}
+          <em>Cut the beef into strips of 10 mm</em> — and every amount, time
+          and temperature carries a number and a unit. The connector states this
+          rule in its instructions, in{' '}
+          <code className="[font-size:inherit] font-mono">get_started</code> and
+          on every tool that stores text a reader sees. It is not enforced by
+          the schema, because no schema can tell good prose from bad.
         </Warning>
       </div>
     </>
@@ -234,8 +255,8 @@ export default function ConnectPage() {
 type Tool = { name: string; text: string };
 
 /**
- * The eleven tools the read scope grants, in the order `registerTools`
- * declares them.
+ * The twelve tools the read scope grants, in the order `registerTools`
+ * declares them (`src/lib/mcp/tools.ts`).
  */
 const READ_TOOLS: Tool[] = [
   {
@@ -271,6 +292,10 @@ const READ_TOOLS: Tool[] = [
     text: 'One run: the date, the weights, what it cost and what happened.',
   },
   {
+    name: 'search_notes',
+    text: 'Every note, wherever it hangs: on a recipe, an ingredient or a run. Searchable by text and by kind.',
+  },
+  {
     name: 'build_shopping_list',
     text: 'The consolidated list for any set of recipes, combined by aisle and by unit.',
   },
@@ -292,7 +317,7 @@ const READ_TOOLS: Tool[] = [
   },
 ];
 
-/** The fourteen the write scope grants. Approving it grants all of them. */
+/** The fifteen the write scope grants. Approving it grants all of them. */
 const WRITE_TOOLS: Tool[] = [
   { name: 'create_recipe', text: 'A genuinely new dish. Search first.' },
   {
@@ -314,6 +339,10 @@ const WRITE_TOOLS: Tool[] = [
   {
     name: 'describe_mechanism',
     text: 'The conditions a stored science note holds under. Once only.',
+  },
+  {
+    name: 'reattach_note',
+    text: 'Moves a note to another record. The note itself does not change, and the store keeps where it was.',
   },
   {
     name: 'upsert_ingredient',
@@ -350,7 +379,7 @@ const WRITE_TOOLS: Tool[] = [
 ];
 
 /**
- * The twenty-sixth tool, and the only one in neither scope.
+ * The twenty-eighth tool, and the only one in neither scope.
  *
  * It is listed on its own because neither of the two lists above is true of
  * it: it needs no scope, and its effect lands outside this system. Reading
@@ -376,7 +405,7 @@ const REPORT_TOOLS: Tool[] = [
  * ingredient name is 14px Geist, the description is Geist where the alias is
  * serif italic, the scope is a 9px tracked label where the count is 12px
  * mono — so reusing it would mean three new props on a shared component for
- * one screen. A list is also the truer shape: this is eleven or fourteen
+ * one screen. A list is also the truer shape: this is twelve or fifteen
  * things of one kind, not a record with four fields, and a screen reader
  * announces the count.
  *

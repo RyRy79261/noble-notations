@@ -3,7 +3,7 @@
  * what comes back.
  *
  * ─────────────────────────────────────────────────────────────────────────
- * WHY THIS EXISTS RATHER THAN FIFTEEN HAND-WRITTEN ASSERTIONS
+ * WHY THIS EXISTS RATHER THAN SEVENTEEN HAND-WRITTEN ASSERTIONS
  * ─────────────────────────────────────────────────────────────────────────
  *
  * `src/lib/queries/read.ts` must never return a deleted row. Three things
@@ -12,16 +12,17 @@
  *   1. The six `_live` views. They only help a query that selects from them.
  *   2. The ESLint import ban scoped to `read.ts` in `eslint.config.mjs`. It
  *      makes naming a base table fail CI — but it reads imports, and it
- *      CANNOT SEE INSIDE A TEMPLATE LITERAL. `read.ts` has four raw-SQL
- *      sites: `searchRecipes`, `getStats`, `listIngredients`' join, and the
- *      `noteRecipeId` / `noteBelongsToRecipe` fragments.
+ *      CANNOT SEE INSIDE A TEMPLATE LITERAL. `read.ts` has six raw-SQL
+ *      sites: `searchRecipes`, `searchExperiments`, `searchNotes`,
+ *      `getStats`, `listIngredients`' join, and the `noteRecipeId` /
+ *      `noteBelongsToRecipe` fragments.
  *   3. This.
  *
  * The property worth more than the assertions is the enumeration. This file
  * holds a call table, compares it against `Object.entries(read)`, and prints
- * the difference both ways. A SIXTEENTH exported read that nobody added to
+ * the difference both ways. AN EIGHTEENTH exported read that nobody added to
  * the table fails the suite on the day it lands, naming itself. A test that
- * lists fifteen reads by hand goes stale in silence, and silence is the
+ * lists seventeen reads by hand goes stale in silence, and silence is the
  * failure mode this whole branch is defending against.
  *
  * ─────────────────────────────────────────────────────────────────────────
@@ -65,7 +66,10 @@
  * write a line of its own to the same stream.
  */
 import * as read from '../src/lib/queries/read';
-import { searchRecipesSchema } from '../src/lib/domain/schemas';
+import {
+  searchNotesSchema,
+  searchRecipesSchema,
+} from '../src/lib/domain/schemas';
 import {
   BIN,
   KEEP,
@@ -106,6 +110,11 @@ const FIXTURE: CensusFixture = process.env.CENSUS_FIXTURE
 
 const search = (input: Record<string, unknown>) =>
   read.searchRecipes(searchRecipesSchema.parse(input));
+
+/* `searchNotes` takes the parsed input, so the defaults for `limit` and
+   `offset` come from the schema here exactly as they do for a tool call. */
+const notes = (input: Record<string, unknown>) =>
+  read.searchNotes(searchNotesSchema.parse(input));
 
 interface Call {
   /** What this call is, for a failure message that says which one leaked. */
@@ -261,6 +270,51 @@ const CALLS: Record<string, Call[]> = {
   getExperiment: [
     { label: 'the deleted run', run: () => read.getExperiment(FIXTURE.binRun) },
     { label: 'the kept run', run: () => read.getExperiment(FIXTURE.keepRun) },
+  ],
+
+  // Raw SQL, so the import ban proves nothing about it. The deleted run
+  // carries the sentinel in its title, its summary and its outcome — the
+  // three columns this search reads — so free text for `ZZBIN` is the whole
+  // leak hunt in one call.
+  searchExperiments: [
+    {
+      label: `free text "${BIN}"`,
+      run: () => read.searchExperiments({ query: BIN }),
+    },
+    {
+      label: `free text "${KEEP}"`,
+      run: () => read.searchExperiments({ query: KEEP }),
+    },
+    {
+      label: 'unfiltered, one page',
+      run: () => read.searchExperiments({ limit: 100 }),
+    },
+  ],
+
+  // Raw SQL as well, and the read with the most ways to leak: the fixture
+  // deletes a note with its recipe, a note with its run, and a STRAY note
+  // on a live recipe — and free text crosses every subject at once, which
+  // is the one read that would return all three.
+  searchNotes: [
+    { label: `free text "${BIN}"`, run: () => notes({ query: BIN }) },
+    { label: `free text "${KEEP}"`, run: () => notes({ query: KEEP }) },
+    {
+      label: "the kept recipe's notes",
+      run: () => notes({ recipeSlug: FIXTURE.keepRecipe }),
+    },
+    {
+      label: "the deleted recipe's notes",
+      run: () => notes({ recipeSlug: FIXTURE.binRecipe }),
+    },
+    {
+      label: "the deleted run's notes",
+      run: () => notes({ experimentSlug: FIXTURE.binRun }),
+    },
+    {
+      label: "the deleted ingredient's notes",
+      run: () => notes({ ingredientSlug: FIXTURE.binIngredient }),
+    },
+    { label: 'every note, one page', run: () => notes({ limit: 100 }) },
   ],
 
   listScienceIndex: [

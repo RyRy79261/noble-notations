@@ -1,0 +1,19 @@
+ALTER TABLE "notes" ADD COLUMN "previous_subjects" text[] DEFAULT ARRAY[]::text[] NOT NULL;
+--
+-- Everything above this line is what `pnpm db:generate` wrote. The note
+-- below is added by hand, because 0006 carries a backfill block and a
+-- reader who finds none here will want to know why.
+--
+-- THERE IS NOTHING TO BACKFILL. This column records the subjects a note has
+-- hung off BEFORE the one it hangs off now, and no note has ever moved:
+-- `reattachNote` is the only writer and it lands in this same change. Every
+-- stored note has had exactly one home, so the empty array the default
+-- gives it is not a placeholder — it is the true answer.
+--
+-- `ADD COLUMN` with a constant default is catalogue-only on PostgreSQL 11
+-- and later, so this does not rewrite a loaded table. There is no DROP and
+-- no ALTER COLUMN in this file.
+--
+-- This is D-13. The reasoning — why a note's location is not covered by the
+-- immutability rule that governs its text, and why the audit log cannot
+-- hold this fact — is on the column in `src/db/schema.ts`.

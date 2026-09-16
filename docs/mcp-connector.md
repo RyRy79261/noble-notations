@@ -88,10 +88,10 @@ string, so a `redirect_uri` still in flight survives the rename.
 
 ## Scopes
 
-| Scope                   | Grants                                                                                                                                                                                                                                                   |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `noble-notations:read`  | Every read tool, including `list_deleted`                                                                                                                                                                                                                |
-| `noble-notations:write` | `create_recipe`, `revise_recipe`, `backfill_revision`, `add_note`, `add_mass_flow`, `describe_mechanism`, `upsert_ingredient`, `upsert_category`, `log_experiment`, `update_recipe`, `update_revision`, `update_note`, `delete_record`, `restore_record` |
+| Scope                   | Grants                                                                                                                                                                                                                                                                    |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `noble-notations:read`  | Every read tool, including `list_deleted`                                                                                                                                                                                                                                 |
+| `noble-notations:write` | `create_recipe`, `revise_recipe`, `backfill_revision`, `add_note`, `add_mass_flow`, `describe_mechanism`, `upsert_ingredient`, `upsert_category`, `log_experiment`, `reattach_note`, `update_recipe`, `update_revision`, `update_note`, `delete_record`, `restore_record` |
 
 **`list_deleted` is a read, and it is in the read scope.** It reports rows
 the public site does not show, which is why that looks wrong at first
@@ -115,16 +115,23 @@ every tool call, not just at authorization.
 
 Read: `get_started`, `search_recipes`, `get_recipe`, `list_categories`,
 `list_ingredients`, `get_ingredient`, `list_experiments`, `get_experiment`,
-`build_shopping_list`, `get_repository_stats`, `list_deleted`.
+`search_notes`, `build_shopping_list`, `get_repository_stats`,
+`list_deleted`.
 
 Write: `create_recipe`, `revise_recipe`, `backfill_revision`, `add_note`,
 `add_mass_flow`, `describe_mechanism`, `upsert_ingredient`,
-`upsert_category`, `log_experiment`, `update_recipe`, `update_revision`,
-`update_note`, `delete_record`, `restore_record`.
+`upsert_category`, `log_experiment`, `reattach_note`, `update_recipe`,
+`update_revision`, `update_note`, `delete_record`, `restore_record`.
 
 Neither: `report_issue`.
 
-Twenty-six tools. `/connect` and `TOOLS` in `e2e/mcp-contract.spec.ts` name
+`list_experiments`, `get_experiment` and `log_experiment` speak of
+experiments; the website calls the same record a batch log and serves it at
+`/batch-logs`. The guide's `theWebsite` section teaches an agent the
+mapping, because one that knew only the tool word reported the page as
+missing.
+
+Twenty-eight tools. `/connect` and `TOOLS` in `e2e/mcp-contract.spec.ts` name
 the same set; a tool that appears or disappears without all three moving is
 drift, and that test is the line that says so.
 
@@ -132,148 +139,7 @@ Tool descriptions are the only instructions the model gets, and they are
 written to push toward revising rather than duplicating — `create_recipe`
 says to search first and reach for `revise_recipe` if the dish exists.
 
-### Three updates, not six, and why update is typed where delete is generic
-
-`update_recipe`, `update_revision` and `update_note` are the whole of the
-correction surface. The other three deletable records already have one:
-`log_experiment`, `upsert_ingredient` and `upsert_category` each merge the
-keys the caller sent onto the stored row. A second tool for those would be
-two tools writing one row under two different merge rules.
-
-Delete and restore went the other way and are generic — `delete_record` and
-`restore_record` take a `kind` enum and an address. The split is not
-inconsistency; it follows what each shape costs.
-
-A delete's argument list is a kind and an address, and that is uniform
-across all six records. A pair per kind would be twelve tool definitions at
-roughly 80–120 tokens each: about **a thousand tokens on every `tools/list`,
-in every conversation, forever**, to express a distinction the `kind`
-argument already carries. The enum sits in the schema the model reads beside
-the name, so the six legal values are as visible as six registry entries
-would be — and strictly more visible for the reverse question, "what can I
-delete?", which is one enum rather than a scan of the whole list.
-
-An update carries a body, and there the generic form loses something real. A
-single `update(kind, id, patch)` would either take `patch` as an opaque
-object — which throws away `src/lib/domain/schemas.ts`, where the raw
-_shape_ is the advertised JSON Schema and the assembled _schema_ enforces it
-so the two cannot drift — or become a discriminated union no agent can read.
-
-The bounded risk of the generic form is blast radius: `delete_record` is
-easier to call by accident than `delete_tag` would be. It is bounded by
-construction rather than by hoping. Every delete is soft, the result names
-every record that went with it, `list_deleted` is the bin, and
-`restore_record` takes the same arguments back.
-
-The names are `delete_record` and `restore_record` rather than a bare
-`delete` and `restore`. Every tool in this registry is verb_noun, and a bare
-`delete` is the single most likely name here to collide with another
-connector in a session that holds several.
-
-### The pair a model must not confuse
-
-`revise_recipe` and `update_revision` are the one place in this surface
-where picking the wrong tool destroys something. A revise appends a version
-and leaves the old one readable; an update writes over a stored version. An
-agent that reaches for the update when it meant the revise overwrites the
-version a person cooked from, and the history the project exists to keep is
-gone.
-
-JSON Schema cannot carry that, and no refusal can detect it: both calls are
-valid. So it is carried in prose, in the same words, in **both**
-descriptions, in the server `instructions` and in `get_started`:
-
-> Did the food change, or is the record wrong?
-
-The question is about the food rather than about the database because that
-is the thing the caller reliably knows. `e2e/auth-guide.spec.ts` asserts the
-sentence is in the instructions; it previously asserted `/cannot delete/i`
-there, and that assertion is what caught this drift when the rule changed.
-
-No update tool asks for a `rationale`. A rationale records _why the dish
-changed_, and an update is the statement that it did not.
-
-### Delete, restore and the bin
-
-A delete is soft. The row stays, it stops being visible — the site does not
-show it and the read tools do not return it — and `restore_record` brings it
-back. `AGENTS.md` § _Delete is soft, and it is called delete_ carries the
-columns, the cascade stamp and the three layers that keep every read
-filtered. What a caller needs from this end:
-
-- **Addressing.** `kind` plus one address. `id` works for every kind; `slug`
-  for a recipe, a run or an ingredient; `slug` with `revisionNumber` for a
-  version; `slug` with `categoryType` for a tag; a note has only an `id`. An
-  address that does not fit its kind is refused at the parse boundary with a
-  message naming the legal form — a field that does not belong is refused
-  rather than ignored, because the cost of guessing here is a caller who
-  thinks it deleted revision 3 and deleted the recipe.
-- **`reason` is optional and stored.** A delete is reversible, so demanding
-  one would be the same friction the update tools deliberately do not
-  impose. The bin prints it, and it is the only thing that tells the next
-  reader why a record went, so the description asks for one in a sentence.
-- **Cascade.** A recipe takes its revisions, its notes and its runs; a
-  revision takes its notes; a run takes its notes. The result names each
-  count, and one `restore_record` brings back exactly that set. A record
-  deleted on its own beforehand keeps its own date and reason and does not
-  come back with the parent.
-- **Refusals worth knowing.** Deleting the only revision of a recipe is
-  refused — `current_revision_id` must always name a live revision.
-  Restoring is refused while the record it belongs to is still deleted, and
-  the refusal names what to restore first. Restoring a revision does not
-  move the current-revision pointer back; `update_recipe` with
-  `currentRevisionNumber` is the explicit way to say what people read.
-- **Two connectors deleting one record.** The addressed row is read
-  `FOR UPDATE`, the way `describeMechanism` reads a note, and every UPDATE a
-  delete writes carries `deleted_at IS NULL` — the root's included. Without
-  the lock both calls passed the guard under READ COMMITTED and both wrote:
-  the winner stamped the children with its event id and the loser then
-  overwrote the ROOT with its own, so `restore_record` — which clears by the
-  root's id — brought back the root alone and left a live recipe whose
-  `current_revision_id` named a deleted revision. The second delete is now
-  refused, with the same sentence a sequential second delete gets.
-- **Two connectors deleting two DIFFERENT revisions of one recipe.** Locking
-  the addressed row is not enough here, because the row the two calls
-  disagree about is the RECIPE's: each reads `current_revision_id`, and one
-  moves it onto the revision the other is removing. So the revision branch
-  reads that pointer — and the survivor list, and the "this is the only
-  version" refusal — under `FOR UPDATE` on the recipe row, and
-  `update_recipe` re-reads the revision it is about to point at under the
-  same lock. `revise_recipe` will not read a deleted revision as the one it
-  supersedes either; that is the backstop behind both.
-- **The lock order.** `recipes` is locked LAST by every writer except a
-  delete or a restore that ADDRESSES a recipe, which cannot be anything else.
-  Those two take a per-recipe `pg_advisory_xact_lock` before any row lock, so
-  the one pair of opposite orders never runs at the same time on one recipe.
-  `AGENTS.md` states the rule and the measurement.
-- **A write that names a deleted record by a key it did not choose.** The
-  restore-on-upsert rule is about a key the CALLER wrote. A revision carried
-  forward unchanged is not that: `revise_recipe` with `steps` only re-uses
-  the stored line's ingredient id rather than re-resolving its name, so a
-  correction cannot un-delete an ingredient nobody named. For the same
-  reason `needsDescription` reports live rows only — a write result that
-  named a deleted tag would be followed by advice to call `upsert_category`
-  on it, which restores it.
-- **An edge to a deleted record survives a rewrite.** `categories` and
-  `links` replace their whole list, and `get_recipe` does not show an edge
-  whose target is deleted — so a caller sending back the list it was shown
-  cannot keep one. The rewrite therefore deletes only the edges whose target
-  is live, and restoring the target brings the recipe back onto it.
-- **A batch log pinned to a deleted revision stays live** and reads
-  _withdrawn_. This is the case soft delete exists for. The run happened,
-  `experiments.revision_id` still points at a row that still exists, so the
-  number and the title are still readable. A hard delete would fire
-  `ON DELETE SET NULL` and the run would read "no version recorded" — a
-  false statement about a run that recorded one. Re-logging such a run is
-  allowed to name the pin it already holds: repeating what is on the row
-  moves nothing, and refusing it aborted `pnpm ingest --force` mid-load.
-  Pinning a run to a DIFFERENT deleted revision is still refused.
-
-Nothing about this is called _archive_, and that is not a style preference:
-three things in this repository already carry the word. The table in
-`AGENTS.md` says which.
-
-### The two tools that reach a stored record
+### The three tools that reach a stored record
 
 `add_mass_flow` and `describe_mechanism` are the odd pair. Every other
 write tool makes a record or appends one; these two name a record that is
@@ -287,6 +153,40 @@ flow tables behind R-SCR-39. No other path reaches a stored revision:
 rather than filling columns on stored ones, and a revision whose only
 change is a diagram has no rationale and would move a number that is in
 URLs and in the `nn:checked:{slug}:{revision}` keys.
+
+`reattach_note` is the third, and a different shape: it moves a note from
+one record to another. Nothing a reader reads changes — the kind, title,
+body, conditions, sources and date are all left exactly as they were, and
+only which record holds the note is different. A note's TEXT being fixed
+does not make its LOCATION fixed, and the choice of parent is usually
+forced by what happens to exist yet: a note about a dish gets attached to a
+batch because no recipe for the dish has been written. Before this tool
+that note was stranded, and the only repair was to write it a second time
+on the recipe, which duplicates the text and lets the two copies drift.
+`log_experiment` has always re-homed a run the same way.
+
+A note pinned to one revision is refused rather than moved. That note is a
+statement about that version, and moving it would make a stored version say
+something it never said — which is the revision rule itself. `update_note`
+is the one way past that refusal, and it is the right one: it is the tool
+for a record that is WRONG, and a note filed against a version it was never
+about is wrong rather than moved.
+
+`update_note` therefore writes what a move writes. It sets `sort_at`, so a
+note written years ago does not land at the front of its new subject's list
+and renumber the mechanisms below it, and it appends the home the note is
+leaving to `previous_subjects` when that home has one of the three forms the
+column stores. Two tools can move a note and they leave the same trail
+behind; the difference between them is the question at the top of this file,
+not the bookkeeping.
+
+The move is recorded, not silent. `notes.previous_subjects` keeps every
+record the note has hung off, oldest first. The audit log cannot carry that
+fact: `runTool` builds its audit row from the arguments the tool was called
+with, so it can name where a note went and never where it came from. The
+concurrency answer is `describe_mechanism`'s — lock the row, then repeat
+the guard in the UPDATE's own WHERE, so two callers racing cannot both
+believe they moved it.
 
 Neither is an update path in the sense the revision rule forbids. Each
 fills a field that has never held a value, so it can only turn absent into

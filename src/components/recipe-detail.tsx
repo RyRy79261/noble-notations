@@ -81,7 +81,7 @@ import { Revision } from '@/components/f/revision';
 import { Section360 } from '@/components/f/section-label';
 import { Measure, Stat } from '@/components/f/stat';
 import type { NoteView, RecipeView, StepView } from '@/lib/queries/read';
-import { revisionOrdinal } from '@/lib/site';
+import { cardSummary, revisionOrdinal } from '@/lib/site';
 import { cn } from '@/lib/utils';
 
 import { IngredientChecklist } from './ingredient-checklist';
@@ -948,7 +948,9 @@ export function RecipeDetail({
                           title={link.recipe.title}
                           href={`/recipes/${link.recipe.slug}`}
                           subtitle={link.recipe.subtitle}
-                          summary={link.note ?? link.recipe.summary}
+                          summary={cardSummary(
+                            link.note ?? link.recipe.summary,
+                          )}
                         />
                       ))}
                     </CardGrid>

@@ -77,10 +77,20 @@ conditions. Each of these two tools writes its field one time. Neither
 replaces a value. To correct a value that is already stored, call
 update_revision or update_note.
 
+A note can move to another record. Call reattach_note. The text of the
+note does not change. Only the record that holds it changes. Use it when
+you wrote a note before the record it belongs to existed.
+
 Units come from a fixed list. A unit outside it is refused.
 
 After a write, read needsDescription in the result. It names the tags and
 ingredients that are still bare. Describe them in the same session.
+
+Write every word that a person reads in simple technical English. Use
+short sentences. Put one idea in each sentence. Use the active voice.
+Write a step as an instruction to the cook. Use the same word for the
+same thing each time. A cook reads this text, and many cooks do not read
+English as a first language. Call get_started for the full rule.
 `.trim();
 
 const INSTRUCTIONS_REPORTING = `
@@ -92,6 +102,10 @@ that tells you what to send instead is not a fault.
 
 const INSTRUCTIONS_TAIL = `
 Before you make anything, call search_recipes.
+
+The website calls a run a batch log. Every run is at /batch-logs.
+
+Before you write a note, call search_notes. It finds notes on every record.
 
 Call get_started to read the full guide.
 `.trim();
@@ -115,7 +129,7 @@ export function serverInstructions(
 }
 
 const SCOPES_WITHOUT_REPORTING =
-  'The read tools need the scope noble-notations:read. The fourteen write ' +
+  'The read tools need the scope noble-notations:read. The fifteen write ' +
   'tools also need noble-notations:write. The system checks the scope on ' +
   'each call.';
 
@@ -222,6 +236,49 @@ const GUIDE = {
     'You cannot delete the only version of a recipe. A recipe with no ' +
     'version cannot be read. Delete the recipe.',
 
+  /**
+   * WHY THE GUIDE TELLS AN AGENT HOW TO WRITE.
+   *
+   * A model writes the way it was asked to write, and asked for a recipe it
+   * writes food prose: a step that carries three actions and a metaphor, a
+   * rationale that reads as a paragraph of praise. A cook reading that on a
+   * phone, with wet hands, has to decode it before doing anything — and a
+   * reader who does not have English as a first language may not decode it
+   * at all. The site's own copy has followed ASD Simplified Technical
+   * English since M2; everything an agent writes THROUGH the connector is
+   * the same reader-facing text and was governed by nothing.
+   *
+   * This is a writing rule and not a schema rule on purpose. Sentence
+   * length is not something the write layer can refuse without refusing
+   * good text with the bad, so it is stated where an agent reads it and
+   * left to the agent. AGENTS.md § Words and writing style is the same rule
+   * for the humans.
+   */
+  howToWrite:
+    'Write every word that a person reads in simple technical English. ' +
+    'This is the ASD Simplified Technical English style. A cook reads this ' +
+    'store, often while cooking. Many cooks do not read English as a first ' +
+    'language.\n\n' +
+    'Use short sentences. Keep a step to 20 words or fewer. Put one idea ' +
+    'in each sentence, and one action in each step. Use the active voice: ' +
+    'write "Cut the beef into strips of 10 mm", not "the beef is then cut ' +
+    'into strips".\n\n' +
+    'Use the simple word. Write "cut", not "butterfly". Write "add", not ' +
+    '"incorporate". Use the same word for the same thing each time: a pan ' +
+    'that becomes a skillet in the next step reads as a second pan. If a ' +
+    'technical word is the only correct word, use it and explain it one ' +
+    'time in plain words.\n\n' +
+    'Give a number and a unit for each amount, each time and each ' +
+    'temperature. Do not write "a good glug" or "until it looks right". If ' +
+    'nobody measured it, say so in a note.\n\n' +
+    'Do not write a metaphor, a joke, or a sentence that praises the dish. ' +
+    'A rationale says what changed and why, in the words a cook can act ' +
+    'on.\n\n' +
+    'This rule holds for the title, the subtitle, the summary, every step, ' +
+    'every note, every rationale, and the explanation of a tag or an ' +
+    'ingredient. It does not hold for a quotation from a source: copy that ' +
+    'exactly, and say who wrote it.',
+
   olderVersions:
     'You can add a version that is older than every version in the store. ' +
     'Call backfill_revision. Use it when you find an old version later: in ' +
@@ -239,9 +296,11 @@ const GUIDE = {
     'If the dish is not here, call create_recipe.',
     'If you find a version that is older than every stored version, call backfill_revision.',
     'Call upsert_category for each new tag. This gives the tag an explanation.',
+    'Call search_notes before you write a note. Find out if the store already says it.',
     'Call add_note for each thing that you learned that is not an instruction.',
     'Call log_experiment after you cook a batch and measure it.',
     'Call add_mass_flow or describe_mechanism only for a record that is already stored.',
+    'If a note sits on the wrong record, call reattach_note. Do not write the note again.',
     'If the record is wrong and the food did not change, call update_recipe, update_revision or update_note.',
     'If a record is a duplicate or a mistake, call delete_record and give a reason. Call restore_record if you were wrong.',
     'If a tool does the wrong thing, call report_issue. Send the payload and the response, copied exactly.',
@@ -255,7 +314,10 @@ const GUIDE = {
     research:
       'What you learned about the dish after you made it. Other methods, ' +
       'small improvements, where to buy things, background. Example: ' +
-      '"Where to buy crayfish in Berlin." Add sources if you have them.',
+      '"Where to buy crayfish in Berlin." A research note must have at ' +
+      'least one source. Research records where a fact came from. If you ' +
+      'have no source, write the note as an observation or an idea. The ' +
+      'other kinds can have sources, but they do not need them.',
     observation: 'What you saw during one cook.',
     result: 'How the dish was at the end.',
     substitution: 'What you used in place of something, and why.',
@@ -359,6 +421,20 @@ const GUIDE = {
    * to say when NOT to send one as clearly as it says how — a mass flow on
    * every recipe is worse than none, because it stops meaning anything.
    */
+  movingANote:
+    'A note hangs off one record. You choose the record when you write the ' +
+    'note. Sometimes the right record does not exist yet. A note about a ' +
+    'dish goes on a run, because nobody wrote the recipe. Call ' +
+    'reattach_note to move the note later. Give the id of the note and one ' +
+    'record. The text of the note does not change. The kind, the title, ' +
+    'the body, the sources and the date stay the same. Only the record ' +
+    'changes.\n\n' +
+    'Do not write the note a second time. Two copies of one note become ' +
+    'different over time, and no reader can tell which one is right.\n\n' +
+    'The store keeps each record that the note was on before. A note on a ' +
+    'version of a recipe cannot move. That note says something about that ' +
+    'version. Write a new note where it belongs.',
+
   massFlow:
     'A dish can lose or gain a lot of weight while it is made. Biltong of ' +
     '10 kg raw becomes 4.5 kg dried. The mass flow figure shows what the ' +
@@ -388,19 +464,48 @@ const GUIDE = {
     'invent an amount.',
 
   /**
+   * WHY THE GUIDE NAMES THE WEBSITE AT ALL.
+   *
+   * The tools say "experiment". The website says "batch log". They are the
+   * same record — the reader's word won the URL and the database kept its
+   * own — and nothing told an agent so. One then wrote a run, could not
+   * find it on the site, and reported the page as missing. It had existed
+   * since the rename, seventh in the navigation.
+   *
+   * The addresses are relative on purpose. `NEXT_PUBLIC_SITE_URL` is set
+   * nowhere in this repository, so `site.url` falls back to the production
+   * host — which on a preview deployment or in the e2e suite would be a
+   * lie. `getPublicOrigin()` is no better here: `registerTools` has no
+   * request to read an origin from.
+   */
+  theWebsite:
+    'This store is also a website. The website calls a run a batch log. ' +
+    'Every run is on the page /batch-logs. This includes a run that names ' +
+    'no recipe. One run is at /batch-logs/<slug>. A run that names a ' +
+    'recipe is also at /recipes/<recipe>/batch-logs/<slug>. The address ' +
+    '/batch-logs/<slug> always answers. It sends you on when the run has ' +
+    'a recipe.',
+
+  /**
    * The count was "six" and the registry held seven, because
-   * `backfill_revision` was added and this line was not. It is fourteen now
-   * — nine, plus the three corrections and the delete and the restore — and
-   * the number is worth keeping true: an agent that reads "six" and counts
-   * fourteen has no way to tell which eight it must not trust.
+   * `backfill_revision` was added and this line was not. It is fifteen now
+   * — nine, plus `reattach_note`, the three corrections, the delete and the
+   * restore — and the number is worth keeping true: an agent that reads
+   * "six" and counts fifteen has no way to tell which nine it must not
+   * trust.
    *
    * `list_deleted` is a READ and is counted as one. It reports rows the site
    * does not show, which is why that looks wrong at first glance — but the
    * read scope already grants an archived recipe, and `ALLOWED_EMAILS`
    * means one administrator approved every connector that can ask.
+   *
+   * SEVEN OTHER PLACES STATE A COUNT and must move together: this string,
+   * `SCOPES_WITHOUT_REPORTING` above, four docs in `src/app/connect/page.tsx`
+   * and the total in `docs/mcp-connector.md`. The registry holds twenty-eight
+   * tools: twelve read, fifteen write, and `report_issue` in neither scope.
    */
   scopes:
-    'The read tools need the scope noble-notations:read. The fourteen write ' +
+    'The read tools need the scope noble-notations:read. The fifteen write ' +
     'tools also need noble-notations:write. list_deleted is a read tool, so ' +
     'it needs the read scope only. The system checks the scope on each ' +
     'call. report_issue needs no extra scope. Each connector can file a ' +
@@ -457,6 +562,7 @@ const GUIDE = {
     'fault tells a person nothing new.',
 
   rules: [
+    'Write in simple technical English. Short sentences. One idea in each sentence. Active voice.',
     'Write a reason that says what you changed and why. Do not write "updated recipe".',
     'Do not invent a measurement. If nobody recorded it, say this in a note.',
     'Do not make a version that only changes the text format.',

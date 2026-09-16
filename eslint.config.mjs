@@ -42,8 +42,8 @@ export default tseslint.config(
    *
    * A shared `and(live(t), …)` helper was the other way to state this rule
    * and is weaker for one reason — a helper can be left out of a new query,
-   * an import ban cannot. `read.ts` holds fifteen exported functions and
-   * about forty statements inside them; the sixteenth is written by somebody
+   * an import ban cannot. `read.ts` holds seventeen exported functions and
+   * about forty statements inside them; the eighteenth is written by somebody
    * who has not read this comment, and `pnpm lint` is a CI gate.
    *
    * The child tables are deliberately absent from the list. A child row

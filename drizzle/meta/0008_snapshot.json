@@ -1,6 +1,6 @@
 {
-  "id": "f02e7003-b010-4f92-b9b8-8a6f8a6f5632",
-  "prevId": "db6e6c99-c336-47aa-933b-b720748d9817",
+  "id": "61ba6793-f20c-4040-96aa-08d84141ca58",
+  "prevId": "f02e7003-b010-4f92-b9b8-8a6f8a6f5632",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1155,6 +1155,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "ARRAY[]::text[]"
+        },
+        "sort_at": {
+          "name": "sort_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         },
         "position": {
           "name": "position",

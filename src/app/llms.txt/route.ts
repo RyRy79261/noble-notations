@@ -67,9 +67,9 @@ export async function GET() {
     `- [Cuisines](${site.url}/cuisines): recipes grouped by where the dish comes from.`,
     `- [Classes](${site.url}/classes): every tag, grouped by category type, each with an explanation.`,
     `- [Ingredients](${site.url}/ingredients): the canonical ingredient list, with aliases and substitutes.`,
-    `- [Batch logs](${site.url}/batch-logs): each batch that a person cooked, with the measurements.`,
+    `- [Batch logs](${site.url}/batch-logs): each batch that a person cooked, with the measurements. The MCP tools call these experiments.`,
     `- [Archive](${site.url}/archive): the notes that predate the database, verbatim.`,
-    `- [Search](${site.url}/search?q=): free text, ingredient and tag search.`,
+    `- [Search](${site.url}/search?q=): free text, ingredient and tag search. Free text also reaches batch logs and notes.`,
     `- [Sitemap](${site.url}/sitemap.xml): every URL.`,
     '',
   );
@@ -92,6 +92,8 @@ export async function GET() {
     `- [Connect](${site.url}/connect): how to add the connector.`,
     `- MCP endpoint: ${site.url}/api/mcp/mcp`,
     '- Call `get_started` first. It explains the data model and the rules.',
+    '- Write in simple technical English: short sentences, one idea in each,',
+    '  active voice. A cook reads what you write, often while cooking.',
     '',
   );
 

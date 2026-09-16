@@ -19,7 +19,7 @@ import { mcpClient, tokens } from './helpers';
  * gets re-baselined without being read. Two shapes are used instead, and
  * between them they pin the same thing harder:
  *
- * - **Agreement.** Four of the six counts are also reachable through a read
+ * - **Agreement.** Five of the six counts are also reachable through a read
  *   that lists the things being counted. A count that disagrees with its own
  *   list is wrong no matter what the seed holds.
  * - **Movement.** For the other two, a write of a known size is made and
@@ -94,6 +94,9 @@ test.describe('the read tools', () => {
     );
     const experiments = await mcp.call<ExperimentRow[]>('list_experiments', {});
     const search = await mcp.call<SearchResult>('search_recipes', { limit: 1 });
+    const notes = await mcp.call<{ total: number }>('search_notes', {
+      limit: 1,
+    });
 
     // A count is only useful if it counts the same thing the reader can
     // see. Each of these is the same fact read two ways: one aggregate
@@ -105,6 +108,12 @@ test.describe('the read tools', () => {
     // what the recipe count means. `limit: 1` keeps the payload small; the
     // number under test is `total`, not the page.
     expect(counts.recipes).toBe(search.total);
+    // `search_notes` with no filter counts every note, whatever it hangs
+    // off. This is the assertion that would catch a status filter being
+    // copied into `searchNotes` from `searchRecipes`: `getStats` counts the
+    // notes table outright, so the two would part the first time a recipe
+    // was archived.
+    expect(counts.notes).toBe(notes.total);
 
     // Not zero, because every assertion above is satisfied by an empty
     // database and a broken connection reads exactly like one.

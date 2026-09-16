@@ -69,6 +69,7 @@ import type {
   LogExperimentInput,
   MassFlowInput,
   NoteInput,
+  ReattachNoteInput,
   ReviseRecipeInput,
   StepInput,
   CategoryType,
@@ -2036,6 +2037,279 @@ export async function describeMechanism(
 }
 
 /**
+ * A note's current subject, in the form `notes.previous_subjects` stores.
+ *
+ * Null for a note on a revision or on a step. That column records the homes
+ * a note has HUNG OFF, and its documented vocabulary is `recipe:<slug>`,
+ * `ingredient:<slug>` and `experiment:<slug>` — the three subjects a note
+ * can be moved between. `reattachNote` refuses the other two before it asks
+ * this question; `updateNote` corrects a mis-filed note and can move one off
+ * a version, and there it appends nothing rather than inventing a fourth
+ * form.
+ *
+ * Resolved by a read of its own rather than joined into the lock that found
+ * the note: only one of the columns can be set, so a join would be three
+ * left joins to answer one question.
+ */
+async function noteSubjectHandle(
+  tx: Tx,
+  note: {
+    recipeId: string | null;
+    ingredientId: string | null;
+    experimentId: string | null;
+  },
+): Promise<string | null> {
+  if (note.recipeId) {
+    const [row] = await tx
+      .select({ slug: recipes.slug })
+      .from(recipes)
+      .where(eq(recipes.id, note.recipeId))
+      .limit(1);
+    return `recipe:${row?.slug ?? note.recipeId}`;
+  }
+  if (note.ingredientId) {
+    const [row] = await tx
+      .select({ slug: ingredients.slug })
+      .from(ingredients)
+      .where(eq(ingredients.id, note.ingredientId))
+      .limit(1);
+    return `ingredient:${row?.slug ?? note.ingredientId}`;
+  }
+  if (note.experimentId) {
+    const [row] = await tx
+      .select({ slug: experiments.slug })
+      .from(experiments)
+      .where(eq(experiments.id, note.experimentId))
+      .limit(1);
+    return `experiment:${row?.slug ?? note.experimentId}`;
+  }
+  return null;
+}
+
+/**
+ * Move a note from one record to another. D-13.
+ *
+ * THIS IS NOT AN EDIT, and the file header's rule is not bent by it. That
+ * rule is "a recipe's ingredients and steps are never edited in place", and
+ * a note's text is governed by the same instinct — the answer to a wrong
+ * note is a `correction`, never a rewrite. But a note's CONTENT being fixed
+ * and its LOCATION being fixed are two decisions, and only the first one
+ * follows from the revision rule. Moving a note changes nothing about what
+ * it says or when it was written.
+ *
+ * The case it exists for: a note is bound to one subject chosen at write
+ * time, and that choice is often forced by what happens to exist yet. Five
+ * notes about stock were attached to a batch because no demi-glace recipe
+ * had been created. When the recipe arrives the notes belong on it, and the
+ * only repair available was to write them a second time — duplicating the
+ * text and letting the two copies drift apart. `logExperiment` already
+ * re-homes a run by naming a different `recipeSlug` on a later call; this
+ * is the same move for the one record type that could not make it.
+ *
+ * A REVISION NOTE IS REFUSED, NOT MOVED. A note pinned to one version is a
+ * statement about that version. Moving it would make a stored version say
+ * something it never said, which is exactly what the revision rule forbids.
+ * The caller is told to write the note again where it belongs.
+ *
+ * The concurrency shape is `describeMechanism`'s: lock the row, then repeat
+ * the guard in the UPDATE's own WHERE so two callers racing cannot both
+ * believe they moved it.
+ */
+export async function reattachNote(input: ReattachNoteInput): Promise<{
+  noteId: string;
+  from: string;
+  to: string;
+  previousSubjects: string[];
+}> {
+  return withTransaction(async (tx) => {
+    const found = await tx
+      .select({
+        id: notes.id,
+        kind: notes.kind,
+        title: notes.title,
+        body: notes.body,
+        recipeId: notes.recipeId,
+        revisionId: notes.revisionId,
+        stepId: notes.stepId,
+        ingredientId: notes.ingredientId,
+        experimentId: notes.experimentId,
+        previousSubjects: notes.previousSubjects,
+        deletedAt: notes.deletedAt,
+      })
+      .from(notes)
+      .where(eq(notes.id, input.noteId))
+      .limit(1)
+      .for('update');
+    const note = found[0];
+    if (!note) throw new NotFoundError(`No note with id "${input.noteId}".`);
+    /* A move is a correction, not an upsert, so a deleted note is refused
+       rather than quietly brought back. The caller addressed it by an id it
+       was given while the note was live, which is exactly the case the rule
+       at the top of this file covers. */
+    if (note.deletedAt) {
+      throw new ConflictError(
+        deletedRefusal(noteHandle(note.kind, note.title, note.body)),
+      );
+    }
+
+    if (note.revisionId) {
+      const [rev] = await tx
+        .select({
+          revisionNumber: recipeRevisions.revisionNumber,
+          slug: recipes.slug,
+        })
+        .from(recipeRevisions)
+        .innerJoin(recipes, eq(recipes.id, recipeRevisions.recipeId))
+        .where(eq(recipeRevisions.id, note.revisionId))
+        .limit(1);
+      throw new ConflictError(
+        `That note belongs to version ${rev?.revisionNumber ?? '?'} of ` +
+          `"${rev?.slug ?? 'a recipe'}". A note on a version says something ` +
+          'about that version, so it cannot be moved. Write the note again ' +
+          'on the record where it belongs.',
+      );
+    }
+    if (note.stepId) {
+      throw new ConflictError(
+        'That note belongs to a step of a stored version, so it cannot be ' +
+          'moved. Write the note again on the record where it belongs.',
+      );
+    }
+
+    /* Where it is now, in the form this column stores. The refusals above
+       have already returned for a note on a revision or a step, so the
+       handle is never null here. */
+    const from = (await noteSubjectHandle(tx, note))!;
+
+    /* The destination. The lookups are addNote's, so a slug that is not
+       there is refused in the same words from both tools. */
+    const subject: NoteSubject = {};
+    let to: string;
+    if (input.recipeSlug) {
+      const [row] = await tx
+        .select({
+          id: recipes.id,
+          title: recipes.title,
+          deletedAt: recipes.deletedAt,
+        })
+        .from(recipes)
+        .where(eq(recipes.slug, input.recipeSlug))
+        .limit(1);
+      if (!row) throw new NotFoundError(`No recipe "${input.recipeSlug}".`);
+      /* The destination is refused when it is deleted, for the reason
+         `resolveNoteSubject` refuses one: the note would still be live and
+         the record holding it would not, so nothing would draw the note and
+         nothing would say why. */
+      if (row.deletedAt) {
+        throw new ConflictError(
+          deletedRefusal(`${row.title} (${input.recipeSlug})`),
+        );
+      }
+      subject.recipeId = row.id;
+      to = `recipe:${input.recipeSlug}`;
+    } else if (input.ingredientSlug) {
+      const [row] = await tx
+        .select({
+          id: ingredients.id,
+          name: ingredients.name,
+          deletedAt: ingredients.deletedAt,
+        })
+        .from(ingredients)
+        .where(eq(ingredients.slug, input.ingredientSlug))
+        .limit(1);
+      if (!row) {
+        throw new NotFoundError(`No ingredient "${input.ingredientSlug}".`);
+      }
+      if (row.deletedAt) {
+        throw new ConflictError(
+          deletedRefusal(`${row.name} (${input.ingredientSlug})`),
+        );
+      }
+      subject.ingredientId = row.id;
+      to = `ingredient:${input.ingredientSlug}`;
+    } else {
+      const [row] = await tx
+        .select({
+          id: experiments.id,
+          title: experiments.title,
+          deletedAt: experiments.deletedAt,
+        })
+        .from(experiments)
+        .where(eq(experiments.slug, input.experimentSlug!))
+        .limit(1);
+      if (!row) {
+        throw new NotFoundError(`No experiment "${input.experimentSlug}".`);
+      }
+      if (row.deletedAt) {
+        throw new ConflictError(
+          deletedRefusal(`${row.title} (${input.experimentSlug})`),
+        );
+      }
+      subject.experimentId = row.id;
+      to = `experiment:${input.experimentSlug}`;
+    }
+
+    if (from === to) {
+      throw new ConflictError(
+        `That note is already on ${to}. Nothing was changed.`,
+      );
+    }
+
+    /* A new home means a new place in that home's list, and it takes TWO
+       columns to say that. `position` is an ordinal within a subject, so the
+       old one is meaningless here. And `sort_at` is the primary sort key: it
+       was `created_at` until a note could move, and leaving it alone would
+       land a note written in 2024 at the FRONT of a recipe written in 2026
+       — which on a science note renumbers every mechanism `/science` draws
+       below it, the fault D-02 records. `created_at` is untouched, because
+       when the note was written is not what changed. */
+    const position = await nextNotePosition(tx, subject);
+
+    const written = await tx
+      .update(notes)
+      .set({
+        recipeId: subject.recipeId ?? null,
+        revisionId: null,
+        stepId: null,
+        ingredientId: subject.ingredientId ?? null,
+        experimentId: subject.experimentId ?? null,
+        position,
+        sortAt: new Date(),
+        previousSubjects: sql`array_append(${notes.previousSubjects}, ${from}::text)`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(notes.id, input.noteId),
+          /* The guard, repeated: the row must still be where the lock found
+             it. A second caller that moved it first fails here rather than
+             appending a `from` that is no longer true. */
+          note.recipeId
+            ? eq(notes.recipeId, note.recipeId)
+            : note.ingredientId
+              ? eq(notes.ingredientId, note.ingredientId)
+              : eq(notes.experimentId, note.experimentId!),
+        ),
+      )
+      .returning({ previousSubjects: notes.previousSubjects });
+
+    if (written.length === 0) {
+      throw new ConflictError(
+        'That note was moved by someone else while this call was running. ' +
+          'Read it again to see where it is now.',
+      );
+    }
+
+    return {
+      noteId: input.noteId,
+      from,
+      to,
+      previousSubjects: written[0]!.previousSubjects,
+    };
+  });
+}
+
+/**
  * Give a taxonomy term its display label, blurb and place in the hierarchy.
  *
  * Creates the term when it does not exist, so this is also how a term is
@@ -3103,6 +3377,9 @@ export async function updateNote(
         kind: notes.kind,
         title: notes.title,
         body: notes.body,
+        recipeId: notes.recipeId,
+        ingredientId: notes.ingredientId,
+        experimentId: notes.experimentId,
         deletedAt: notes.deletedAt,
       })
       .from(notes)
@@ -3158,6 +3435,16 @@ export async function updateNote(
     let move: Record<string, unknown> = {};
     if (movesSubject) {
       const subject = await resolveNoteSubject(tx, input);
+      /* A move here writes the same two columns `reattachNote` writes, and
+         for its reasons. `sort_at` is the primary sort key for a subject's
+         notes: leaving it alone lands a note written years ago at the FRONT
+         of its new subject's list, which on a science note renumbers every
+         mechanism `/science` draws below it — the fault D-02 records.
+         `previous_subjects` keeps the home the note is leaving, because the
+         audit row is built from the arguments this call was made with and so
+         names only where the note went. `created_at` is untouched: when the
+         note was written is not what changed. */
+      const from = await noteSubjectHandle(tx, note);
       move = {
         recipeId: subject.recipeId ?? null,
         revisionId: subject.revisionId ?? null,
@@ -3165,6 +3452,12 @@ export async function updateNote(
         ingredientId: subject.ingredientId ?? null,
         experimentId: subject.experimentId ?? null,
         position: await nextNotePosition(tx, subject),
+        sortAt: new Date(),
+        ...(from
+          ? {
+              previousSubjects: sql`array_append(${notes.previousSubjects}, ${from}::text)`,
+            }
+          : {}),
       };
     }
 
@@ -3744,7 +4037,7 @@ function tally() {
  * `recipe_terms`, not on the tag row. So without this a deleted tag's label
  * stays in the index of every recipe it was on and `search_recipes` keeps
  * matching a word that is nowhere on the site — nothing is *displayed*, which
- * is exactly why a display census misses it. Migration 0007 teaches
+ * is exactly why a display census misses it. Migration 0009 teaches
  * `recipe_search_vector` to skip deleted tags; this is what makes it re-run.
  * The mirror runs on restore.
  */

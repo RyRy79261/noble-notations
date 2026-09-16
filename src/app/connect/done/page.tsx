@@ -67,7 +67,7 @@ export default async function OAuthReturnPage() {
 
           <PageHero
             title="The handshake is complete"
-            lede="You can close this tab. The connection lives with the agent from here on, not with this window, and nothing on this page needs to stay open for it to keep working."
+            lede="You can close this tab. The connection lives with the agent from here on, not with this window."
           />
 
           {/* The details block: a `f-desk` ground, rows 9px apart on the

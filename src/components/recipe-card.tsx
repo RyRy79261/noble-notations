@@ -42,16 +42,26 @@
  *    so hiding the commonest word is what would make the kinds hard to tell
  *    apart, not what makes them easy.
  *
- * 3. THE SUMMARY IS NOT CUT. C-05 cuts it at 160 characters. The design
- *    draws a card summary of 181 characters on `/cuisines/[slug]`
- *    (`classes-cuisines-1280.html`) and of 245 on the same card in
- *    `dark-screens.html` and `m360-batch-search-list.html`, both uncut, and
- *    there is not one `line-clamp`, `text-overflow` or `truncate` in the
- *    eighteen exports. A 160-character cut would visibly cut the design's
- *    own cards, so the cut is a rule about the DATA and not about the card.
- *    The card renders what it is given and wraps freely. Recorded as D-11 in
- *    `design/DECISIONS.md`, because it is a departure from §9.2 and not a
- *    reading of it.
+ * 3. THE SUMMARY IS CUT HERE, AND ONLY HERE. C-05 cuts it at 160
+ *    characters. M4 removed the cut (D-11) because the design draws card
+ *    summaries of 181 and 245 characters, uncut, and there is not one
+ *    `line-clamp`, `text-overflow` or `truncate` in the eighteen exports.
+ *    The cut is back, for the reason D-11 itself named as the way to
+ *    restore it: the longest stored summary is 1,028 characters, four times
+ *    anything the design drew and around fourteen lines of body text under a
+ *    26px title, and a grid of them is a wall of prose with the titles lost
+ *    in it.
+ *
+ *    D-11's terms hold. The cut is a rule about the DATA, so it lives in
+ *    this file and never in `src/components/f/recipe-card.tsx`, which is the
+ *    drawing and holds no data rule: the card still renders what it is given
+ *    and wraps freely, and a summary already shorter than the limit reaches
+ *    it whole. `cardSummary` in `src/lib/site.ts` is the one length, applied
+ *    at every place a summary meets a card. It stops on a SENTENCE rather
+ *    than mid-clause, and falls back to a word and an ellipsis only where no
+ *    sentence boundary can serve — the ellipsis is a mark the design draws
+ *    nowhere, and over the ten stored summaries exactly one needs it. That
+ *    function's own comment states the whole rule.
  *
  * 4. THREE TERMS, AND NO `+n` CHIP. C-05 allows four. Twenty-six cards in
  *    the exports draw exactly three, one draws two, seventeen draw none, and
@@ -74,7 +84,7 @@
 
 import type { ReactNode } from 'react';
 
-import { revisionOrdinal } from '@/lib/site';
+import { cardSummary, revisionOrdinal } from '@/lib/site';
 import type { RecipeSummaryView } from '@/lib/queries/read';
 
 import { Empty } from './f/notice';
@@ -97,7 +107,7 @@ export function RecipeCard({ recipe }: { recipe: RecipeSummaryView }) {
       title={recipe.title}
       href={`/recipes/${recipe.slug}`}
       subtitle={recipe.subtitle}
-      summary={recipe.summary}
+      summary={cardSummary(recipe.summary)}
       terms={terms.map((term) => (
         <TermTag key={term.id} term={term} />
       ))}

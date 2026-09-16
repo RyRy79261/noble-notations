@@ -155,6 +155,19 @@ observations. The biltong batch logs are experiments, not recipes.
   `checkCarriedUses`, both decide by counting how many lines answer to a
   name. A per-line delete would remove one of two lines without re-running
   that count and silently re-point the step at the survivor.
+- **A note's text is fixed; where it hangs is not.** `reattachNote` moves a
+  note to another record and touches nothing a reader reads — kind, title,
+  body, conditions, sources and `created_at` all survive byte for byte.
+  This is not a hole in the rule above: a note's content being immutable
+  and its location being immutable are two decisions, and only the first
+  follows from the revision rule. The choice of parent is usually forced by
+  what happens to exist yet, and a note written against a batch because the
+  recipe did not exist was otherwise stranded there for good. A note pinned
+  to a revision or a step is refused, because that one really is a
+  statement about a stored version. Every previous home is kept in
+  `notes.previous_subjects` — the audit log cannot hold it, since an audit
+  row is built from the arguments a call was made with and so names only
+  the destination. This is D-13.
 - **`src/lib/domain/schemas.ts` is the submission contract.** MCP tools, the
   ingest script and the exporter all derive from it. Tools take the raw
   _shape_ (for JSON Schema) and parse with the assembled _schema_ (for
@@ -336,7 +349,7 @@ and then refresh the search vector of every recipe that referenced them.
 `drizzle/0001_search_indexes.sql` folds tag labels into weight B and
 ingredient names into weight D of `recipes.search_vector`, and the triggers
 fire on `recipe_terms` and `recipe_ingredients`, not on the tag or the
-ingredient row. Migration `0007` also rewrites `recipe_search_vector` itself
+ingredient row. Migration `0009` also rewrites `recipe_search_vector` itself
 to skip deleted tags and ingredients — without that the refresh is a no-op
 and free-text search keeps matching a word that is nowhere on the site.
 
@@ -527,17 +540,43 @@ Five labels must exist before the first report (`agent-report`,
 ## Quality gates
 
 `.github/workflows/ci.yml` runs on every push and PR and must stay green:
-format check → lint → typecheck → production build, plus an end-to-end job
-against a throwaway Postgres. The build step needs no database — the
-migration it runs skips itself when `DATABASE_URL` is absent. Before
-pushing:
+
+| Job               | What it does                                       |
+| ----------------- | -------------------------------------------------- |
+| `changes`         | Path filter; only gates `e2e`                      |
+| `quality`         | format check → lint → typecheck → production build |
+| `e2e`             | Playwright against a throwaway Postgres service    |
+| `migration-drift` | `pnpm db:generate` must leave `drizzle/` unchanged |
+| `supply-chain`    | `pnpm audit --audit-level high`                    |
+| `ci-pass`         | Aggregate; **this is the required status check**   |
+
+Before pushing:
 
 ```bash
 pnpm format && pnpm lint && pnpm typecheck && pnpm build
 ```
 
 The build does not need a database: its migration step skips when
-`DATABASE_URL` is absent.
+`DATABASE_URL` is absent. Neither does `migration-drift` — `drizzle-kit
+generate` reads `src/db/schema.ts`, not a server.
+
+Require `ci-pass` in branch protection, not the individual jobs. A skipped
+job never reports a status, so requiring a job that is allowed to skip
+(`e2e`, on a docs-only PR) blocks the PR forever. `ci-pass` always reports
+and checks the others itself.
+
+`.github/workflows/neon-pr-cleanup.yml` deletes the `preview/<branch>` Neon
+branch that the Vercel integration creates for a PR's preview deployment,
+when the PR closes. It needs the `NEON_API_KEY` and `NEON_PROJECT_ID` repo
+secrets and fails loudly without them — an unnoticed leak fills the project's
+branch quota. CI itself never touches Neon: every DB-backed job brings its
+own throwaway Postgres.
+
+Dependency updates come from `.github/dependabot.yml`, weekly and grouped.
+The grouping is load-bearing rather than cosmetic: `next`, `react`,
+`tailwindcss` and `@playwright/test` are each exact-pinned alongside a
+package that must carry the same version, so an ungrouped bump opens two PRs
+that each fail on their own. Add to a group before pinning something new.
 
 ## Words and writing style
 
@@ -547,14 +586,43 @@ another word to explain it. This applies to page copy, MCP tool
 descriptions and the agent guide — not to code comments, which explain
 _why_ and need their full vocabulary.
 
+**It applies to the recipes too, not only to the shell around them.** A
+title, a summary, a step, a rationale, a note and the explanation on a tag
+or an ingredient are all read by a cook, usually on a phone and usually
+mid-task. Write a step as one instruction: "Cut the beef into strips of
+10 mm", not "the beef is then butterflied and cut down". Give a number and
+a unit for every amount, time and temperature; if nobody measured it, say
+so in a note rather than writing "a good glug". The one exception is a
+quotation from a source, which is copied exactly.
+
+Most recipes arrive through the connector, so the rule is stated where an
+agent reads it: `howToWrite` in `src/lib/mcp/guide.ts` is the long version,
+`PLAIN_ENGLISH` in `src/lib/mcp/tools.ts` is the reminder appended to every
+write tool that stores prose, and the short instructions carry a paragraph
+of it. Those three move together, and `e2e/auth-guide.spec.ts` fails if one
+of them loses it; `/llms.txt` states it once more, for an agent that only
+ever scrapes the site. This is D-14.
+
+**A screen says what it found, not how it works.** Issue #21 is the record:
+`/search` printed its HTTP method, the query string its form produced and
+how many fields there were to clear, and read as a debug view of itself. A
+reader came to cook. Copy that explains the build — the transport, the
+revision machinery, how to connect an agent — belongs on `/connect`, in
+`AGENTS.md` or in a code comment, not in a lede or a band. `/connect` is
+the one exempt screen, because the protocol is its subject.
+`e2e/site.spec.ts` sweeps every other screen for the jargon. D-14 took the
+home page's HOW THIS WORKS band out under this rule, and cut each lede back
+to what a reader can act on.
+
 The word "taxonomy" is not used anywhere a person or an agent reads. The
 vocabulary is:
 
-| Say                                         | Not                      |
-| ------------------------------------------- | ------------------------ |
-| Categories                                  | Taxonomy, classification |
-| Category type (cuisine, course, technique…) | Facet                    |
-| Tag                                         | Term                     |
+| Say                                         | Not                             |
+| ------------------------------------------- | ------------------------------- |
+| Categories                                  | Taxonomy, classification        |
+| Category type (cuisine, course, technique…) | Facet                           |
+| Tag                                         | Term                            |
+| Batch log                                   | Experiment (reader-facing only) |
 
 **The database columns did not change.** `taxonomy_terms.facet` is still
 `facet`, and `CategoryType` is an alias over the same enum. Renaming those
@@ -567,6 +635,16 @@ MCP names follow the same vocabulary: `list_categories`,
 reader-facing route is `/classes`; the old `/taxonomy` and `/categories`
 URLs both redirect permanently to it.
 
+**A batch log and an experiment are the same record.** The reader's word
+won the URL — `/batch-logs`, with `/experiments` redirecting permanently to
+it — and everything under the reader keeps the other word: the
+`experiments` table, `ExperimentView`, and the `list_experiments`,
+`get_experiment` and `log_experiment` tools. Unlike the categories rename,
+this split reaches an agent, because an agent reads the tool names and then
+looks at the site. That is what issue #19 was: a connector that only knew
+`experiment` could not find a page that had existed since the rename, and
+reported it as missing. So the guide names both words and the addresses.
+
 ## Note kinds
 
 `science` and `research` are the two that get confused, and the split is
@@ -578,6 +656,19 @@ deliberate:
 - **research** — what was learned _around_ the dish afterwards:
   alternatives, hacks, sourcing, background. "Where to buy crayfish in
   Berlin."
+
+A `research` note must carry at least one source.
+`requireSourcesForResearch` in `src/lib/domain/schemas.ts` enforces it on
+all five note paths — `add_note`, and the `notes` array on `create_recipe`,
+`revise_recipe`, `backfill_revision` and `log_experiment`. No other kind
+requires one and no kind forbids one: `writeNotes` stores `sources` for
+every kind, and the study reader filters citations by subject rather than
+by kind (see the comment in `src/lib/queries/read.ts`, which notes that the
+Wellington's one source hangs off a `warning`). A note with nothing to cite
+is an `observation` or an `idea`, not an unsourced `research`. A source
+entry must itself name something — `noteSourceSchema` refuses `{}`, a blank
+string and a bare `accessedAt` — so one empty object does not satisfy the
+count.
 
 `research` originally carried both, which is why "The science" needed a
 kind of its own rather than a filter over the existing one.
@@ -596,6 +687,15 @@ agent must know **before** its first call, one sentence each. The guide is
 paid for once, by an agent that asked, so it holds the explanation. _Did the
 food change, or is the record wrong?_ is in both, because an agent that
 never calls `get_started` still has to answer it before it writes.
+
+**The guide must also name the website's words and its addresses.** An
+agent writes through the connector and is then asked about the result by
+someone looking at the site, so it needs to know what the site calls the
+thing it just wrote and where that thing now is. A connector that knows
+only `experiment` cannot answer "where is it" about `/batch-logs`. Keep the
+addresses in the guide relative: `NEXT_PUBLIC_SITE_URL` is set nowhere
+here, so `site.url` falls back to the production host and an absolute
+address would be wrong on every preview deployment.
 
 ## Shopping lists and filtering
 

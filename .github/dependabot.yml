@@ -1,0 +1,142 @@
+# Dependabot config — see
+# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+#
+# Strategy:
+# - npm: weekly version updates, grouped so a routine week is one or two PRs
+#   rather than fifteen. Dependabot's automatic security updates bypass both
+#   the schedule and `open-pull-requests-limit`, so an advisory still lands
+#   immediately. The `supply-chain` job in ci.yml gates merge on
+#   `pnpm audit --audit-level high`.
+# - github-actions: weekly, so the pinned action majors stay current. This
+#   repository's workflows are still on checkout@v4 / setup-node@v4 while the
+#   sibling repositories are on v7; this is what closes that gap.
+#
+# Grouping is not cosmetic here. Several of this project's dependencies are
+# pinned to an EXACT version precisely because they must move in lockstep, and
+# Dependabot opens one PR per package unless told otherwise — leaving a set of
+# PRs none of which can ever go green on its own. Each group below records
+# which invariant it protects. Dependabot assigns a dependency to the FIRST
+# matching group in file order, so order is load-bearing.
+version: 2
+updates:
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '06:00'
+      timezone: 'Etc/UTC'
+    open-pull-requests-limit: 5
+    labels:
+      - 'dependencies'
+      - 'automated'
+    commit-message:
+      prefix: 'chore(deps)'
+      prefix-development: 'chore(deps-dev)'
+      include: 'scope'
+    groups:
+      # react and react-dom must match exactly: react-dom's development build
+      # throws "Incompatible React versions" at module load when they don't,
+      # which takes the whole e2e suite down with it. Both are exact-pinned
+      # (19.2.8) for that reason, so an ungrouped bump is two PRs that each
+      # break the build.
+      react:
+        patterns:
+          - 'react'
+          - 'react-dom'
+          - '@types/react'
+          - '@types/react-dom'
+        update-types:
+          - 'minor'
+          - 'patch'
+      # next, eslint-config-next and @next/eslint-plugin-next are all pinned to
+      # the same exact version (16.3.3). eslint-config-next resolves the plugin
+      # by that version, so a lone bump to either one makes `pnpm lint` fail.
+      next:
+        patterns:
+          - 'next'
+          - 'eslint-config-next'
+          - '@next/eslint-plugin-next'
+        update-types:
+          - 'minor'
+          - 'patch'
+      # Tailwind v4 is configured in CSS and the PostCSS plugin ships from the
+      # same release train; tailwindcss and @tailwindcss/postcss are both
+      # exact-pinned to 4.3.3 and a mismatch breaks the build, not the styles.
+      tailwind:
+        patterns:
+          - 'tailwindcss'
+          - '@tailwindcss/postcss'
+          - 'tw-animate-css'
+      # @playwright/test and playwright-core are exact-paired: the test runner
+      # refuses a core whose version it does not recognise.
+      playwright:
+        patterns:
+          - '@playwright/test'
+          - 'playwright-core'
+      # shadcn/ui primitives are vendored, but the Radix packages under them
+      # release together and share peer ranges.
+      radix-ui:
+        patterns:
+          - '@radix-ui/*'
+      # drizzle-kit generates the SQL that drizzle-orm then runs. Bumping one
+      # without the other is how migration drift gets introduced.
+      drizzle:
+        patterns:
+          - 'drizzle-orm'
+          - 'drizzle-kit'
+      eslint:
+        patterns:
+          - 'eslint'
+          - '@eslint/js'
+          - 'typescript-eslint'
+          - 'globals'
+      types:
+        patterns:
+          - '@types/*'
+        exclude-patterns:
+          # Belt-and-braces: the React typings belong to the `react` group.
+          - '@types/react'
+          - '@types/react-dom'
+      # Catch-all for everything else, minus the packages whose majors are
+      # deliberate upgrades (below) and whose minors are grouped above.
+      minor-and-patch:
+        update-types:
+          - 'minor'
+          - 'patch'
+        exclude-patterns:
+          - 'next'
+          - 'react'
+          - 'react-dom'
+          - 'typescript'
+    ignore:
+      # Framework majors are a deliberate upgrade PR with its own testing pass,
+      # not a Monday-morning bump: Next 17 and React 20 will each move the
+      # App Router / RSC surface this app is built on.
+      - dependency-name: 'next'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'react'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'react-dom'
+        update-types: ['version-update:semver-major']
+      # TypeScript 7 is the native (Go) rewrite, and typescript-eslint does not
+      # run on it yet — `pnpm lint` dies outright. The dependency is already
+      # range-pinned (~5.9.3) so only patches arrive; this keeps the major out
+      # until it can be taken deliberately. Same blocker intake-tracker hit.
+      - dependency-name: 'typescript'
+        update-types: ['version-update:semver-major']
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '06:00'
+      timezone: 'Etc/UTC'
+    open-pull-requests-limit: 3
+    labels:
+      - 'dependencies'
+      - 'ci'
+      - 'automated'
+    commit-message:
+      prefix: 'chore(ci)'
+      include: 'scope'

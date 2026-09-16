@@ -316,10 +316,10 @@ test('every exported read is in the census table, and none of them returns a del
   ).toBeGreaterThan(0);
   const report = JSON.parse(body) as CensusReport;
 
-  // THE PROPERTY THIS FILE EXISTS FOR. A sixteenth exported read that
+  // THE PROPERTY THIS FILE EXISTS FOR. An eighteenth exported read that
   // nobody added to the table fails here, on the day it lands, naming
   // itself — and a table entry for a function that was removed fails the
-  // same way. A list of fifteen hand-written assertions cannot do either.
+  // same way. A list of seventeen hand-written assertions cannot do either.
   expect(
     report.missing,
     'read.ts exports a function the census does not call. Add it to CALLS ' +
@@ -530,7 +530,7 @@ test('the two surfaces that echo the caller show nothing they were not given', a
   // DISPLAY TEST CATCHES ON ITS OWN: `recipes.search_vector` is a stored
   // column, its triggers fire on `recipe_terms` rather than on the tag row,
   // and nothing is drawn — so the word matched a recipe that carried a tag
-  // which is nowhere on the site. Migration 0007 teaches the function to
+  // which is nowhere on the site. Migration 0009 teaches the function to
   // skip a deleted tag and the write layer re-runs it.
   const byTag = await searchFor(fixture.binTagLabel);
   expect(byTag).not.toContain(fixture.keepRecipe);

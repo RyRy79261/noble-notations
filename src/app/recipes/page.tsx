@@ -158,7 +158,7 @@ export default async function RecipesPage({
         <PageHero
           kicker={`All recipes · ${numberWord(data.length)}`}
           title="Recipes"
-          lede="Everything you can cook from, grouped by kind. A preparation is pulled into other recipes; a process is a technique with no dish attached. Research write-ups are kept here too, but the mechanisms drawn out of them live under Science."
+          lede="Everything you can cook from, grouped by kind. A preparation is pulled into other recipes. A process is a technique with no dish attached. Research write-ups are here too; their mechanisms are under Science."
           ledeClassName={LEDE}
         />
 

@@ -143,7 +143,7 @@ export default async function RecipeBatchLogsPage({ params }: Params) {
           kicker={`Cooking · ${recipe.title}`}
           title="Batch logs"
           ledeClassName="shell:max-w-190"
-          lede={`Every time ${recipe.title} has actually been made, as against the revisions of how it ought to be made. A run records what was bought, what it weighed going in and coming out, and what went wrong — which is where every revision after the first one came from.`}
+          lede={`Every time ${recipe.title} has actually been made. A run records what was bought, what it weighed going in and coming out, and what went wrong.`}
         />
 
         {logs.length > 0 ? (

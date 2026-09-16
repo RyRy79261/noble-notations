@@ -54,8 +54,22 @@
     {
       "idx": 7,
       "version": "7",
-      "when": 1789116127927,
-      "tag": "0007_soft_delete",
+      "when": 1789128058529,
+      "tag": "0007_note_reattachment",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789131057965,
+      "tag": "0008_note_sort_order",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789551888746,
+      "tag": "0009_soft_delete",
       "breakpoints": true
     }
   ]
