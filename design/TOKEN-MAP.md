@@ -65,18 +65,29 @@ utility asked for it. Do not depend on this. A later build that drops the
 utility also drops the name.
 
 The design is dark first. R-CON-07 says so, and `src/app/globals.css` did
-the same. The dark values are on plain `:root`. The light values are in one
-`@media (prefers-color-scheme: light)` block. Only the raw values change. No
-name changes, and no utility changes. Media Queries Level 5 makes the light
-query match when the reader has expressed no preference, so a reader with no
-preference gets the light theme.
+the same. Each colour is ONE declaration on plain `:root`, written
+`light-dark(<light>, <dark>)`. Only the raw values change. No name changes,
+and no utility changes.
 
-`src/app/theme.css` also sets `color-scheme` in both blocks. That makes the
-scrollbar and the native form widgets follow the theme. `globals.css` set it
-too; stating it here is what kept it after M7 deleted that file.
+`color-scheme` on `:root` is what picks the half that is drawn, and it also
+makes the scrollbar and the native form widgets follow the theme.
+`globals.css` set it too; stating it here is what kept it after M7 deleted
+that file. It holds three values in three rules:
 
-This meets R-BLD-07 and R-CON-08: the theme comes from the media query, and
-there is no theme control.
+| `color-scheme` on `:root` | Set by                      | Result                 |
+| ------------------------- | --------------------------- | ---------------------- |
+| `light dark`              | the default                 | follow the system      |
+| `light`                   | `:root[data-theme='light']` | the reader chose light |
+| `dark`                    | `:root[data-theme='dark']`  | the reader chose dark  |
+
+Media Queries Level 5 resolves "no preference" to light, so a reader with no
+preference still gets the light theme — which is what the
+`@media (prefers-color-scheme: light)` block this replaced did, for the same
+reason.
+
+This meets R-CON-07 and the amended R-BLD-07 and R-CON-08: the theme comes
+from the system until the reader uses the control D-16 added to the page
+foot.
 
 ---
 
@@ -400,9 +411,12 @@ above `f-ink-3`. The map therefore adds `foreground-muted` for `f-ink-2`.
 Do not collapse the two. That would darken a lot of body copy for no reason.
 
 **7. There is no class-based dark variant.** shadcn/ui ships
-`@custom-variant dark (&:is(.dark *))`. Do not copy it in. R-BLD-07 says the
-dark theme comes from `prefers-color-scheme`. Nothing adds a `.dark` class,
-so the variant would make every `dark:` utility dead code.
+`@custom-variant dark (&:is(.dark *))`. Do not copy it in. This is still
+true after D-16 added a theme control, and the control is the reason it
+stays true: it writes `data-theme` on `<html>`, two rules read that and set
+`color-scheme`, and every colour resolves itself through `light-dark()`.
+Nothing adds a `.dark` class, so the variant would make every `dark:`
+utility dead code.
 
 **8. `chart-1` to `chart-5` and `sidebar-*` are absent.** The design has no
 value for them. R-BLD-02 forbids inventing one.

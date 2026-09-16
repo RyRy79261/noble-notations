@@ -136,8 +136,50 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${newsreader.variable} ${geistSans.variable} ${geistMono.variable}`}
+      /*
+       * The script below writes `data-theme` on this element before React
+       * hydrates, so the server's markup and the client's first render
+       * disagree about it by design. Without this, React warns on every
+       * page load for a reader who has chosen a theme.
+       *
+       * It suppresses the warning for THIS element's attributes only, one
+       * level deep. Nothing else in the tree is exempted by it.
+       */
+      suppressHydrationWarning
     >
       <body>
+        {/*
+         * THE THEME, BEFORE THE FIRST PAINT. D-16.
+         *
+         * `src/components/f/theme-toggle.tsx` is a client component and
+         * R-STO-02 makes it read storage in an effect, which runs after the
+         * first paint — so a reader who chose dark on a light machine would
+         * see the light page flash first. This runs while the document is
+         * still parsing, ahead of everything below it.
+         *
+         * It is inline because a file would be a second request and the
+         * flash is exactly the time that request takes. The CSP allows it:
+         * `script-src 'self' 'unsafe-inline'` in `next.config.ts`.
+         *
+         * The key is written out rather than imported: this is a string in
+         * the server's HTML, and a string cannot import. `STORAGE_KEY` in
+         * the toggle is the same value and `e2e/screen-theme.spec.ts`
+         * reloads a page after using the real control, so the two cannot
+         * drift apart unnoticed.
+         *
+         * Absent storage, a blocked store, or any value that is not
+         * "light" or "dark" all leave the attribute off, which is the
+         * follow-the-system state `theme.css` draws by default.
+         */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              'try{var t=localStorage.getItem("nn:theme");' +
+              'if(t==="light"||t==="dark")' +
+              'document.documentElement.setAttribute("data-theme",t)}catch(e){}',
+          }}
+        />
+
         {/*
          * C-01, and the design's `F/Skip link`. Its caption in Plate II is
          * the whole specification: "FIRST CONTROL IN THE PAGE · OFF SCREEN

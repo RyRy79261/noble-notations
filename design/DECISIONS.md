@@ -25,6 +25,7 @@ An entry that a later milestone settled says so in place.
 | D-13 | A note's location is not covered by the immutability rule            | Built after M7. `reattach_note` moves a note; `notes.previous_subjects` keeps each move.   |
 | D-14 | The site does not explain itself, and neither does a recipe          | Built after M7. The home page's fifth band is gone; the connector states the writing rule. |
 | D-15 | Delete is soft, it is called delete, and the flag goes down the tree | Decided by the owner, built on `feat/crud`. Six tables, six views, one event id.           |
+| D-16 | The reader gets a theme control, and it has three states             | Asked for by the owner. Built in the page foot: system, light, dark. R-CON-08 is reversed. |
 
 Two things are still open at the end of the build, and
 `design/BUILD-PLAN.md` §6 carries both:
@@ -1087,3 +1088,101 @@ tools away, unregister `delete_record`, `restore_record` and the three
 stay, and a site whose reads all go through the views does not notice.
 
 Do **not** make a delete hard without reading point 3 above first.
+
+## D-16 — The reader gets a theme control, and it has three states
+
+**Status:** Asked for by the repository owner. **Built.**
+**Date:** 2026-09-16
+**Touches:** R-CON-08 and Q-01 in `design/FUNCTIONAL-SPEC.md`, R-BLD-07 in
+`design/BUILD-PLAN.md`, §5 and §7 of `design/TOKEN-MAP.md`,
+`src/app/theme.css`, `src/components/f/theme-toggle.tsx`
+
+### The problem
+
+R-CON-08 said it plainly: _there is no theme control today. To add one is a
+product decision. Do not assume it._ Q-01 asked the question and the build
+answered no. The owner has now made that product decision and asked for the
+control, so the requirement is reversed rather than worked around.
+
+The reason the answer was no is still worth keeping. A control is a promise:
+once a reader can choose, the choice has to survive a reload, it has to beat
+the system preference, and it has to not flash the wrong theme on the way in.
+None of that is free, and none of it was worth paying for a preference the
+operating system already carries.
+
+### What I chose
+
+**Three states, not two: system, light, dark. System is the default.**
+
+A two-state switch cannot say "follow my machine". The first thing it does
+to a reader who never wanted a control is take that behaviour away: they
+click once to see the other theme and the site stops following their machine
+for good. Most readers should stay in the third state, so it is first in the
+row and it is what an untouched control reports.
+
+**"System" is the ABSENCE of `data-theme`, not `data-theme="system"`.** A
+reader who has never touched the control is already in that state. One state
+for "no choice" cannot then disagree with itself, and the server can render
+the same markup for a first-time reader and for one who has chosen to follow
+the system.
+
+**Each colour became one `light-dark()` declaration.** The palette was a
+dark block on `:root` and a light block inside
+`@media (prefers-color-scheme: light)`. That shape cannot carry a control: an
+explicit choice has to beat a media query, which means a third and a fourth
+copy of all fourteen values. A colour with four homes will be wrong in one of
+them. `light-dark()` reads the used value of `color-scheme`, `color-scheme`
+is inherited, so declaring the tokens on `:root` and switching `color-scheme`
+there switches the page — three rules, one line each.
+
+**The default behaviour did not change.** `color-scheme: light dark` follows
+the system, and Media Queries Level 5 resolves "no preference" to light —
+which is exactly what the media query did, for the same reason. A reader who
+never uses the control sees what they saw before.
+
+**Radio inputs, not buttons.** Three exclusive options is what a radio group
+is. The native inputs bring the whole keyboard contract, and the screen
+reader announces "Theme, radio group, Dark, 3 of 3". A row of `aria-pressed`
+buttons would be three tab stops and would read as three independent
+toggles. The inputs are `sr-only` and the labels carry the drawn mono words.
+
+**An inline script sets the attribute before the first paint.** R-STO-02
+makes a client component read storage in an effect, and an effect runs after
+the first paint — so a reader who chose dark on a light machine would see the
+light page flash first. The script in `src/app/layout.tsx` runs while the
+document is parsing. It costs `suppressHydrationWarning` on `<html>`, which
+is scoped to that element's own attributes.
+
+### What it cost the drawing
+
+The control is the fourth word in the foot's middle run, after
+`CONNECT · SOURCE · LLMS.TXT`. It is inside that run rather than beside it
+because the foot is `justify-between` with three children: the drawing puts
+the middle slot's centre at 673.3 in a 1280 box, and a fourth flex child
+would move that centre on every screen in the site. Inside the run the three
+slots are still three and only the middle one gets wider.
+
+It is last in the run because it is the only one of the four that is not a
+destination. A control in front of three links reads as a fourth link until
+somebody uses it.
+
+The designer owns where the control finally sits, and what the 360 foot
+should say now that it carries one. This build will not answer that by
+leaving the control out.
+
+### The one thing the control does not reach
+
+`src/app/icon.svg` is a separate document with its own
+`prefers-color-scheme` query and no access to this one's attributes, so the
+favicon follows the system even for a reader who has forced the other theme.
+The alternative is serving the icon from a route that reads a cookie, which
+is a request and a cache entry for sixteen pixels.
+
+### To change it
+
+`src/app/theme.css` § Colour holds the palette and the two `data-theme`
+rules; `src/components/f/theme-toggle.tsx` is the control;
+`src/app/layout.tsx` holds the pre-paint script. To take the control away,
+delete the component and its use in `src/components/f/page-foot.tsx` — the
+`light-dark()` palette stands on its own and the site goes back to following
+the system alone.
