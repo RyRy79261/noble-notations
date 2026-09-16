@@ -251,7 +251,10 @@ const server = createServer((req, res) => {
     const rawBody = await readBody(req);
     const query = Object.fromEntries(url.searchParams);
 
-    let parsed: unknown = null;
+    /* No initialiser: the try assigns it and the catch assigns it, so a
+       third value here is written and never read. ESLint 10 promotes
+       `no-useless-assignment` into `eslint:recommended` and says so. */
+    let parsed: unknown;
     try {
       parsed = rawBody ? JSON.parse(rawBody) : null;
     } catch {

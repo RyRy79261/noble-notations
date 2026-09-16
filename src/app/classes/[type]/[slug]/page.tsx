@@ -402,7 +402,10 @@ export default async function TermPage({ params }: Params) {
         ) : null}
 
         <SectionHead
-          ordinal={roman(++section)}
+          /* `section + 1` and not `++section`: this is the last section on
+             the screen, so the increment wrote a value nothing reads. The
+             number drawn is the same one. */
+          ordinal={roman(section + 1)}
           title="Recipes using this tag"
           meta={cardinal(recipes.length)}
         />
