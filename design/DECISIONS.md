@@ -1309,11 +1309,41 @@ until the walk has run. `VARIANT_GRAPH_LOCK` serialises parent changes,
 which are rare. The rule that keeps it from meeting `RECIPE_TREE_LOCK` is
 one line: a writer takes at most one advisory lock, and takes it first.
 
-**A fifth tab on C-13**, which the design draws as four. Measured rather
-than assumed: at 320, 360 and 390 the five `flex-1` tabs fit with no
-sideways scroll, no clipped label and a 26px height, above the 24px
-`scripts/audit-ui.ts` reports under. The designer owns whether the strip
-should be drawn differently now it carries five.
+**A fifth tab on C-13**, which the design draws as four — and the phone
+strip gets its scroller back to take it.
+
+Measured rather than assumed, and the measurement is why: at 320 the five
+tabs sit at their own label widths (66 + 46 + 46 + 54 + 60) and four 4px
+gaps, which is 288px inside a 288px content box. Exactly full. A flex item's
+`min-width` is `auto`, so a tab does not squish below its label — it holds
+its width and the strip overflows — and with the `overflow-visible` M7 left
+there, that overflow was the PAGE going sideways and the last tab simply
+gone. Five fit. Six would not, and neither would one longer word.
+
+So `overflow-x: auto` returns to the phone strip. M7's reason for removing
+it was that four `flex-1` tabs fit 328px with room to spare, so a scroller
+there would never scroll — true of four, and it stopped being true at five.
+`auto` paints nothing and scrolls nothing while the content fits, so four
+and five tabs are byte-for-byte what they were. It is not R-ACC-11's
+UNREACHABLE shape either, and that shape is not representable here: the
+check fires on a child stranded past the START edge at `scrollLeft` 0, which
+is what `justify-content: flex-end` did to the nav, and this row has no
+`justify-content` at all. **Never give it one.**
+
+It cost 8px of strip height. `overflow-x: auto` makes the row a clip box on
+both axes — a `visible` computes to `auto` when the other axis is not — and
+`FOCUS_RING` paints 4px outside a tab, so the ring was cut by exactly 4px
+top and bottom on every tab. `py-1` is that 4px and not a pixel more:
+measured at 360 in the overflow state, `py-0` clears the clip edge by −4px
+and `py-1` by 0px. The phone strip is 34px against the drawn 26px, and the
+designer owns the real answer now that the strip can scroll. A half-drawn
+focus ring is the worse of the two.
+
+Three tests in `e2e/recipe-layout.spec.ts` hold it: the strip scrolls and
+the page does not, the last tab is reachable and nothing is stranded at the
+start edge; a strip that fits still fills the width and does not scroll; and
+a focused tab keeps its whole ring inside the scroller. `pnpm audit:ui`
+reports 0 blockers and 0 major faults, and no finding on the strip.
 
 **D-05 lost a row and gained a query.** "Applied in" counted an incoming
 `variant_of` as an application of a study, and that edge no longer exists.
@@ -1326,6 +1356,8 @@ usually holds no link row at all.
 `src/db/schema.ts` at `recipes.variantOfId` carries the argument;
 `variantFamily` in `src/lib/queries/read.ts` is the walk and the one place
 the membership rule is written; `createVariantShape` in
-`src/lib/domain/schemas.ts` is the contract. To take variations out, drop
+`src/lib/domain/schemas.ts` is the contract; the strip's scroller and the
+rule about `justify-*` are argued in `src/components/recipe-tabs.tsx`'s
+header. To take variations out, drop
 the two columns and the panel — the four editorial link kinds stand on
 their own, and `recipe_links` is where `variant_of` would go back.
