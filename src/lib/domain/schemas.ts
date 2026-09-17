@@ -16,6 +16,51 @@ import { CANONICAL_UNITS, isKnownUnit } from '@/lib/domain/units';
 import { slugify } from '@/lib/domain/slug';
 
 /**
+ * Where a picture lives. Two forms, and the second one is new.
+ *
+ * Every image field in this contract used to be `z.url()`, which meant an
+ * absolute address on somebody else's server, because nothing here could
+ * store a picture. `upload_image` changed that, and what it hands back is an
+ * address on THIS site — `/images/<id>`, served by a route handler that
+ * reads `images_live`, so deleting the image makes every field naming it go
+ * dark at once. `src/db/schema.ts` § `images` argues that choice out.
+ *
+ * It is stored RELATIVE, and this is the same rule the agent guide follows
+ * for the addresses it prints. `NEXT_PUBLIC_SITE_URL` is set nowhere in this
+ * repository, so an absolute address built at write time would name the
+ * production host — and be wrong on every preview deployment and in every
+ * e2e run, permanently, in a stored row. A leading slash is correct
+ * everywhere and `<img src>` resolves it against whatever host served the
+ * page.
+ *
+ * The absolute form stays legal and unchanged. A recipe may point at a
+ * picture on a supplier's site, and taking that away to tidy up a type would
+ * break rows that are already stored.
+ */
+const UPLOADED_IMAGE_PATH = /^\/images\/[0-9a-fA-F-]{36}$/;
+
+export const imageAddressSchema = z
+  .string()
+  .max(2000)
+  .refine((v) => UPLOADED_IMAGE_PATH.test(v) || z.url().safeParse(v).success, {
+    message:
+      'Give a full web address, or the `/images/<id>` path that ' +
+      'upload_image returns.',
+  });
+
+/** True for an address this site serves itself. */
+export function isUploadedImagePath(value: string): boolean {
+  return UPLOADED_IMAGE_PATH.test(value);
+}
+
+/** The id inside `/images/<id>`, or null when this is somebody else's URL. */
+export function uploadedImageId(value: string): string | null {
+  return UPLOADED_IMAGE_PATH.test(value)
+    ? value.slice('/images/'.length)
+    : null;
+}
+
+/**
  * The kinds of category a tag can belong to.
  *
  * The database column is still named `facet`; only the words people and
@@ -545,11 +590,11 @@ export const stepSchema = z.object({
         'serve: Glutinous rice". The tool refuses a name that fits two lines.',
     ),
   /**
-   * Optional picture of what this stage should look like. Images are
-   * referenced by URL rather than uploaded — the repository stores notes,
-   * not binaries, and a link survives being exported back out to Markdown.
+   * Optional picture of what this stage should look like. Either an address
+   * on the web, or the `/images/<id>` one `upload_image` returns — see
+   * `imageAddressSchema`.
    */
-  imageUrl: z.url().nullish(),
+  imageUrl: imageAddressSchema.nullish(),
   imageAlt: z.string().max(300).nullish(),
   note: z.string().max(2000).nullish(),
 });
@@ -765,6 +810,12 @@ export const upsertCategoryShape = {
    * rejected rather than silently ignored.
    */
   parentSlug: z.string().min(1).max(120).nullish(),
+  /**
+   * One picture for the tag's own page. A cuisine or a technique reads
+   * better with one, and a technique is often easier to show than to say.
+   */
+  heroImageUrl: imageAddressSchema.nullish(),
+  heroImageAlt: z.string().max(300).nullish(),
 };
 /**
  * The reserved-name rule sits here rather than on `label` or on `slug`,
@@ -886,7 +937,7 @@ export const recipeBodyShape = {
     .optional(),
   links: z.array(recipeLinkSchema).max(50).optional(),
   originNote: z.string().max(2000).nullish(),
-  heroImageUrl: z.url().nullish(),
+  heroImageUrl: imageAddressSchema.nullish(),
   heroImageAlt: z.string().max(300).nullish(),
 };
 
@@ -1604,6 +1655,13 @@ export const upsertIngredientShape = {
     .max(50)
     .optional()
     .describe('Names of ingredients that can stand in for this one'),
+  /**
+   * A picture of the raw ingredient. This is the field that earns its place
+   * fastest of the three added with `upload_image`: two dried chillies have
+   * the same description and do not look alike.
+   */
+  heroImageUrl: imageAddressSchema.nullish(),
+  heroImageAlt: z.string().max(300).nullish(),
 };
 
 export const upsertIngredientSchema = z.object(upsertIngredientShape);
@@ -1689,6 +1747,33 @@ export const logExperimentShape = {
     .array(noteSchema.superRefine(requireSourcesForResearch))
     .max(100)
     .optional(),
+  /** The one picture that stands for the run, shown at the top of its page. */
+  heroImageUrl: imageAddressSchema.nullish(),
+  heroImageAlt: z.string().max(300).nullish(),
+  /**
+   * The rest of the run's pictures, in reading order.
+   *
+   * A run gets a LIST where every other record gets one picture, because a
+   * run is the record a photograph is worth most to — it is the account of
+   * what was actually seen — and one run produces several: the meat going
+   * in, the box on day three, the slice on day nine.
+   *
+   * It REPLACES, like every other list on this tool. `logExperiment` already
+   * replaces items and observations as a pair, and a caller that sends five
+   * pictures gets exactly those five. `upload_image` is the one path that
+   * appends instead, and it says so: an agent holding one new photograph
+   * does not hold the other four.
+   */
+  images: z
+    .array(
+      z.object({
+        url: imageAddressSchema,
+        alt: z.string().max(300).nullish(),
+        caption: z.string().max(500).nullish(),
+      }),
+    )
+    .max(50)
+    .optional(),
 };
 
 export const logExperimentSchema = z
@@ -1711,6 +1796,212 @@ export type LogExperimentArgs = z.input<typeof logExperimentSchema>;
 export type LogExperimentInput = z.infer<typeof logExperimentSchema>;
 
 // ─────────────────────────────────────────────────────────────────────────
+// Putting a picture in
+//
+// Issue #54: `heroImageUrl` was typed as a URI and nothing in the connector
+// could make one. An agent in a chat session holds a photograph as BYTES, has
+// no address for it, and cannot mint one — so the field was reachable in
+// theory and unreachable in practice, and the person had to leave the
+// conversation, host the file somewhere and come back with a link. Most
+// pictures therefore never got added.
+//
+// `upload_image` is the door. It takes the bytes, stores them, and hands back
+// the address every image field on every other tool already accepts.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** What the store accepts. Everything is re-encoded to WebP on the way in. */
+export const IMAGE_MIME_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/avif',
+] as const;
+
+/**
+ * The base64 ceiling, and it is a guard rather than the real limit.
+ *
+ * The limit that counts is on the DECODED length and lives in
+ * `src/lib/images/process.ts`, which is where the refusal that names a
+ * number in megabytes is written. This one exists so a string far too large
+ * to be a photograph is refused by the schema before anything allocates a
+ * buffer for it. Base64 inflates by four bytes for every three, hence the
+ * ratio.
+ */
+const MAX_BASE64_LENGTH = Math.ceil((15 * 1024 * 1024 * 4) / 3) + 1024;
+
+/**
+ * Which record the picture goes on, if it goes on one at all.
+ *
+ * Shaped as the issue asked for it — a bare object naming a slug — rather
+ * than as a tagged union, because this is the shape an agent reaches for
+ * unprompted and the refusals below can say precisely what is wrong with any
+ * other one. Exactly one record may be named. A field that does not belong
+ * to the record named is REFUSED and not ignored, which is the rule
+ * `checkRecordAddress` already follows and for the same reason: a silently
+ * dropped argument is how "the tool said it worked and nothing happened"
+ * gets filed.
+ */
+export const attachToShape = {
+  recipeSlug: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe('Set the hero image of this recipe.'),
+  stepPosition: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe(
+      'With `recipeSlug`: set the picture of this step of the version ' +
+        'people currently read. The FIRST step is 1. Note that get_recipe ' +
+        "reports each step's `position` counting from 0, so add 1 to the " +
+        'number you read there.',
+    ),
+  ingredientSlug: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe('Set the hero image of this ingredient.'),
+  experimentSlug: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe('Set the hero image of this run (a batch log).'),
+  gallery: z
+    .boolean()
+    .optional()
+    .describe(
+      "With `experimentSlug`: add to the end of the run's list of " +
+        'pictures instead of replacing its hero image. A run takes several.',
+    ),
+  tagSlug: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe('With `categoryType`: set the hero image of this tag.'),
+  categoryType: z
+    .enum(CATEGORY_TYPES)
+    .optional()
+    .describe('With `tagSlug`. A tag slug is only unique inside its type.'),
+};
+
+export const attachToSchema = z
+  .object(attachToShape)
+  .superRefine((value, ctx) => {
+    const named = (
+      [
+        ['recipeSlug', value.recipeSlug],
+        ['ingredientSlug', value.ingredientSlug],
+        ['experimentSlug', value.experimentSlug],
+        ['tagSlug', value.tagSlug],
+      ] as const
+    ).filter(([, v]) => v != null);
+
+    const refuse = (message: string, path: string[]) =>
+      ctx.addIssue({ code: 'custom', path, message });
+
+    if (named.length === 0) {
+      refuse(
+        'This names no record. Give one of `recipeSlug`, `ingredientSlug`, ' +
+          '`experimentSlug`, or `tagSlug` with `categoryType`. Leave ' +
+          '`attachTo` out entirely to store the picture and attach it later.',
+        ['recipeSlug'],
+      );
+      return;
+    }
+    if (named.length > 1) {
+      refuse(
+        `A picture goes on one record. This names ${named
+          .map(([k]) => `\`${k}\``)
+          .join(' and ')}. Upload once, then send the address it returns to ` +
+          'the other record with its own tool.',
+        [named[1]![0]],
+      );
+      return;
+    }
+
+    if (value.stepPosition != null && value.recipeSlug == null) {
+      refuse('`stepPosition` only applies together with `recipeSlug`.', [
+        'stepPosition',
+      ]);
+    }
+    if (value.gallery != null && value.experimentSlug == null) {
+      refuse('`gallery` only applies together with `experimentSlug`.', [
+        'gallery',
+      ]);
+    }
+    if (value.tagSlug != null && value.categoryType == null) {
+      refuse('A tag slug is only unique inside its category type.', [
+        'categoryType',
+      ]);
+    }
+    if (value.categoryType != null && value.tagSlug == null) {
+      refuse('`categoryType` only applies together with `tagSlug`.', [
+        'tagSlug',
+      ]);
+    }
+  });
+export type AttachToInput = z.infer<typeof attachToSchema>;
+
+export const uploadImageShape = {
+  data: z
+    .string()
+    .min(1)
+    .max(MAX_BASE64_LENGTH)
+    .describe(
+      'The image itself, base64 encoded. A data URL works too. The limit ' +
+        'is 15 MB once decoded, and every phone camera is under it.',
+    ),
+  mimeType: z
+    .enum(IMAGE_MIME_TYPES)
+    .describe(
+      'What the bytes are. It is checked against them, not trusted, and a ' +
+        'disagreement is refused.',
+    ),
+  /**
+   * REQUIRED, and this is the one place the contract is stricter than the
+   * field it fills. `recipes.hero_image_alt` is nullable because rows
+   * predate this tool. `images.alt` is not null, because a column that
+   * allows null collects nulls and the guide has always said to write alt
+   * text. The cost of asking is one sentence; the cost of not asking is a
+   * site nobody can read with a screen reader.
+   */
+  alt: z
+    .string()
+    .min(1)
+    .max(300)
+    .describe(
+      'What the picture shows, for a reader who cannot see it. Required. ' +
+        'Describe the food, not the photograph: "Sliced biltong, dark red ' +
+        'with a white fat seam", not "a photo of biltong".',
+    ),
+  caption: z
+    .string()
+    .max(500)
+    .nullish()
+    .describe('Shown under the picture. Optional.'),
+  attachTo: z
+    .object(attachToShape)
+    .optional()
+    .describe(
+      'Which record to put it on. Leave it out to store the picture and ' +
+        'get the address back without changing anything.',
+    ),
+};
+
+export const uploadImageSchema = z.object({
+  ...uploadImageShape,
+  attachTo: attachToSchema.optional(),
+});
+export type UploadImageArgs = z.input<typeof uploadImageSchema>;
+export type UploadImageInput = z.infer<typeof uploadImageSchema>;
+
+// ─────────────────────────────────────────────────────────────────────────
 // Correcting a record, and taking one out
 //
 // One question separates these tools from `revise_recipe`, and it is written
@@ -1727,7 +2018,17 @@ export type LogExperimentInput = z.infer<typeof logExperimentSchema>;
 // ─────────────────────────────────────────────────────────────────────────
 
 /**
- * The six records that can be deleted and restored.
+ * The seven records that can be deleted and restored.
+ *
+ * `image` is the newest, and it is here rather than behind a `delete_image`
+ * tool of its own on purpose. Issue #54 asked for that tool, and a second
+ * delete verb is the thing this repository has most carefully avoided: the
+ * word "delete" means one act here — the row stays, it stops being visible,
+ * `restore_record` brings it back — and `src/db/schema.ts` spends a table on
+ * why a fourth meaning of "archive" would make all four unreadable. A
+ * `delete_image` that behaved the same way would need a `restore_image`
+ * beside it, and then two answers to "how do I get it back". An image is a
+ * record like any other, so it deletes like one.
  *
  * Every record an agent can create is here. The CHILDREN are deliberately not:
  * an ingredient line, a step, a note source, a mass flow stage, an experiment
@@ -1750,6 +2051,7 @@ export const DELETABLE_KINDS = [
   'experiment',
   'ingredient',
   'tag',
+  'image',
 ] as const;
 export type DeletableKind = (typeof DELETABLE_KINDS)[number];
 
@@ -1761,7 +2063,11 @@ const RECORD_ADDRESS_FORMS: Record<DeletableKind, string> = {
   experiment: 'an `id`, or a `slug`',
   ingredient: 'an `id`, or a `slug`',
   tag: 'an `id`, or a `slug` with a `categoryType`',
+  image: 'an `id`',
 };
+
+/** The kinds that have no slug and are addressed by `id` and nothing else. */
+const ID_ONLY_KINDS: readonly DeletableKind[] = ['note', 'image'];
 
 /**
  * How a caller names one record. Shared by `delete_record` and
@@ -1853,8 +2159,8 @@ function checkRecordAddress(
     return;
   }
 
-  if (value.kind === 'note') {
-    refuse('A note has no slug.', ['slug']);
+  if (ID_ONLY_KINDS.includes(value.kind)) {
+    refuse(`A ${value.kind} has no slug.`, ['slug']);
     return;
   }
 

@@ -26,9 +26,11 @@ import 'server-only';
 import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { withTransaction, type TransactionClient } from '@/db/client';
 import {
+  experimentImages,
   experimentItems,
   experimentObservations,
   experiments,
+  images,
   ingredientRelations,
   ingredients,
   noteSources,
@@ -61,6 +63,7 @@ import {
 import type {
   AddMassFlowInput,
   AddNoteInput,
+  AttachToInput,
   BackfillRevisionInput,
   CreateRecipeInput,
   DeletableKind,
@@ -2465,6 +2468,15 @@ export async function upsertCategory(input: UpsertCategoryInput): Promise<{
             ? { description: input.description ?? null }
             : {}),
           ...(parentId !== undefined ? { parentId } : {}),
+          // The same "written only when supplied" rule every other optional
+          // field on this tool follows. Setting a label must not blank a
+          // picture somebody attached; an explicit null clears it.
+          ...(input.heroImageUrl !== undefined
+            ? { heroImageUrl: input.heroImageUrl ?? null }
+            : {}),
+          ...(input.heroImageAlt !== undefined
+            ? { heroImageAlt: input.heroImageAlt ?? null }
+            : {}),
           updatedAt: new Date(),
         })
         .where(eq(taxonomyTerms.id, existing[0].id));
@@ -2488,6 +2500,8 @@ export async function upsertCategory(input: UpsertCategoryInput): Promise<{
       label: input.label,
       description: input.description ?? null,
       parentId: parentId ?? null,
+      heroImageUrl: input.heroImageUrl ?? null,
+      heroImageAlt: input.heroImageAlt ?? null,
     });
     return {
       categoryType: input.categoryType,
@@ -2614,6 +2628,12 @@ export async function upsertIngredient(
         ? { defaultUnit: normaliseUnit(input.defaultUnit) }
         : {}),
       ...(input.aliases !== undefined ? { aliases: input.aliases } : {}),
+      ...(input.heroImageUrl !== undefined
+        ? { heroImageUrl: input.heroImageUrl ?? null }
+        : {}),
+      ...(input.heroImageAlt !== undefined
+        ? { heroImageAlt: input.heroImageAlt ?? null }
+        : {}),
       updatedAt: new Date(),
     };
 
@@ -2841,6 +2861,12 @@ export async function logExperiment(input: LogExperimentInput): Promise<{
         ? { costTotal: num(input.costTotal) }
         : {}),
       ...(input.currency !== undefined ? { currency: input.currency } : {}),
+      ...(input.heroImageUrl !== undefined
+        ? { heroImageUrl: input.heroImageUrl ?? null }
+        : {}),
+      ...(input.heroImageAlt !== undefined
+        ? { heroImageAlt: input.heroImageAlt ?? null }
+        : {}),
       updatedAt: new Date(),
     };
 
@@ -2926,6 +2952,33 @@ export async function logExperiment(input: LogExperimentInput): Promise<{
       observationCount += 1;
     }
 
+    /**
+     * The run's pictures, replaced as a whole list — the same rule the items
+     * and the observations follow, and for the same reason: a caller sending
+     * five pictures means those five and not those five plus whatever was
+     * there. And, like them, only when a list was SENT. A re-log correcting
+     * the title must not take the photographs down.
+     *
+     * `upload_image` is the one path that appends to this list instead, and
+     * it has to be: an agent holding one new photograph does not hold the
+     * other four, so making it send the whole list would mean reading them
+     * back first and would lose one on every race.
+     */
+    if (input.images !== undefined) {
+      await tx
+        .delete(experimentImages)
+        .where(eq(experimentImages.experimentId, experimentId));
+      for (const [index, image] of input.images.entries()) {
+        await tx.insert(experimentImages).values({
+          experimentId,
+          position: index,
+          imageUrl: image.url,
+          imageAlt: image.alt ?? null,
+          caption: image.caption ?? null,
+        });
+      }
+    }
+
     await writeNotes(tx, { experimentId }, input.notes);
 
     // The counts describe what the run holds now, not what this call sent.
@@ -2952,6 +3005,381 @@ export async function logExperiment(input: LogExperimentInput): Promise<{
 
     return { slug, itemCount: itemIdByLabel.size, observationCount, restored };
   });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Putting a picture in
+//
+// Issue #54. Every image field in this repository took a web address and
+// nothing here could make one, so an agent holding a photograph had no way
+// to use any of them. `storeImage` is the write half of the answer: the
+// bytes are already in the blob store by the time it runs, and this records
+// them and, optionally, hangs the address on one record.
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface StoreImageInput {
+  blobUrl: string;
+  blobPathname: string;
+  mimeType: string;
+  alt: string;
+  caption?: string | null;
+  width: number;
+  height: number;
+  bytes: number;
+  checksum: string;
+  attachTo?: AttachToInput;
+}
+
+export interface StoreImageResult {
+  id: string;
+  /** What every image field takes. Relative, and served by `/images/[id]`. */
+  url: string;
+  width: number;
+  height: number;
+  bytes: number;
+  mimeType: string;
+  /**
+   * True when these exact bytes were already stored and this call reused the
+   * row rather than making a second one.
+   */
+  deduplicated: boolean;
+  /** What the picture was hung on, in words, or null when it was not. */
+  attachedTo: string | null;
+}
+
+/**
+ * Record an uploaded picture, and optionally attach it to one record.
+ *
+ * **De-duplication is by checksum and it is not an optimisation.** A person
+ * sends the same photograph twice in a conversation more often than not —
+ * once to look at it, once to file it — and two rows would mean two blobs,
+ * two bin entries and two ids for one picture. The unique index on
+ * `images.checksum` is the authority; this reads first and falls back to
+ * reading again on a conflict, because two uploads of one file can be in
+ * flight at once.
+ *
+ * **A de-duplicated upload still attaches, and it still updates the alt
+ * text.** The second call is a caller saying what this picture is and where
+ * it goes; only the bytes were already known.
+ *
+ * **A deleted row is restored rather than reused in place.** This is the
+ * upsert half of the soft-delete rule, and the same trade `upsertIngredient`
+ * makes: sending the bytes again is proof the caller wants the picture, and
+ * refusing the upload over a bookkeeping state would leave it with a
+ * checksum collision it cannot do anything about.
+ */
+export async function storeImage(
+  input: StoreImageInput,
+): Promise<StoreImageResult> {
+  return withTransaction(async (tx) => {
+    const existing = await tx
+      .select({
+        id: images.id,
+        width: images.width,
+        height: images.height,
+        bytes: images.bytes,
+        mimeType: images.mimeType,
+        deletedAt: images.deletedAt,
+      })
+      .from(images)
+      .where(eq(images.checksum, input.checksum))
+      .limit(1);
+
+    let row: {
+      id: string;
+      width: number;
+      height: number;
+      bytes: number;
+      mimeType: string;
+    };
+    const deduplicated = existing.length > 0;
+
+    if (existing[0]) {
+      await tx
+        .update(images)
+        .set({
+          alt: input.alt,
+          ...(input.caption !== undefined
+            ? { caption: input.caption ?? null }
+            : {}),
+          ...(existing[0].deletedAt ? LIVE : {}),
+          updatedAt: new Date(),
+        })
+        .where(eq(images.id, existing[0].id));
+      row = existing[0];
+    } else {
+      const inserted = await tx
+        .insert(images)
+        .values({
+          blobUrl: input.blobUrl,
+          blobPathname: input.blobPathname,
+          mimeType: input.mimeType,
+          alt: input.alt,
+          caption: input.caption ?? null,
+          width: input.width,
+          height: input.height,
+          bytes: input.bytes,
+          checksum: input.checksum,
+        })
+        .returning({
+          id: images.id,
+          width: images.width,
+          height: images.height,
+          bytes: images.bytes,
+          mimeType: images.mimeType,
+        });
+      row = inserted[0]!;
+    }
+
+    const url = `/images/${row.id}`;
+    const attachedTo = input.attachTo
+      ? await attachImage(
+          tx,
+          url,
+          input.alt,
+          input.caption ?? null,
+          input.attachTo,
+        )
+      : null;
+
+    return {
+      id: row.id,
+      url,
+      width: row.width,
+      height: row.height,
+      bytes: row.bytes,
+      mimeType: row.mimeType,
+      deduplicated,
+      attachedTo,
+    };
+  });
+}
+
+/**
+ * Hang an address on the one record the caller named. Returns what it hung it
+ * on, in the words the site uses.
+ *
+ * Every branch refuses a deleted target, because attaching is an APPEND and
+ * not an upsert: the caller is naming a record it believes is there, and
+ * writing into an invisible one silently is the failure this repository has
+ * a rule against. See the soft-delete header at the top of this file.
+ *
+ * The lock order holds. `recipes` is taken LAST — the step branch reads the
+ * revision and its steps first and never locks the recipe row at all, and the
+ * hero branch touches only `recipes`.
+ */
+async function attachImage(
+  tx: Tx,
+  url: string,
+  alt: string,
+  caption: string | null,
+  attachTo: AttachToInput,
+): Promise<string> {
+  if (attachTo.recipeSlug != null) {
+    const found = await tx
+      .select({
+        id: recipes.id,
+        title: recipes.title,
+        currentRevisionId: recipes.currentRevisionId,
+        deletedAt: recipes.deletedAt,
+      })
+      .from(recipes)
+      .where(eq(recipes.slug, attachTo.recipeSlug))
+      .limit(1);
+    if (!found[0]) {
+      throw new NotFoundError(`No recipe with slug "${attachTo.recipeSlug}".`);
+    }
+    if (found[0].deletedAt) {
+      throw new ConflictError(
+        deletedRefusal(`${found[0].title} (${attachTo.recipeSlug})`),
+      );
+    }
+
+    if (attachTo.stepPosition == null) {
+      // A hero image is on the RECIPE and not on a version, so this makes no
+      // version and moves no number. That is the answer to the second of the
+      // issue's open questions, and the tool description states it: a
+      // photograph of the finished dish is not a change to the dish.
+      await tx
+        .update(recipes)
+        .set({ heroImageUrl: url, heroImageAlt: alt, updatedAt: new Date() })
+        .where(eq(recipes.id, found[0].id));
+      return `the hero image of ${found[0].title}`;
+    }
+
+    if (!found[0].currentRevisionId) {
+      throw new ConflictError(
+        `${found[0].title} has no version yet, so it has no steps to put a ` +
+          'picture on.',
+      );
+    }
+    /*
+     * `stepPosition` COUNTS FROM 1 AND THE COLUMN COUNTS FROM 0.
+     *
+     * `writeRevisionBody` stores `position: index`, so the first step is
+     * row 0, while `recipe-detail.tsx` draws `stepIndex + 1` and a cook
+     * reads "step 1". The argument follows the reader — issue #54 wrote
+     * `stepPosition: 3` meaning the third step, and a tool that took 2 for
+     * it would be the surprise.
+     *
+     * The trap this leaves is real and the tool description names it:
+     * `get_recipe` reports the RAW column, so an agent that reads a step's
+     * `position` and passes it straight back here is off by one. It is not
+     * fixed by changing the read — that field is in a shipped contract and
+     * two connectors already hold it — so it is fixed by saying so.
+     */
+    const zeroBased = attachTo.stepPosition - 1;
+    const step = await tx
+      .select({ id: recipeSteps.id, position: recipeSteps.position })
+      .from(recipeSteps)
+      .where(
+        and(
+          eq(recipeSteps.revisionId, found[0].currentRevisionId),
+          eq(recipeSteps.position, zeroBased),
+        ),
+      )
+      .limit(1);
+    if (!step[0]) {
+      const count = await tx
+        .select({ n: sql<number>`count(*)` })
+        .from(recipeSteps)
+        .where(eq(recipeSteps.revisionId, found[0].currentRevisionId));
+      const total = Number(count[0]?.n ?? 0);
+      throw new NotFoundError(
+        `${found[0].title} has ${total} step(s) in the version people read, ` +
+          `so there is no step ${attachTo.stepPosition}. Steps count from 1 ` +
+          "here. get_recipe reports each step's `position` counting from " +
+          '0, so add 1 to the number you read there.',
+      );
+    }
+    // THIS WRITES INTO A STORED VERSION, and that is deliberate rather than
+    // an oversight of the revision rule. Adding a photograph of a step is
+    // not a statement that the food changed — it is the record of that
+    // version getting more complete, which is what `update_revision` is for.
+    // It does change what every reader of that version sees, so the tool
+    // description says so in those words.
+    await tx
+      .update(recipeSteps)
+      .set({ imageUrl: url, imageAlt: alt })
+      .where(eq(recipeSteps.id, step[0].id));
+    return `step ${attachTo.stepPosition} of ${found[0].title}`;
+  }
+
+  if (attachTo.ingredientSlug != null) {
+    const found = await tx
+      .select({
+        id: ingredients.id,
+        name: ingredients.name,
+        deletedAt: ingredients.deletedAt,
+      })
+      .from(ingredients)
+      .where(eq(ingredients.slug, attachTo.ingredientSlug))
+      .limit(1);
+    if (!found[0]) {
+      throw new NotFoundError(
+        `No ingredient with slug "${attachTo.ingredientSlug}".`,
+      );
+    }
+    if (found[0].deletedAt) {
+      throw new ConflictError(
+        deletedRefusal(`${found[0].name} (${attachTo.ingredientSlug})`),
+      );
+    }
+    await tx
+      .update(ingredients)
+      .set({ heroImageUrl: url, heroImageAlt: alt, updatedAt: new Date() })
+      .where(eq(ingredients.id, found[0].id));
+    return `the picture of ${found[0].name}`;
+  }
+
+  if (attachTo.experimentSlug != null) {
+    const found = await tx
+      .select({
+        id: experiments.id,
+        title: experiments.title,
+        deletedAt: experiments.deletedAt,
+      })
+      .from(experiments)
+      .where(eq(experiments.slug, attachTo.experimentSlug))
+      .limit(1);
+    if (!found[0]) {
+      throw new NotFoundError(
+        `No run with slug "${attachTo.experimentSlug}". The site calls these ` +
+          'batch logs.',
+      );
+    }
+    if (found[0].deletedAt) {
+      throw new ConflictError(
+        deletedRefusal(`${found[0].title} (${attachTo.experimentSlug})`),
+      );
+    }
+
+    if (attachTo.gallery) {
+      // APPEND, and this is the one list in the write layer that is not
+      // replaced wholesale. The rule everywhere else — a child is replaced
+      // with its parent — assumes the caller holds the whole list, and an
+      // agent that just took one photograph does not. Making it read the
+      // other four back first would lose one whenever two uploads overlap.
+      //
+      // `MAX(position) + 1` over the run's own rows, under the unique index
+      // on (experiment_id, position), so two appends at once collide on the
+      // index and the loser retries rather than both writing position 3.
+      const last = await tx
+        .select({ max: sql<number | null>`max(${experimentImages.position})` })
+        .from(experimentImages)
+        .where(eq(experimentImages.experimentId, found[0].id));
+      const next = (last[0]?.max ?? -1) + 1;
+      await tx.insert(experimentImages).values({
+        experimentId: found[0].id,
+        position: next,
+        imageUrl: url,
+        imageAlt: alt,
+        caption,
+      });
+      return `the pictures of ${found[0].title}`;
+    }
+
+    await tx
+      .update(experiments)
+      .set({ heroImageUrl: url, heroImageAlt: alt, updatedAt: new Date() })
+      .where(eq(experiments.id, found[0].id));
+    return `the hero image of ${found[0].title}`;
+  }
+
+  // The schema guarantees one of the four, so this is the tag branch.
+  const found = await tx
+    .select({
+      id: taxonomyTerms.id,
+      slug: taxonomyTerms.slug,
+      label: taxonomyTerms.label,
+      deletedAt: taxonomyTerms.deletedAt,
+    })
+    .from(taxonomyTerms)
+    .where(
+      and(
+        eq(taxonomyTerms.facet, attachTo.categoryType!),
+        eq(taxonomyTerms.slug, attachTo.tagSlug!),
+      ),
+    )
+    .limit(1);
+  if (!found[0]) {
+    throw new NotFoundError(
+      `No tag "${attachTo.tagSlug}" in the "${attachTo.categoryType}" ` +
+        'category.',
+    );
+  }
+  if (found[0].deletedAt) {
+    throw new ConflictError(
+      deletedRefusal(
+        `${attachTo.categoryType}/${found[0].slug} — ${found[0].label}`,
+      ),
+    );
+  }
+  await tx
+    .update(taxonomyTerms)
+    .set({ heroImageUrl: url, heroImageAlt: alt, updatedAt: new Date() })
+    .where(eq(taxonomyTerms.id, found[0].id));
+  return `the picture of ${found[0].label}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -3985,6 +4413,36 @@ async function resolveAddress(
       };
       break;
     }
+    case 'image': {
+      const read = tx
+        .select({
+          id: images.id,
+          alt: images.alt,
+          width: images.width,
+          height: images.height,
+          deletedAt: images.deletedAt,
+          deletedEventId: images.deletedEventId,
+        })
+        .from(images)
+        .where(eq(images.id, address.id!))
+        .limit(1);
+      const rows = await (lock ? read.for('update', { of: images }) : read);
+      const row = rows[0];
+      if (!row) throw missing();
+      record = {
+        ...base,
+        kind: 'image',
+        id: row.id,
+        address: { kind: 'image', id: row.id },
+        // The alt text is the only human-readable thing an image has, which
+        // is a second reason the tool demands one: without it the bin would
+        // list a row of uuids.
+        handle: `image: ${row.alt} (${row.width}×${row.height})`,
+        deletedAt: row.deletedAt,
+        deletedEventId: row.deletedEventId,
+      };
+      break;
+    }
   }
 
   if (record.deletedAt && !options.allowDeleted) {
@@ -4090,6 +4548,7 @@ async function clearDeleteEvent(
     ['experiment', experiments],
     ['ingredient', ingredients],
     ['tag', taxonomyTerms],
+    ['image', images],
   ] as const;
   for (const [kind, table] of tables) {
     const rows = await tx
@@ -4131,6 +4590,7 @@ async function clearDeleteStamp(
       tx.update(ingredients).set(LIVE).where(eq(ingredients.id, record.id)),
     tag: () =>
       tx.update(taxonomyTerms).set(LIVE).where(eq(taxonomyTerms.id, record.id)),
+    image: () => tx.update(images).set(LIVE).where(eq(images.id, record.id)),
   } as const;
   await single[record.kind]();
   back.add(record.kind, 1);
@@ -4167,10 +4627,16 @@ async function restoreBlockedBy(
     `Restore that first: ${restoreCall(parent.address)}.${extra}`;
 
   switch (record.kind) {
-    // No parent. A recipe, an ingredient and a tag stand on their own.
+    // No parent. A recipe, an ingredient and a tag stand on their own — and
+    // so does an image, which is the point of it being a record rather than
+    // a column. One picture can hang on a recipe, an ingredient and a tag at
+    // the same time, because what those rows hold is an ADDRESS and not a
+    // foreign key. It therefore belongs to none of them, is never cascaded
+    // to by any of them, and is restored on its own.
     case 'recipe':
     case 'ingredient':
     case 'tag':
+    case 'image':
       return null;
 
     case 'revision': {
@@ -4607,6 +5073,30 @@ export async function deleteRecord(
             .set(stamp)
             .where(and(isNull(notes.deletedAt), eq(notes.id, target.id)))
             .returning({ id: notes.id }),
+        );
+        break;
+      }
+
+      /**
+       * The simplest branch in this function, and deliberately so. An image
+       * cascades to nothing and nothing cascades to it.
+       *
+       * It also rewrites nothing. Every row that points at this picture
+       * holds `/images/<id>` in a TEXT column — a recipe, an ingredient, a
+       * tag, a run, a step inside a stored version — and none of them is
+       * touched. `/images/[id]` reads `images_live`, so all of those go dark
+       * the moment this row is stamped, and all of them come back whole when
+       * it is cleared. That is the whole reason the stored address is ours
+       * and not the blob's: the alternative was a delete that edited
+       * versions people cooked from in order to hide a photograph.
+       */
+      case 'image': {
+        await stampRoot(
+          await tx
+            .update(images)
+            .set(stamp)
+            .where(and(isNull(images.deletedAt), eq(images.id, target.id)))
+            .returning({ id: images.id }),
         );
         break;
       }

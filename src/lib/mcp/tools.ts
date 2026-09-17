@@ -53,6 +53,8 @@ import {
   updateRecipeShape,
   updateRevisionSchema,
   updateRevisionShape,
+  uploadImageSchema,
+  uploadImageShape,
   CATEGORY_TYPES,
   upsertIngredientSchema,
   upsertIngredientShape,
@@ -99,8 +101,19 @@ import {
   updateRevision,
   upsertIngredient,
   upsertCategory,
+  storeImage,
 } from '@/lib/queries/write';
 import type { WriteResult } from '@/lib/queries/write';
+import {
+  decodeBase64,
+  ImageRejected,
+  processImage,
+} from '@/lib/images/process';
+import {
+  BlobNotConfigured,
+  isConfigured as blobConfigured,
+  putImage,
+} from '@/lib/images/blob';
 import { issueReportingConfigured, issueToken } from '@/lib/github/config';
 import { createGitHubIssues } from '@/lib/github/client';
 import { ReportFailedError, submitReport } from '@/lib/github/report';
@@ -212,6 +225,7 @@ const KIND_WORDS: Record<DeletableKind, readonly [string, string]> = {
   experiment: ['run', 'runs'],
   ingredient: ['ingredient', 'ingredients'],
   tag: ['tag', 'tags'],
+  image: ['image', 'images'],
 };
 
 /** "1 version, 3 notes and 2 runs", or null when the list is empty. */
@@ -293,6 +307,14 @@ async function runTool<T>(
       err instanceof ConflictError ||
       err instanceof ScopeError ||
       err instanceof ReportFailedError ||
+      // A picture that is too big, is not a picture, or is a type this
+      // store does not take is a fact the caller can act on — it can send a
+      // smaller one. And a deployment with no blob store configured is a
+      // NORMAL state on a developer's machine and in CI, not a fault: the
+      // message says what to do instead. Both would otherwise read as "An
+      // internal error occurred", which tells an agent nothing.
+      err instanceof ImageRejected ||
+      err instanceof BlobNotConfigured ||
       err instanceof z.ZodError;
     if (err instanceof z.ZodError) {
       return fail(`Invalid input:\n${z.prettifyError(err)}`);
@@ -315,6 +337,17 @@ function warnIssueReportingIsOff(): void {
   warnedReportingIsOff = true;
   console.warn(
     '[mcp] GITHUB_ISSUE_TOKEN is not set — report_issue is not registered.',
+  );
+}
+
+/** The same notice for `upload_image`, and the same once-per-process rule. */
+let warnedImageUploadIsOff = false;
+
+function warnImageUploadIsOff(): void {
+  if (warnedImageUploadIsOff) return;
+  warnedImageUploadIsOff = true;
+  console.warn(
+    '[mcp] BLOB_READ_WRITE_TOKEN is not set — upload_image is not registered.',
   );
 }
 
@@ -1397,15 +1430,22 @@ export function registerTools(server: McpServer): void {
   // ───────────────────────────────────────────────────────────────────────
   // Delete and restore
   //
-  // TWO TOOLS FOR SIX KINDS, AND NOT TWELVE. The argument list of a delete
-  // is a kind and an address, which is the same for every record — so a pair
-  // per kind would be twelve definitions of roughly a hundred tokens each,
-  // about a thousand tokens on every `tools/list` in every conversation,
-  // forever, to carry a distinction the `kind` argument already carries. The
-  // enum is in the schema the model reads beside the name, so the six legal
-  // values are as visible as six registry entries would be, and strictly
-  // more visible for the question "what can I delete?", which is one enum
-  // instead of a scan of the whole list.
+  // TWO TOOLS FOR SEVEN KINDS, AND NOT FOURTEEN. The argument list of a
+  // delete is a kind and an address, which is the same for every record — so
+  // a pair per kind would be fourteen definitions of roughly a hundred
+  // tokens each, about fifteen hundred tokens on every `tools/list` in every
+  // conversation, forever, to carry a distinction the `kind` argument
+  // already carries. The enum is in the schema the model reads beside the
+  // name, so the seven legal values are as visible as seven registry entries
+  // would be, and strictly more visible for the question "what can I
+  // delete?", which is one enum instead of a scan of the whole list.
+  //
+  // `image` is the seventh, and issue #54 asked for a `delete_image` tool
+  // instead. This is that tool: the picture stops being visible everywhere
+  // at once and `restore_record` brings it back. A separate verb would have
+  // needed a `restore_image` beside it, and then two answers to "how do I
+  // get it back" — which is the mistake AGENTS.md § "It is not called
+  // archive" spends a table avoiding.
   //
   // The counter-argument is blast radius: `delete_record` is easier to call
   // by accident than `delete_tag`. It is bounded by construction. Every
@@ -1434,7 +1474,11 @@ export function registerTools(server: McpServer): void {
         'Name the kind, then say which record. Use `id` for any kind. Use ' +
         '`slug` for a recipe, a run or an ingredient. Use `slug` with ' +
         '`revisionNumber` for a version. Use `slug` with `categoryType` for ' +
-        'a tag. A note has only an `id`.\n\n' +
+        'a tag. A note and an image have only an `id`.\n\n' +
+        'Deleting an image takes it off every record that shows it, at ' +
+        'once — a recipe, a step, an ingredient, a tag and a run can all ' +
+        'name the same picture. Nothing else changes, and no version is ' +
+        'rewritten. A restore brings all of them back.\n\n' +
         'Some records take others with them. A recipe takes its versions, ' +
         'its notes and its runs. A version takes its notes. A run takes its ' +
         'notes. The result names what went with it, and one restore brings ' +
@@ -1543,6 +1587,155 @@ export function registerTools(server: McpServer): void {
         },
       ),
   );
+
+  // ───────────────────────────────────────────────────────────────────────
+  // Putting a picture in
+  // ───────────────────────────────────────────────────────────────────────
+
+  /**
+   * Issue #54, and the tool that closes the one gap an agent could not work
+   * around.
+   *
+   * Every image field in this connector took a web address, and nothing in
+   * the connector could make one. An agent that had just been sent a
+   * photograph of a finished dish held BYTES. It had no address for them and
+   * no way to mint one, so `heroImageUrl` was reachable in theory and
+   * unreachable in practice: the person had to leave the conversation, host
+   * the file somewhere, and come back with a link. Most pictures therefore
+   * never got added.
+   *
+   * REGISTERED ONLY WHEN THE BLOB STORE EXISTS, exactly as `report_issue` is
+   * registered only with a GitHub token, and for the same reason. The token
+   * is set in Production and Preview; a developer's machine and CI have
+   * none. A tool that is advertised and cannot work is worse than a tool
+   * that is absent, because an agent calls it, fails, and cannot tell a
+   * misconfiguration from a fault in its own arguments. `registerTools` runs
+   * per request inside a `force-dynamic` route, so this reads the live
+   * environment.
+   */
+  if (blobConfigured()) {
+    server.registerTool(
+      'upload_image',
+      {
+        title: 'Upload an image',
+        description:
+          'Put a picture into this repository and get back the address ' +
+          'every image field takes. Send the bytes base64 encoded. This is ' +
+          'the only way to fill heroImageUrl or a step imageUrl from a ' +
+          'conversation: those fields take an address, and this is what ' +
+          'makes one.\n\n' +
+          '`alt` is required. Write what the picture SHOWS, for a reader ' +
+          'who cannot see it: "Sliced biltong, dark red with a white fat ' +
+          'seam", not "a photo of biltong".\n\n' +
+          'The picture is resized and re-encoded. The longest edge becomes ' +
+          '2000 pixels and the stored file is WebP. A phone photograph is ' +
+          'fine as it comes off the phone. The limit is 15 MB once decoded, ' +
+          'and the refusal names it.\n\n' +
+          'Give `attachTo` to put the picture on a record in the same ' +
+          'call. One record only:\n' +
+          '- `{ recipeSlug }` — the hero image of a recipe.\n' +
+          '- `{ recipeSlug, stepPosition }` — one step of the version ' +
+          'people read now. The first step is 1. get_recipe reports each ' +
+          "step's `position` counting from 0, so add 1 to it.\n" +
+          '- `{ ingredientSlug }` — a picture of the raw ingredient.\n' +
+          '- `{ experimentSlug }` — the hero image of a run.\n' +
+          '- `{ experimentSlug, gallery: true }` — added to the end of the ' +
+          "run's pictures. A run takes several.\n" +
+          '- `{ tagSlug, categoryType }` — a picture for a tag.\n\n' +
+          'Leave `attachTo` out to store the picture and attach it later. ' +
+          'The result carries the address; send it to update_recipe, ' +
+          'upsert_ingredient, upsert_category or log_experiment.\n\n' +
+          'A HERO IMAGE MAKES NO VERSION. It belongs to the recipe and not ' +
+          'to a version, so setting it is a correction and not a revision. ' +
+          'A STEP PICTURE IS INSIDE A VERSION. Writing one changes what ' +
+          'every reader of that stored version sees. That is allowed — ' +
+          'adding a photograph is not a statement that the food changed — ' +
+          'but it is a correction to a version somebody cooked from, so be ' +
+          'sure the picture is of that version.\n\n' +
+          'Sending the same picture twice returns the first one. The ' +
+          'result says `deduplicated: true`, and the alt text and the ' +
+          'caption are updated to what you sent.\n\n' +
+          'To take a picture down, call delete_record with kind "image" ' +
+          'and the id this returns. It stops being visible everywhere at ' +
+          'once, and restore_record brings it back. There is no ' +
+          'delete_image: this repository has one delete and it is soft.',
+        inputSchema: uploadImageShape,
+      },
+      async (args, extra) =>
+        runTool(
+          extra as AuthCtx,
+          'upload_image',
+          // The audit rule: identifying primitives only. `data` is the image
+          // itself and `alt` and `caption` are free-form text the caller
+          // wrote, so none of the three is logged. What is left says which
+          // record was touched, which is what the row is for.
+          {
+            mimeType: args.mimeType,
+            bytes: typeof args.data === 'string' ? args.data.length : 0,
+            recipeSlug: args.attachTo?.recipeSlug,
+            stepPosition: args.attachTo?.stepPosition,
+            ingredientSlug: args.attachTo?.ingredientSlug,
+            experimentSlug: args.attachTo?.experimentSlug,
+            gallery: args.attachTo?.gallery,
+            tagSlug: args.attachTo?.tagSlug,
+            categoryType: args.attachTo?.categoryType,
+          },
+          async (principal) => {
+            requireWrite(principal);
+            const input = uploadImageSchema.parse(args);
+
+            const raw = decodeBase64(input.data);
+            const processed = await processImage(raw, input.mimeType);
+
+            // THE BLOB IS WRITTEN BEFORE THE ROW, and the order is the only
+            // one that fails safely. A row naming a blob that was never
+            // written is a picture that 404s for good; a blob with no row is
+            // an object nobody can reach, which costs storage and nothing
+            // else. The checksum makes the second case self-healing: the
+            // next upload of the same bytes writes the same key and the row
+            // lands then.
+            const stored = await putImage(processed.data, processed.checksum);
+
+            const result = await storeImage({
+              blobUrl: stored.url,
+              blobPathname: stored.pathname,
+              mimeType: processed.mimeType,
+              alt: input.alt,
+              caption: input.caption,
+              width: processed.width,
+              height: processed.height,
+              bytes: processed.bytes,
+              checksum: processed.checksum,
+              attachTo: input.attachTo,
+            });
+
+            return {
+              ...result,
+              message: [
+                result.deduplicated
+                  ? 'This picture was already stored, so it was not stored ' +
+                    'again. The address is the same one as before.'
+                  : `Stored. ${result.width}×${result.height}, ` +
+                    `${Math.round(result.bytes / 1024)} kB.`,
+                ...(processed.resized
+                  ? [
+                      'It was made smaller to fit 2000 pixels on its longest edge.',
+                    ]
+                  : []),
+                result.attachedTo
+                  ? `It is now ${result.attachedTo}.`
+                  : `It is not on any record yet. Send url "${result.url}" to ` +
+                    'update_recipe, upsert_ingredient, upsert_category or ' +
+                    'log_experiment.',
+                `To take it down: delete_record { kind: "image", id: "${result.id}" }.`,
+              ].join(' '),
+            };
+          },
+        ),
+    );
+  } else {
+    warnImageUploadIsOff();
+  }
 
   // ───────────────────────────────────────────────────────────────────────
   // Reporting a fault

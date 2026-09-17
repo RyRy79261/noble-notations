@@ -35,7 +35,8 @@ export default tseslint.config(
   /**
    * THE READ PATH MAY NOT NAME A TABLE THAT HOLDS DELETED ROWS.
    *
-   * Six tables carry a soft delete and each has a `*_live` view over it that
+   * Seven tables carry a soft delete and each has a `*_live` view over it
+   * that
    * is `WHERE deleted_at IS NULL`. A read that names the base table by
    * mistake publishes a record somebody deleted, and it does it silently:
    * nothing throws, the page renders, and the row is simply back.
@@ -73,6 +74,7 @@ export default tseslint.config(
                 'experiments',
                 'ingredients',
                 'taxonomyTerms',
+                'images',
               ],
               message:
                 'Read from the *Live views. The base table includes deleted ' +
@@ -83,7 +85,7 @@ export default tseslint.config(
           /*
            * `paths` matches the LITERAL specifier, so it refuses
            * `@/db/schema` and passes `../../db/schema` — the same module,
-           * the same six tables, and `pnpm lint` and `pnpm typecheck` both
+           * the same seven tables, and `pnpm lint` and `pnpm typecheck` both
            * green. A rule this file, `read.ts` and AGENTS.md all describe as
            * something a new query CANNOT get past has to hold for every
            * spelling of the module, so the relative ones are matched as a
@@ -99,6 +101,7 @@ export default tseslint.config(
                 'experiments',
                 'ingredients',
                 'taxonomyTerms',
+                'images',
               ],
               message:
                 'Read from the *Live views. The base table includes deleted ' +

@@ -43,6 +43,23 @@ import 'server-only';
  * predicate here costs this module nothing.
  */
 import { issueReportingConfigured } from '@/lib/github/config';
+/**
+ * The second conditional capability, and it works exactly like the first.
+ *
+ * `upload_image` is registered only when `BLOB_READ_WRITE_TOKEN` is set —
+ * Production and Preview have it, a developer's machine and CI do not. So
+ * every sentence of this guide that tells an agent to call it is included by
+ * the same predicate the registration uses, for the reason the header gives
+ * about `report_issue`: teaching a tool the registry does not carry sends an
+ * agent to a tool-not-found error.
+ *
+ * It also moves a COUNT, which `report_issue` does not: `upload_image` is a
+ * write tool, so the sentence naming how many write tools there are is
+ * fifteen or sixteen depending on this. `e2e/auth-guide.spec.ts` measures
+ * that against the live registry and fails on a mismatch, which is how the
+ * number was caught being wrong before.
+ */
+import { isConfigured as imageUploadConfigured } from '@/lib/images/blob';
 
 const INSTRUCTIONS_HEAD = `
 Noble Notations is a cooking store that keeps versions.
@@ -93,6 +110,13 @@ same thing each time. A cook reads this text, and many cooks do not read
 English as a first language. Call get_started for the full rule.
 `.trim();
 
+const INSTRUCTIONS_IMAGES = `
+You can put a picture in this store. Call upload_image. Send the bytes
+base64 encoded and write the alt text. The tool gives back an address. Every
+image field takes that address. Give attachTo to put the picture on a record
+in the same call.
+`.trim();
+
 const INSTRUCTIONS_REPORTING = `
 If a tool does the wrong thing, call report_issue. Give the tool name, the
 payload that you sent, and the response that came back. Copy each one
@@ -120,18 +144,44 @@ Call get_started to read the full guide.
  */
 export function serverInstructions(
   reportingConfigured = issueReportingConfigured(),
+  uploadConfigured = imageUploadConfigured(),
 ): string {
   return [
     INSTRUCTIONS_HEAD,
+    ...(uploadConfigured ? [INSTRUCTIONS_IMAGES] : []),
     ...(reportingConfigured ? [INSTRUCTIONS_REPORTING] : []),
     INSTRUCTIONS_TAIL,
   ].join('\n\n');
 }
 
-const SCOPES_WITHOUT_REPORTING =
-  'The read tools need the scope noble-notations:read. The fifteen write ' +
-  'tools also need noble-notations:write. The system checks the scope on ' +
-  'each call.';
+/**
+ * The write-tool count, in the two states it has.
+ *
+ * `upload_image` is a write tool and is registered only where the blob store
+ * is configured, so this number is not a constant. It is spelled out rather
+ * than computed because the registry is built in `tools.ts` and importing it
+ * here would make the guide depend on the thing that documents it;
+ * `e2e/auth-guide.spec.ts` counts the live registry and asserts the word,
+ * which is the check that matters.
+ */
+function writeToolCountWord(uploadConfigured: boolean): string {
+  return uploadConfigured ? 'sixteen' : 'fifteen';
+}
+
+function scopesParagraph(
+  uploadConfigured: boolean,
+  reportingConfigured: boolean,
+): string {
+  const head =
+    'The read tools need the scope noble-notations:read. The ' +
+    `${writeToolCountWord(uploadConfigured)} write tools also need ` +
+    'noble-notations:write.';
+  return reportingConfigured
+    ? `${head} list_deleted is a read tool, so it needs the read scope ` +
+        'only. The system checks the scope on each call. report_issue needs ' +
+        'no extra scope. Each connector can file a report.'
+    : `${head} The system checks the scope on each call.`;
+}
 
 const GUIDE = {
   whatThisIs:
@@ -205,8 +255,12 @@ const GUIDE = {
    * parallel produce.
    */
   deletingARecord:
-    'You can delete a recipe, a version, a note, a run, an ingredient and a ' +
-    'tag. Call delete_record. Name the kind, then say which record.\n\n' +
+    'You can delete a recipe, a version, a note, a run, an ingredient, a ' +
+    'tag and an image. Call delete_record. Name the kind, then say which ' +
+    'record.\n\n' +
+    'An image is named by its id and nothing else. Deleting one takes it ' +
+    'off every record that shows it, at once. Nothing else changes, and no ' +
+    'version is rewritten.\n\n' +
     'A delete is not destruction. The record stops being visible: the site ' +
     'does not show it and the read tools do not return it. The record ' +
     'itself stays. Call restore_record to bring it back, with the same ' +
@@ -450,11 +504,20 @@ const GUIDE = {
     'add_mass_flow. A version takes one figure and then refuses another. ' +
     'To correct a figure that is wrong, call update_revision.',
 
+  /**
+   * Replaced when `upload_image` is registered — see `IMAGES_WITH_UPLOAD`.
+   *
+   * This is the text for a deployment with no blob store, and it is the
+   * text this section held for the whole life of the project before issue
+   * #54: give an address, because there is nothing here that can make one.
+   */
   images:
     'Images are not necessary. Give a web address for each image. This ' +
-    'store keeps notes, not image files. A recipe can have heroImageUrl ' +
-    'and heroImageAlt. Each step can have imageUrl and imageAlt for the ' +
-    'correct appearance at that stage. Always write the alt text.',
+    'deployment cannot store an image file, so the address must already ' +
+    'exist on the web. A recipe can have heroImageUrl and heroImageAlt. ' +
+    'Each step can have imageUrl and imageAlt for the correct appearance ' +
+    'at that stage. An ingredient, a tag and a run can each have ' +
+    'heroImageUrl and heroImageAlt. Always write the alt text.',
 
   shoppingList:
     'build_shopping_list joins two or more recipes into one list. The list ' +
@@ -499,17 +562,18 @@ const GUIDE = {
    * read scope already grants an archived recipe, and `ALLOWED_EMAILS`
    * means one administrator approved every connector that can ask.
    *
-   * SEVEN OTHER PLACES STATE A COUNT and must move together: this string,
-   * `SCOPES_WITHOUT_REPORTING` above, four docs in `src/app/connect/page.tsx`
-   * and the total in `docs/mcp-connector.md`. The registry holds twenty-eight
-   * tools: twelve read, fifteen write, and `report_issue` in neither scope.
+   * SIX OTHER PLACES STATE A COUNT and must move together: `scopesParagraph`
+   * above, four docs in `src/app/connect/page.tsx` and the total in
+   * `docs/mcp-connector.md`. The registry holds twenty-nine tools: twelve
+   * read, sixteen write, and `report_issue` in neither scope.
+   *
+   * TWO OF THOSE ARE CONDITIONAL, so the count is a range and not a number.
+   * `report_issue` needs `GITHUB_ISSUE_TOKEN` and is in neither scope, so it
+   * moves the total and no scope count. `upload_image` needs
+   * `BLOB_READ_WRITE_TOKEN` and IS a write tool, so it moves both — which is
+   * why the sentence below is built rather than written out.
    */
-  scopes:
-    'The read tools need the scope noble-notations:read. The fifteen write ' +
-    'tools also need noble-notations:write. list_deleted is a read tool, so ' +
-    'it needs the read scope only. The system checks the scope on each ' +
-    'call. report_issue needs no extra scope. Each connector can file a ' +
-    'report.',
+  scopes: scopesParagraph(true, true),
 
   /**
    * The short version of this is in SERVER_INSTRUCTIONS too, and that
@@ -601,29 +665,79 @@ const GUIDE = {
     'session, while you still know what the words mean.',
 } as const;
 
-export type AgentGuide =
-  | typeof GUIDE
-  | (Omit<typeof GUIDE, 'reportingAFault' | 'workflow' | 'scopes'> & {
-      workflow: string[];
-      scopes: string;
-    });
+/**
+ * What the `images` section says once there is somewhere to put the bytes.
+ *
+ * Issue #54 is the whole reason this variant exists. The old text told an
+ * agent to give a web address for a picture it was holding as bytes, which
+ * is advice it could not follow — so the field went unused and most pictures
+ * were never added. This says what to call instead.
+ */
+const IMAGES_WITH_UPLOAD =
+  'You can put a picture in this store. Call upload_image. Send the bytes ' +
+  'base64 encoded in data, say what they are in mimeType, and write the alt ' +
+  'text. The tool gives back an address. Every image field in this store ' +
+  'takes that address.\n\n' +
+  'Always write the alt text. Say what the picture shows, for a reader who ' +
+  'cannot see it. Write "Sliced biltong, dark red with a white fat seam", ' +
+  'not "a photo of biltong".\n\n' +
+  'Give attachTo to put the picture on a record in the same call. Name one ' +
+  'record: {recipeSlug} for the hero image of a recipe, {recipeSlug, ' +
+  'stepPosition} for one step, {ingredientSlug} for an ingredient, ' +
+  '{experimentSlug} for a run, {experimentSlug, gallery: true} to add to ' +
+  'the pictures of a run, or {tagSlug, categoryType} for a tag. Leave ' +
+  'attachTo out to store the picture and use the address later.\n\n' +
+  'The first step is stepPosition 1. get_recipe reports the position of a ' +
+  'step counting from 0. Add 1 to that number.\n\n' +
+  'A run takes several pictures. Every other record takes one. A second ' +
+  'upload to the same record replaces the picture that is there. A second ' +
+  'upload to the pictures of a run adds to them.\n\n' +
+  'A hero image belongs to the recipe and not to a version, so it makes no ' +
+  'version. A step picture is inside a stored version, so writing one ' +
+  'changes what every reader of that version sees. This is allowed. A ' +
+  'picture is not a change to the food. Be sure the picture is of that ' +
+  'version.\n\n' +
+  'The tool makes the picture smaller and stores it as WebP. The longest ' +
+  'edge becomes 2000 pixels. A photograph from a phone is fine as it is. ' +
+  'The limit is 15 MB after decoding.\n\n' +
+  'The same picture sent twice gives the same address back. Nothing is ' +
+  'stored a second time.\n\n' +
+  'To take a picture down, call delete_record with kind "image" and the id. ' +
+  'It stops being visible on every record that shows it. restore_record ' +
+  'brings it back. There is no delete_image. This store has one delete and ' +
+  'it is soft.';
+
+export type AgentGuide = Omit<
+  typeof GUIDE,
+  'reportingAFault' | 'workflow' | 'scopes'
+> & {
+  reportingAFault?: string;
+  workflow: readonly string[];
+  scopes: string;
+};
 
 /**
  * The full guide, as `get_started` returns it.
  *
- * The three places that name `report_issue` go together when the tool is not
- * registered. A guide that teaches a tool the registry does not carry sends
- * an agent to a tool-not-found error at the moment it most needs to be
- * believed.
+ * TWO CAPABILITIES ARE CONDITIONAL and both are handled the same way. The
+ * three places that name `report_issue` go together when
+ * `GITHUB_ISSUE_TOKEN` is missing, and the `images` section and the write
+ * count go together when `BLOB_READ_WRITE_TOKEN` is. A guide that teaches a
+ * tool the registry does not carry sends an agent to a tool-not-found error
+ * at the moment it most needs to be believed.
  */
 export function agentGuide(
   reportingConfigured = issueReportingConfigured(),
+  uploadConfigured = imageUploadConfigured(),
 ): AgentGuide {
-  if (reportingConfigured) return GUIDE;
-  const { reportingAFault: _reportingAFault, ...rest } = GUIDE;
+  const { reportingAFault, ...rest } = GUIDE;
   return {
     ...rest,
-    workflow: GUIDE.workflow.filter((step) => !step.includes('report_issue')),
-    scopes: SCOPES_WITHOUT_REPORTING,
+    ...(reportingConfigured ? { reportingAFault } : {}),
+    workflow: reportingConfigured
+      ? GUIDE.workflow
+      : GUIDE.workflow.filter((step) => !step.includes('report_issue')),
+    images: uploadConfigured ? IMAGES_WITH_UPLOAD : GUIDE.images,
+    scopes: scopesParagraph(uploadConfigured, reportingConfigured),
   };
 }

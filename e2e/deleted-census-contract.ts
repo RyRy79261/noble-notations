@@ -47,6 +47,21 @@ export interface CensusFixture {
   /** The deleted ingredient's name as free text, for the same reason. */
   binIngredientName: string;
   /**
+   * Two uploaded pictures, addressed by id because an image has no slug.
+   *
+   * `getImage` is the read behind `/images/[id]`, and it is the mechanism
+   * that makes a soft-deleted picture disappear from every record naming it
+   * — a recipe, a step, an ingredient, a tag and a run all hold the same
+   * `/images/<id>` text. So it needs the same two-sided fixture every other
+   * read here has: one picture that stays and one that goes.
+   *
+   * The sentinel rides in the ALT TEXT, which is the only free-text field an
+   * image carries. That is a second argument for `upload_image` demanding
+   * one.
+   */
+  binImage: string;
+  keepImage: string;
+  /**
    * Strings that must appear in NO read result.
    *
    * The sentinel AND the deleted slugs. `listRecipeSlugs` returns slugs and

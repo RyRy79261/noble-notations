@@ -88,10 +88,10 @@ string, so a `redirect_uri` still in flight survives the rename.
 
 ## Scopes
 
-| Scope                   | Grants                                                                                                                                                                                                                                                                    |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `noble-notations:read`  | Every read tool, including `list_deleted`                                                                                                                                                                                                                                 |
-| `noble-notations:write` | `create_recipe`, `revise_recipe`, `backfill_revision`, `add_note`, `add_mass_flow`, `describe_mechanism`, `upsert_ingredient`, `upsert_category`, `log_experiment`, `reattach_note`, `update_recipe`, `update_revision`, `update_note`, `delete_record`, `restore_record` |
+| Scope                   | Grants                                                                                                                                                                                                                                                                                    |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `noble-notations:read`  | Every read tool, including `list_deleted`                                                                                                                                                                                                                                                 |
+| `noble-notations:write` | `create_recipe`, `revise_recipe`, `backfill_revision`, `add_note`, `add_mass_flow`, `describe_mechanism`, `upsert_ingredient`, `upsert_category`, `log_experiment`, `reattach_note`, `update_recipe`, `update_revision`, `update_note`, `delete_record`, `restore_record`, `upload_image` |
 
 **`list_deleted` is a read, and it is in the read scope.** It reports rows
 the public site does not show, which is why that looks wrong at first
@@ -121,9 +121,20 @@ Read: `get_started`, `search_recipes`, `get_recipe`, `list_categories`,
 Write: `create_recipe`, `revise_recipe`, `backfill_revision`, `add_note`,
 `add_mass_flow`, `describe_mechanism`, `upsert_ingredient`,
 `upsert_category`, `log_experiment`, `reattach_note`, `update_recipe`,
-`update_revision`, `update_note`, `delete_record`, `restore_record`.
+`update_revision`, `update_note`, `delete_record`, `restore_record`,
+`upload_image`.
 
 Neither: `report_issue`.
+
+**Two of those are conditional, and the count is therefore a range.**
+`report_issue` is registered only when `GITHUB_ISSUE_TOKEN` is set and
+`upload_image` only when `BLOB_READ_WRITE_TOKEN` is; both are set in
+Production and Preview and neither is on a developer's machine. A tool that
+is advertised and cannot work is worse than one that is absent, because an
+agent calls it, fails, and cannot tell a misconfiguration from a fault in
+its own arguments. The guide follows the same predicates — `get_started`
+describes `upload_image` only where it exists, and the write-tool count in
+its `scopes` section is sixteen or fifteen accordingly.
 
 `list_experiments`, `get_experiment` and `log_experiment` speak of
 experiments; the website calls the same record a batch log and serves it at
@@ -131,13 +142,88 @@ experiments; the website calls the same record a batch log and serves it at
 mapping, because one that knew only the tool word reported the page as
 missing.
 
-Twenty-eight tools. `/connect` and `TOOLS` in `e2e/mcp-contract.spec.ts` name
-the same set; a tool that appears or disappears without all three moving is
-drift, and that test is the line that says so.
+Twenty-nine tools, fully configured. `/connect` and `TOOLS` in
+`e2e/mcp-contract.spec.ts` name the same set; a tool that appears or
+disappears without all three moving is drift, and that test is the line that
+says so.
 
 Tool descriptions are the only instructions the model gets, and they are
 written to push toward revising rather than duplicating — `create_recipe`
 says to search first and reach for `revise_recipe` if the dish exists.
+
+### Images, and why the stored address is ours
+
+`upload_image` is the answer to issue #54, and the shape of the answer is
+worth writing down because it is not the obvious one.
+
+Every image field in this repository — `recipes.hero_image_url`,
+`recipe_steps.image_url`, and the three added with this tool — takes an
+ADDRESS, and nothing in the connector could make one. An agent that had just
+been sent a photograph held bytes. It had no address for them and no way to
+mint one, so the field was reachable in theory and unreachable in practice:
+the person had to leave the conversation, host the file somewhere and come
+back with a link. Most pictures were therefore never added.
+
+The bytes go to Vercel Blob. The ROW goes in `images`, the seventh
+soft-deletable table, and what a recipe stores is `/images/<id>` — this
+site's own address, never the blob's.
+
+That last part is the decision everything else follows from. The reference
+from a recipe to a picture is a text column and not a foreign key, and it
+always was, because a recipe may legitimately point at a picture on somebody
+else's site. So deleting an image row can do nothing about the rows naming
+it. If the stored value were the blob address, a deleted picture would keep
+rendering on every page that referenced it, and the only fix would be a
+delete that rewrote rows across four tables and inside stored revisions — a
+cascade that edits versions people cooked from, in order to hide a
+photograph. Serving from `/images/[id]` instead makes that cascade
+unnecessary: the route reads `images_live`, so a deleted row is a 404
+everywhere at once and a restore brings every reference back whole.
+
+The address is stored RELATIVE, for the reason the guide keeps its own
+addresses relative: `NEXT_PUBLIC_SITE_URL` is set nowhere here, so an
+absolute address built at write time would name the production host and be
+wrong on every preview deployment — permanently, in a stored row.
+
+What this does not buy: a Vercel blob is public, the SDK has no other access
+mode, so somebody who kept the blob address can still fetch a deleted
+picture. The path carries a random suffix and the `images` row is the only
+place it is written down, so "deleted" here means the picture leaves the
+site and the tools, not that the bytes are destroyed. Nothing in this
+repository destroys bytes, and `restore_record` is exact because of it.
+
+**There is no `delete_image`, and the issue asked for one.** This repository
+has one delete and it is soft, so `image` is the seventh kind
+`delete_record` and `restore_record` take. A second delete verb would have
+needed a second undo beside it, and then two answers to "how do I get it
+back" — which is the confusion AGENTS.md § _It is not called archive_ spends
+a table avoiding. `upload_image` says so in its own description, and
+`e2e/auth-guide.spec.ts` carries `delete_image` in its `NOT_TOOLS` set so
+that sentence is allowed to name a tool that does not exist.
+
+Four smaller decisions, each of which the issue left open:
+
+- **Size.** Both, not either. Anything over 15 MB decoded is refused and the
+  refusal names the limit; everything under it is resized to 2000 pixels on
+  the longest edge and re-encoded to WebP, without comment. Refusing alone
+  puts the work back on the agent, which is the friction the issue was filed
+  about; resizing alone means an unbounded decode, so there is a pixel
+  ceiling as well as a byte one.
+- **Revisions.** A hero image is on the recipe and not on a version, so
+  setting one makes no version and moves no number. A step picture IS inside
+  a stored version, and writing one is a correction to it — allowed, because
+  a photograph is not a statement that the food changed, but it changes what
+  every reader of that version sees. Both tool descriptions say so.
+- **Replacement.** A second upload to a record replaces its picture; a
+  second upload to a run's gallery appends. `upload_image` is the one path
+  in the write layer that appends to a list rather than replacing it, and it
+  has to be: an agent holding one new photograph does not hold the other
+  four.
+- **De-duplication.** By the sha256 of the ENCODED result. A person sends
+  the same photograph twice in a conversation more often than not, and two
+  rows would mean two blobs, two bin entries and two ids for one picture.
+  The second call still attaches, and still updates the alt text: only the
+  bytes were already known.
 
 ### The three tools that reach a stored record
 
@@ -270,7 +356,7 @@ The two copies are held together by `e2e/writing-style.spec.ts`, which
 enumerates the rules and fails naming the one that drifted.
 
 Resources are not tools and they do not move the tool count: the registry
-still holds twenty-eight. `resources/list` advertises this document and
+still holds twenty-nine. `resources/list` advertises this document and
 `resources/read` serves it.
 
 ## Reporting a fault

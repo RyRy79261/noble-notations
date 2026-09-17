@@ -92,6 +92,7 @@ const TOOLS = [
   'update_note',
   'update_recipe',
   'update_revision',
+  'upload_image',
   'upsert_category',
   'upsert_ingredient',
 ];

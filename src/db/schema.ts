@@ -65,7 +65,7 @@ const touched = () =>
   timestamp('updated_at', { withTimezone: true }).defaultNow().notNull();
 
 /**
- * The four columns a DELETE writes, on the six tables that carry a record.
+ * The four columns a DELETE writes, on the seven tables that carry a record.
  *
  * A delete here is soft: the row stays, it stops being visible, and
  * `restore_record` brings it back. The purpose of this repository is an
@@ -226,6 +226,12 @@ export const taxonomyTerms = pgTable(
     slug: text('slug').notNull(),
     label: text('label').notNull(),
     description: text('description'),
+    /**
+     * One picture for the tag's own page. See `images` below for what these
+     * two columns hold: an address this site serves, not a blob URL.
+     */
+    heroImageUrl: text('hero_image_url'),
+    heroImageAlt: text('hero_image_alt'),
     /** Self-referential parent for hierarchy, e.g. Sichuan → Chinese. */
     parentId: uuid('parent_id').references(
       (): AnyPgColumn => taxonomyTerms.id,
@@ -291,6 +297,12 @@ export const ingredients = pgTable(
     plural: text('plural'),
     category: ingredientCategory('category').notNull().default('other'),
     description: text('description'),
+    /**
+     * A picture of the raw ingredient. Two chillies are told apart faster by
+     * a photograph than by any description, which is why this exists.
+     */
+    heroImageUrl: text('hero_image_url'),
+    heroImageAlt: text('hero_image_alt'),
     /**
      * Grams per millilitre, where known. Lets a volume measurement in one
      * recipe be compared against a weight in another — the biltong logs are
@@ -975,6 +987,13 @@ export const experiments = pgTable(
     outcome: text('outcome'),
     costTotal: numeric('cost_total', { precision: 12, scale: 2 }),
     currency: text('currency').default('EUR'),
+    /**
+     * The one picture that stands for the run. A run also takes a LIST —
+     * `experiment_images` below — because a run is the record that most
+     * needs photographs and one run produces several.
+     */
+    heroImageUrl: text('hero_image_url'),
+    heroImageAlt: text('hero_image_alt'),
     createdAt: now(),
     updatedAt: touched(),
     ...softDelete(),
@@ -1009,6 +1028,41 @@ export const experimentItems = pgTable(
 );
 
 /**
+ * The pictures of a run, in the order they should be read.
+ *
+ * A CHILD, and it follows the rule every other child here follows: no id of
+ * its own worth addressing, no soft delete, and no per-row update. A caller
+ * replaces the list by sending the parent's whole list, and its lifetime is
+ * its parent's. `upload_image` appending one row is the single exception the
+ * write layer makes, and it is an append rather than a rewrite for the
+ * reason the tool description gives: a caller holding one photograph does
+ * not hold the other five.
+ *
+ * `image_url` and not an `images.id` foreign key, deliberately. The column
+ * holds the same kind of value `recipes.hero_image_url` has always held — an
+ * address — so a run can carry a picture that was never uploaded here, and
+ * the site renders both without knowing which is which.
+ */
+export const experimentImages = pgTable(
+  'experiment_images',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    experimentId: uuid('experiment_id')
+      .notNull()
+      .references(() => experiments.id, { onDelete: 'cascade' }),
+    position: integer('position').notNull(),
+    imageUrl: text('image_url').notNull(),
+    imageAlt: text('image_alt'),
+    caption: text('caption'),
+    createdAt: now(),
+  },
+  (t) => [
+    uniqueIndex('uq_experiment_image_position').on(t.experimentId, t.position),
+    index('idx_experiment_images_experiment').on(t.experimentId),
+  ],
+);
+
+/**
  * A single recorded number. Deliberately generic (metric/value/unit) rather
  * than a column per thing measured — the biltong logs alone track gross
  * weight, net weight, dried weight, days to cut and per-piece cost, and the
@@ -1035,6 +1089,97 @@ export const experimentObservations = pgTable(
     index('idx_observations_experiment').on(t.experimentId),
     index('idx_observations_item').on(t.itemId),
     index('idx_observations_metric').on(t.metric),
+  ],
+);
+
+// ─────────────────────────────────────────────────────────────────────────
+// 6. Images
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Every picture this repository stores, and the SEVENTH soft-deletable table.
+ *
+ * Before this existed, `recipes.hero_image_url` and `recipe_steps.image_url`
+ * took a web address and nothing could make one. An agent in a chat session
+ * holds a photograph as bytes; it has no address for it and no way to mint
+ * one, so the field was reachable in theory and unreachable in practice.
+ * That is issue #54. `upload_image` is the answer and this is where it lands
+ * the row.
+ *
+ * **THE BYTES ARE NOT HERE.** They go to Vercel Blob, and `blob_url` is
+ * where they went. This row is the registry: what was stored, what it looks
+ * like, who it belongs to, and whether it is still visible. Two reasons it is
+ * a row and not just a blob. A blob store has no `deleted_at`, so a picture
+ * could never take part in the delete-and-restore rule the rest of the
+ * repository runs on; and a blob nobody has a record of is the orphan the
+ * issue asked us not to create.
+ *
+ * **What a recipe stores is `/images/<id>`, NOT `blob_url`.** This is the
+ * decision the whole design turns on, so it is written down here rather than
+ * left to be inferred from the route handler.
+ *
+ * A soft delete has to make a record stop being visible. The reference from
+ * a recipe to its picture is a TEXT COLUMN and not a foreign key — it always
+ * was, because a recipe may legitimately point at a picture on somebody
+ * else's site. So deleting an image row can do nothing about a recipe that
+ * names it. If the stored value were the blob address, a deleted picture
+ * would keep rendering on every page that referenced it, and the only fix
+ * would be a delete that rewrote rows across four tables and inside stored
+ * revisions — a cascade that edits versions people cooked from, to hide a
+ * photograph.
+ *
+ * Serving the picture from our own address instead makes that cascade
+ * unnecessary. `/images/<id>` reads `images_live`; a deleted row is a 404;
+ * every reference to it goes dark at once and comes back whole on a restore,
+ * and no revision is touched. The blob address stays an implementation
+ * detail of this table.
+ *
+ * **What that does not buy.** A Vercel blob is public — the SDK has no other
+ * access mode — so anyone who kept the `blob_url` can still fetch the file
+ * after the row is deleted. The path is unguessable (Vercel appends a random
+ * suffix) and this table is the only place the address is written down, so
+ * "deleted" here means the picture leaves the site and the tools, not that
+ * the bytes are destroyed. Nothing in this repository destroys bytes, and
+ * `restore_record` is exact because of it.
+ *
+ * `checksum` is the sha256 of the stored bytes, and it is what makes a
+ * second upload of the same photograph return the first row instead of
+ * paying for the same file twice.
+ */
+export const images = pgTable(
+  'images',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** Where the bytes actually are. Never rendered; `/images/<id>` is. */
+    blobUrl: text('blob_url').notNull(),
+    /** The blob's pathname, which is what deleting it from the store needs. */
+    blobPathname: text('blob_pathname').notNull(),
+    /** Always the stored type, which is what came out of the re-encode. */
+    mimeType: text('mime_type').notNull(),
+    /**
+     * Required, and required at the tool as well. The guide has always said
+     * to write alt text; a column that allows null is a column that collects
+     * nulls.
+     */
+    alt: text('alt').notNull(),
+    caption: text('caption'),
+    width: integer('width').notNull(),
+    height: integer('height').notNull(),
+    bytes: integer('bytes').notNull(),
+    /** sha256 of the stored bytes. Unique, and that is the de-duplication. */
+    checksum: text('checksum').notNull(),
+    createdAt: now(),
+    updatedAt: touched(),
+    ...softDelete(),
+  },
+  (t) => [
+    uniqueIndex('uq_images_checksum').on(t.checksum),
+    index('idx_images_deleted')
+      .on(t.deletedAt.desc())
+      .where(sql`${t.deletedAt} IS NOT NULL`),
+    index('idx_images_deleted_event')
+      .on(t.deletedEventId)
+      .where(sql`${t.deletedEventId} IS NOT NULL`),
   ],
 );
 
@@ -1143,9 +1288,9 @@ export const mcpAuditLog = pgTable(
 //
 // One view per soft-deletable table, each the table minus its deleted rows.
 // `src/lib/queries/read.ts` selects from these and from nothing else, and
-// that is enforced rather than agreed: `eslint.config.mjs` bans the six base
-// tables from being imported into that file, so a new query CANNOT name one
-// and `pnpm lint` is a CI gate. A shared `and(live(t), …)` helper was the
+// that is enforced rather than agreed: `eslint.config.mjs` bans the seven
+// base tables from being imported into that file, so a new query CANNOT name
+// one and `pnpm lint` is a CI gate. A shared `and(live(t), …)` helper was the
 // other option and is weaker for one reason — a helper can be left out of a
 // new query, an import ban cannot.
 //
@@ -1177,4 +1322,14 @@ export const ingredientsLive = pgView('ingredients_live').as((qb) =>
 
 export const taxonomyTermsLive = pgView('taxonomy_terms_live').as((qb) =>
   qb.select().from(taxonomyTerms).where(isNull(taxonomyTerms.deletedAt)),
+);
+
+/**
+ * The seventh, and the one whose reader is a route handler rather than a
+ * page. `/images/[id]` selects from this, so deleting an image row is what
+ * makes every reference to it 404 at once — see `images` above for why the
+ * stored address is ours and not the blob's.
+ */
+export const imagesLive = pgView('images_live').as((qb) =>
+  qb.select().from(images).where(isNull(images.deletedAt)),
 );

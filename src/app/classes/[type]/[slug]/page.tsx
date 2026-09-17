@@ -12,6 +12,7 @@ import { SectionHead } from '@/components/f/section-label';
 import { Stat } from '@/components/f/stat';
 import { DatabaseNotice } from '@/components/database-notice';
 import { TermHierarchy } from '@/components/term-hierarchy';
+import { RecordImage } from '@/components/record-image';
 import {
   getTerm,
   listCategories,
@@ -362,6 +363,18 @@ export default async function TermPage({ params }: Params) {
               lede={data.term.description ?? undefined}
               ledeClassName="shell:max-w-160"
             />
+
+            {/* Inside the hero column and not across the full width: the
+                statistics sit beside it at 1280, and a picture spanning both
+                would push them down a screen. A technique is often easier to
+                show than to say, which is what this is for. */}
+            {data.term.heroImageUrl ? (
+              <RecordImage
+                url={data.term.heroImageUrl}
+                alt={data.term.heroImageAlt ?? null}
+                className="mt-6 shell:max-w-160"
+              />
+            ) : null}
           </div>
 
           <div className="flex w-full shrink-0 flex-row gap-5 shell:w-50 shell:flex-col shell:gap-6 shell:pt-2">

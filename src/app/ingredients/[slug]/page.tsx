@@ -12,6 +12,7 @@ import { PageHead, PageHero } from '@/components/f/page-head';
 import { SectionHead } from '@/components/f/section-label';
 import { Tag } from '@/components/f/tag';
 import { Stat } from '@/components/f/stat';
+import { RecordImage } from '@/components/record-image';
 import {
   CATEGORY_LABELS,
   cardinal,
@@ -168,6 +169,20 @@ export default async function IngredientPage({ params }: Params) {
           ledeClassName="shell:max-w-185"
           lede={ingredient.description ?? undefined}
         />
+
+        {/* Under the lede and above the ledger, because it is the fastest
+            way to answer the question this page is opened with: two dried
+            chillies have the same aisle, the same usual unit and almost the
+            same description, and do not look alike. Held to the lede's
+            measure so a 2000px picture does not become the widest thing on
+            the screen. */}
+        {ingredient.heroImageUrl ? (
+          <RecordImage
+            url={ingredient.heroImageUrl}
+            alt={ingredient.heroImageAlt}
+            className="shell:max-w-185"
+          />
+        ) : null}
 
         {/* The ledger. A `f-desk` band at 1280 and bare rows of statistics at
             360, where the design drops the ground entirely
