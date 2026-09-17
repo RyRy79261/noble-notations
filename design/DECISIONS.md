@@ -26,6 +26,7 @@ An entry that a later milestone settled says so in place.
 | D-14 | The site does not explain itself, and neither does a recipe          | Built after M7. The home page's fifth band is gone; the connector states the writing rule. |
 | D-15 | Delete is soft, it is called delete, and the flag goes down the tree | Decided by the owner, built on `feat/crud`. Six tables, six views, one event id.           |
 | D-16 | The reader gets a theme control, and it has three states             | Asked for by the owner. Built in the page foot: system, light, dark. R-CON-08 is reversed. |
+| D-17 | A variation is a recipe, not a revision and not a link               | Asked for by the owner. `recipes.variant_of_id`, a Variations panel, and `create_variant`. |
 
 Two things are still open at the end of the build, and
 `design/BUILD-PLAN.md` §6 carries both:
@@ -1186,3 +1187,145 @@ rules; `src/components/f/theme-toggle.tsx` is the control;
 delete the component and its use in `src/components/f/page-foot.tsx` — the
 `light-dark()` palette stands on its own and the site goes back to following
 the system alone.
+
+---
+
+## D-17 — A variation is a recipe, not a revision and not a link
+
+**Status:** Asked for by the repository owner. **Built.**
+**Date:** 2026-09-17
+**Touches:** `recipes.variant_of_id` and `recipes.variant_note` in
+`src/db/schema.ts`, `drizzle/0010_recipe_variants.sql`, `variantFamily` in
+`src/lib/queries/read.ts`, `resolveVariantParent` and `VARIANT_GRAPH_LOCK`
+in `src/lib/queries/write.ts`, the `create_variant` tool, D-05's table, and
+the fifth panel of C-13
+
+### The problem
+
+Dan dan noodles with shiitake instead of pork. The store had two places to
+put that and both were wrong.
+
+**`revise_recipe` is the tool an agent reaches for, and it is the expensive
+mistake.** A revision is the same dish made better, and it moves
+`current_revision_id` — so the pork version stops being what people read.
+Nobody finds out until they open the page looking for it. The owner's own
+words for why this is not a revision: _it is not a revision where there is
+refinement of the same attempted thing._
+
+**`recipe_links.kind = 'variant_of'` said the sentence and could not hold
+it.** It was one of five editorial edges, rendered as a bullet in a Related
+list. Three things a variation needs, and an edge in that table gives none
+of them:
+
+1. **At most one parent.** `uq_recipe_link` is unique on (from, to, kind),
+   so nothing stopped a recipe holding two `variant_of` rows and belonging
+   to two families at once.
+2. **No cycles.** Nothing read those edges as a tree, so nothing had to
+   refuse A variant_of B variant_of A. As a tree it is a page that hangs.
+3. **Surviving a list rewrite.** `applyLinks` replaces a recipe's whole
+   link list and `get_recipe` hides an edge whose target is deleted, so a
+   caller sending back exactly what it was shown dropped its own parentage.
+   That is the bug the link tables' own comment in `AGENTS.md` records, with
+   a whole panel and a breadcrumb to lose rather than one bullet.
+
+### What I chose
+
+**A variation is a RECIPE.** Its own slug, its own revisions, its own batch
+logs, its own variations. What is new is one column saying where it came
+from: `recipes.variant_of_id`, with `recipes.variant_note` for the line that
+says what differs.
+
+**It is structural, so it is a column and not a row in a link table.** At
+most one parent is the column itself. No cycles is `assertNoVariantCycle`
+plus a `variant_not_self` CHECK. Surviving a rewrite is `update_recipe`
+touching the field only when it is named — absent means leave it alone, a
+slug moves the recipe into that family, `null` makes it a dish of its own
+again. The four remaining link kinds are editorial remarks about two
+finished dishes and keep their wholesale-replace contract, which is right
+for what they are.
+
+**`create_variant` is a tool of its own, because the tool name is the
+question.** The store already splits `revise_recipe` from `update_recipe` on
+a question about the food, and this is the third answer to the same
+question:
+
+| The dish                     | The tool         |
+| ---------------------------- | ---------------- |
+| got better                   | `revise_recipe`  |
+| went a different way         | `create_variant` |
+| is fine, the record is wrong | `update_recipe`  |
+
+**The panel shows the WHOLE family, from any member.** `variantFamily`
+climbs to the base dish and comes back down, so standing on "with shiitake"
+a reader sees the base, the sibling "with lamb" and the branch below. The
+owner's word for these was siblings, and a panel that showed one step in
+each direction would put a sibling two clicks away and would look different
+to every member of one family.
+
+**Nothing is carried forward into a variation.** The same rule
+`backfill_revision` has, for the same reason: inheriting the parent's
+ingredients would record a dish nobody cooked, and the part that differs is
+the whole reason the variation exists.
+
+### What a delete does to a family
+
+Nothing to the data and everything to the view. The column is not cleared
+and no child is touched, because a delete is soft and a restore has to put
+the family back exactly. `variantFamily` walks `recipes_live`, so a deleted
+recipe is not a node: the family breaks at the gap, the branch below becomes
+a family of its own, and `restore_record` rejoins them. That is the answer
+`recipe_terms` already gives for an edge to a deleted tag. A `draft` breaks
+the chain the same way and for the same reason — `draft` means hidden from
+listings and a panel on a public page is a listing — with one exception, the
+recipe whose page it is, so a draft variation can see its own family while
+it is being written.
+
+### The other option
+
+**Keep `variant_of` in `recipe_links`, add a partial unique index, and build
+the panel on top of it.** No data migration, no retired enum value, no
+second way of saying nothing. It was rejected on the third point above: the
+edge is invisible to `get_recipe` when its target is deleted and it is
+replaced wholesale by `update_recipe { links }`, so the parentage that the
+panel, the breadcrumb and every sibling depend on could be dropped by a
+caller doing exactly what the tool description tells it to do. An invariant
+that a correct caller can break by accident is not an invariant.
+
+### What it cost
+
+**A data migration that retires an enum value**, which means recreating the
+type — and the `USING kind::recipe_link_kind` cast fails on any surviving
+`variant_of` row, so the order in `drizzle/0010_recipe_variants.sql` is
+load-bearing: add the columns, move the rows, break any cycle the move
+creates, delete the rest, and only then recreate the type. The cycle sweep
+is the one-time cost of a table that never had to refuse a loop. Two `kind`
+values are dropped when a recipe held two, which cannot be avoided: one
+column holds one parent.
+
+**One more advisory lock.** `assertNoVariantCycle` is check-then-act across
+two rows and loses to itself the way `updateRecipe`'s pointer check did, and
+row locks cannot fix it because the rows that close the loop are not known
+until the walk has run. `VARIANT_GRAPH_LOCK` serialises parent changes,
+which are rare. The rule that keeps it from meeting `RECIPE_TREE_LOCK` is
+one line: a writer takes at most one advisory lock, and takes it first.
+
+**A fifth tab on C-13**, which the design draws as four. Measured rather
+than assumed: at 320, 360 and 390 the five `flex-1` tabs fit with no
+sideways scroll, no clipped label and a 26px height, above the 24px
+`scripts/audit-ui.ts` reports under. The designer owns whether the strip
+should be drawn differently now it carries five.
+
+**D-05 lost a row and gained a query.** "Applied in" counted an incoming
+`variant_of` as an application of a study, and that edge no longer exists.
+A second query picks the variations up — a fourth arm of the existing `or`
+would not, because that one reads `FROM recipe_links` and a variation
+usually holds no link row at all.
+
+### To change it
+
+`src/db/schema.ts` at `recipes.variantOfId` carries the argument;
+`variantFamily` in `src/lib/queries/read.ts` is the walk and the one place
+the membership rule is written; `createVariantShape` in
+`src/lib/domain/schemas.ts` is the contract. To take variations out, drop
+the two columns and the panel — the four editorial link kinds stand on
+their own, and `recipe_links` is where `variant_of` would go back.

@@ -130,6 +130,7 @@ const LABELS = {
   method: 'Method',
   science: 'Science',
   revisions: 'Revisions',
+  variations: 'Variations',
 } as const;
 
 type TabKey = keyof typeof LABELS;
@@ -374,6 +375,7 @@ const PANEL_SHOWN: Partial<Record<TabKey, string>> = {
   ),
   science: 'group-data-[active=science]/panels:flex',
   revisions: 'group-data-[active=revisions]/panels:flex',
+  variations: 'group-data-[active=variations]/panels:flex',
 };
 
 /**
@@ -407,6 +409,7 @@ export function RecipeTabs({
   method,
   science,
   revisions,
+  variations,
 }: {
   /**
    * Omitted by a recipe with nothing to put in the aside — a research
@@ -418,6 +421,21 @@ export function RecipeTabs({
   method: ReactNode;
   science?: ReactNode;
   revisions?: ReactNode;
+  /**
+   * The variation family — the dish this one came from, the ones beside it,
+   * and the ones below it.
+   *
+   * Beside Revisions and not inside it, which is the owner's own framing and
+   * is also the distinction the whole feature exists to keep: the Revisions
+   * panel is this dish over time, and the Variations panel is the dishes
+   * beside it. One panel holding both would put "revision 3" and "with
+   * shiitake" in one list, which is exactly the confusion that makes an
+   * agent reach for `revise_recipe`.
+   *
+   * Omitted — like `science` and `revisions` — when there is nothing behind
+   * it, so a dish with no family offers no tab (R-SCR-27).
+   */
+  variations?: ReactNode;
 }) {
   const [active, setActive] = useState<TabKey>(
     ingredients ? 'ingredients' : 'method',
@@ -439,6 +457,7 @@ export function RecipeTabs({
   panels.push({ key: 'method', content: method });
   if (science) panels.push({ key: 'science', content: science });
   if (revisions) panels.push({ key: 'revisions', content: revisions });
+  if (variations) panels.push({ key: 'variations', content: variations });
 
   const deskTabs = panels.length - (ingredients ? 1 : 0);
 

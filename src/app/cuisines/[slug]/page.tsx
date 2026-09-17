@@ -21,6 +21,7 @@ import {
   revisionOrdinal,
   roman,
   site,
+  variationCode,
 } from '@/lib/site';
 import { cn } from '@/lib/utils';
 
@@ -290,6 +291,7 @@ export default async function CuisinePage({ params }: Params) {
                   kind={recipe.kind}
                   code={
                     [
+                      variationCode(recipe.variantOf),
                       revisionOrdinal(recipe.revisionNumber),
                       recipe.updatedAt ? citationDate(recipe.updatedAt) : null,
                     ]

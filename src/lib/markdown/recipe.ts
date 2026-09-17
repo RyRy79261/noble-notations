@@ -58,6 +58,10 @@ export function recipeToMarkdown(
         slug: recipe.slug,
         kind: recipe.kind,
         revision: recipe.revision.revisionNumber,
+        // The one structural relationship a recipe has, and the one an
+        // agent reading this file cannot work out from the prose. Absent on
+        // a base dish, which `frontMatter` drops on its own.
+        variantOf: recipe.variantOf?.slug,
         source: recipe.revision.source,
         created: recipe.revision.createdAt,
         ...options.extraFields,
@@ -71,6 +75,35 @@ export function recipeToMarkdown(
   if (recipe.summary) body.push(recipe.summary, '');
   if (recipe.revision.rationale) {
     body.push('## Why this revision', '', recipe.revision.rationale, '');
+  }
+
+  /**
+   * The variation family, high in the document rather than at the foot.
+   *
+   * A reader — and an agent reading `/recipes/<slug>.md` — has to know
+   * before the ingredients that this dish is one of several, because the
+   * question that costs the most to get wrong is asked at the top: is what
+   * I am about to write a revision of this, or another variation beside it?
+   * Put at the end, under the notes, the answer arrives after the decision.
+   *
+   * Slugs and not just titles: the slug is what every write tool takes.
+   */
+  if (recipe.variantFamily.length > 0) {
+    body.push('## Variations', '');
+    body.push(
+      'The same dish taken different ways. Each one keeps its own ' +
+        'versions.',
+      '',
+    );
+    for (const member of recipe.variantFamily) {
+      const indent = '  '.repeat(member.depth);
+      const here = member.self ? ' — this one' : '';
+      const note = member.variantNote ? ` — ${member.variantNote}` : '';
+      body.push(
+        `${indent}- ${member.title} (\`${member.slug}\`)${here}${note}`,
+      );
+    }
+    body.push('');
   }
 
   /**

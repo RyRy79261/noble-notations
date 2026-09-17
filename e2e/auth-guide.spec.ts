@@ -473,6 +473,7 @@ const CALLS: Record<string, Record<string, unknown>> = {
 
   // Writes. Each is refused a second time after the scope check.
   create_recipe: { title: 'A scope sweep', slug: 'baumy-biltong' },
+  create_variant: { title: 'A scope sweep', variantOf: GHOST },
   revise_recipe: { slug: GHOST, rationale: 'A sweep that must not write.' },
   backfill_revision: {
     slug: GHOST,
@@ -517,6 +518,7 @@ const CALLS: Record<string, Record<string, unknown>> = {
 
 const WRITE_TOOLS = [
   'create_recipe',
+  'create_variant',
   'reattach_note',
   'revise_recipe',
   'backfill_revision',

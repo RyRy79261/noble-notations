@@ -15,6 +15,12 @@ Quick reminders:
   stays readable. `update_recipe`, `update_revision`, `update_note` when the
   record is wrong. A correction writes over the version somebody cooked from,
   so reach for it only when the answer is "the record".
+- **A variation is a recipe, not a revision.** The same dish taken a
+  different way — shiitake instead of pork — is `create_variant`, not
+  `revise_recipe`. It gets its own slug and its own revisions and changes
+  nothing about the dish it came from. One column, `recipes.variant_of_id`,
+  never a `recipe_links` row. See AGENTS.md § _A variation is a recipe, not
+  a revision_.
 - **A delete is soft, and it is called delete, never "archive".** The row
   stays, it stops being visible, and `restore_record` brings it back. See
   AGENTS.md § _Delete is soft, and it is called delete_.

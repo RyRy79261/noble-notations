@@ -129,6 +129,10 @@ needs is a `data-` attribute, not a class.
 Plus **experiments**: a recorded run of a revision with per-item
 observations. The biltong batch logs are experiments, not recipes.
 
+And two relationships between recipes: **links**, four editorial edges in
+`recipe_links`, and **variations**, one structural edge in
+`recipes.variant_of_id`. See _A variation is a recipe, not a revision_.
+
 ## Conventions
 
 - **All database access goes through `src/lib/queries/`.** Pages, MCP tools
@@ -194,6 +198,71 @@ observations. The biltong batch logs are experiments, not recipes.
   brackets when quoting one — `bg-[ #FCFAF6 ]` scans to nothing and still
   greps — and check with
   `grep -oE '\\#[0-9A-Fa-f]{6}' .next/static/chunks/*.css` after a build.
+
+## A variation is a recipe, not a revision
+
+Dan dan noodles with shiitake instead of pork is not revision 4 of dan dan
+noodles. Nothing was learned and the pork version was not superseded, so a
+revision is the wrong record and an expensive one: it moves
+`current_revision_id`, and the dish somebody came to read stops being on its
+own page.
+
+It is a **variation** — a recipe of its own, with its own slug, its own
+revisions and its own batch logs, saying which dish it came from. That is
+one column, `recipes.variant_of_id`, and one line beside it,
+`recipes.variant_note`. This is D-17.
+
+The question that separates a revision from a correction has a third answer:
+
+| The dish                     | The tool         |
+| ---------------------------- | ---------------- |
+| got better                   | `revise_recipe`  |
+| went a different way         | `create_variant` |
+| is fine, the record is wrong | `update_recipe`  |
+
+**It is a column and not a `recipe_links` row, and that is the whole
+decision.** `variant_of` was a fifth link kind until migration `0010` and
+could hold none of what a variation needs: `uq_recipe_link` let a recipe
+belong to two families at once, nothing refused a cycle because nothing read
+those edges as a tree, and `applyLinks` replaces a recipe's whole link list
+— so a caller echoing back what `get_recipe` showed it dropped its own
+parentage, silently, along with the panel and the breadcrumb that depend on
+it. That is the same shape as the link-table bug recorded below, with more
+to lose. The four remaining kinds are editorial remarks about two finished
+dishes and keep their wholesale-replace contract, which is right for what
+they are.
+
+**`variantOf` on `update_recipe` is not a list and has three states.** Absent
+leaves the family alone; a slug moves the recipe into that family; `null`
+makes it a dish of its own again and clears `variantNote` with it. It is how
+a wrong parent is corrected and how a family is split — `create_variant` is
+how one is made.
+
+**Nothing carries forward into a variation.** The rule `backfillRevision`
+has, for the same reason: inheriting the parent's ingredients records a dish
+nobody cooked, and the part that differs is why the variation exists.
+
+**The panel shows the whole family from any member.** `variantFamily` in
+`read.ts` climbs to the base dish and comes back down, so a reader standing
+on one variation sees the dish it came from, its siblings and its own branch
+— the same tree from every member. Membership is one rule covering two
+cases: **live, not a draft — or this recipe itself.** A deleted recipe is
+not a node, so the family breaks at the gap and `restore_record` rejoins it
+exactly; a draft breaks it the same way, because `draft` means hidden from
+listings and a panel on a public page is a listing. The exception is what
+lets a draft variation see its own family while it is being written.
+
+**Two guards keep it a tree.** `variant_not_self` is a CHECK, because no
+write path can reach around a constraint. Longer cycles are
+`assertNoVariantCycle`, a recursive walk up from the proposed parent — and
+it is check-then-act across two rows, so it takes `VARIANT_GRAPH_LOCK`
+first. That lock has one rule, stated where it is defined: **a writer takes
+at most one advisory lock, and takes it first**, which is what keeps it from
+ever meeting `RECIPE_TREE_LOCK`. The walk uses `UNION` rather than `UNION
+ALL` so that a cycle somebody wrote by hand is reported instead of spinning
+a backend; `variantFamily` carries `VARIANT_DEPTH_LIMIT` for the same
+reason, because a loop there is a page that hangs rather than a page that is
+wrong.
 
 ## Delete is soft, and it is called delete
 

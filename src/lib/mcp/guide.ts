@@ -60,6 +60,12 @@ Ask one question first: did the food change, or is the record wrong? If the
 food changed, call revise_recipe. If the record is wrong, call
 update_recipe, update_revision or update_note.
 
+A dish can also go a different way. Dan dan noodles with shiitake instead of
+pork is not a better dan dan noodles. It is a variation. Call create_variant.
+It makes a recipe of its own, with its own versions, and it changes nothing
+about the dish it came from. Every variation of one dish is a sibling of the
+others, and get_recipe reports the whole family as variantFamily.
+
 A write can still replace a list. The categories field holds all the tags
 of a recipe, in every category type. A write that sends this field replaces
 them all. A write that leaves it out changes no tag. An empty categories
@@ -129,7 +135,7 @@ export function serverInstructions(
 }
 
 const SCOPES_WITHOUT_REPORTING =
-  'The read tools need the scope noble-notations:read. The fifteen write ' +
+  'The read tools need the scope noble-notations:read. The sixteen write ' +
   'tools also need noble-notations:write. The system checks the scope on ' +
   'each call.';
 
@@ -167,7 +173,56 @@ const GUIDE = {
     'or update_note.\n\n' +
     'Do not correct a version because the dish changed. The correction ' +
     'writes over the version that a person cooked from, and the history of ' +
-    'the dish is gone.',
+    'the dish is gone.\n\n' +
+    'One more answer is possible, and it is the one that is easy to miss. ' +
+    'The dish did not get better and the record is not wrong: the dish went ' +
+    'a different way. That is a variation. Call create_variant. See ' +
+    'variations below.',
+
+  /**
+   * Variations, and the one mistake this section exists to stop.
+   *
+   * An agent asked for "dan dan noodles but with shiitake" reaches for
+   * `revise_recipe`, because that is the tool the guide spends the most
+   * words on and because a variation LOOKS like a change to the dish. It is
+   * the most expensive wrong answer available: a revision moves
+   * `current_revision_id`, so the pork version stops being what people read,
+   * and nobody finds out until they open the page looking for it.
+   *
+   * So the fork is stated as three sentences with three tools, in the same
+   * shape as the question that separates a revision from a correction. That
+   * question works because it is about the FOOD rather than about the
+   * database, and this one is written to match: got better, went a
+   * different way, was written down wrong.
+   */
+  variations:
+    'A dish can go a different way. Dan dan noodles with shiitake instead ' +
+    'of pork is not a better dan dan noodles. It is a second dish, beside ' +
+    'the first.\n\n' +
+    'That is a variation, and it is not a version. Call create_variant. ' +
+    'Give it the slug of the dish it varies, and one line in variantNote ' +
+    'for what makes it different.\n\n' +
+    'Ask which of three things happened:\n' +
+    'The dish got better. Call revise_recipe.\n' +
+    'The dish went a different way. Call create_variant.\n' +
+    'The dish is fine and the record is wrong. Call update_recipe.\n\n' +
+    'Do not call revise_recipe for a variation. A version becomes the one ' +
+    'that people read, so the dish you started from stops being on its own ' +
+    'page. A variation changes nothing about that dish.\n\n' +
+    'A variation is a recipe. It has its own address, its own versions and ' +
+    'its own batch logs. You can revise it. It can have variations of its ' +
+    'own.\n\n' +
+    'Every variation of one dish is a sibling of the others. get_recipe ' +
+    'reports them all as variantFamily: the dish they came from, the ones ' +
+    'beside them, and the ones below them. Read it before you add one. The ' +
+    'variation that you are about to write may be there.\n\n' +
+    'Nothing is copied from the dish that a variation varies. Send the ' +
+    'whole ingredient list and the whole method. The part that differs is ' +
+    'the reason the variation exists, so it must be written.\n\n' +
+    'update_recipe moves a recipe into a family, or out of one. Send ' +
+    'variantOf with a slug to move it in. Send variantOf as null to make it ' +
+    'a dish of its own. Use this to correct a wrong parent. To make a new ' +
+    'variation, call create_variant.',
 
   /**
    * The three correction tools, and which record each one owns.
@@ -179,8 +234,10 @@ const GUIDE = {
   correctingARecord:
     'Six kinds of record can be corrected, and three tools do it.\n\n' +
     'update_recipe corrects the name, the summary, the tags, the links, the ' +
-    'kind and the status of a recipe. It touches no version. You cannot ' +
-    'change the slug: it is the public address of the recipe.\n\n' +
+    'kind and the status of a recipe. It also moves a recipe into a family ' +
+    'of variations, or out of one, with variantOf. It touches no version. ' +
+    'You cannot change the slug: it is the public address of the ' +
+    'recipe.\n\n' +
     'update_revision corrects a stored version in place. It makes no new ' +
     'version and it moves no number. Send ingredients, steps or massFlow to ' +
     'replace a whole list. A list that you leave out stays as it is.\n\n' +
@@ -294,6 +351,7 @@ const GUIDE = {
     'Call search_recipes first. Always. Find out if the dish is here.',
     'If the dish is here and the food changed, call revise_recipe. Give a reason that says what you changed.',
     'If the dish is not here, call create_recipe.',
+    'If the dish is here and it went a different way, call create_variant. A variation is not a version.',
     'If you find a version that is older than every stored version, call backfill_revision.',
     'Call upsert_category for each new tag. This gives the tag an explanation.',
     'Call search_notes before you write a note. Find out if the store already says it.',
@@ -488,11 +546,11 @@ const GUIDE = {
 
   /**
    * The count was "six" and the registry held seven, because
-   * `backfill_revision` was added and this line was not. It is fifteen now
-   * — nine, plus `reattach_note`, the three corrections, the delete and the
-   * restore — and the number is worth keeping true: an agent that reads
-   * "six" and counts fifteen has no way to tell which nine it must not
-   * trust.
+   * `backfill_revision` was added and this line was not. It is sixteen now
+   * — nine, plus `reattach_note`, the three corrections, the delete, the
+   * restore and `create_variant` — and the number is worth keeping true: an
+   * agent that reads "six" and counts sixteen has no way to tell which nine
+   * it must not trust.
    *
    * `list_deleted` is a READ and is counted as one. It reports rows the site
    * does not show, which is why that looks wrong at first glance — but the
@@ -501,11 +559,11 @@ const GUIDE = {
    *
    * SEVEN OTHER PLACES STATE A COUNT and must move together: this string,
    * `SCOPES_WITHOUT_REPORTING` above, four docs in `src/app/connect/page.tsx`
-   * and the total in `docs/mcp-connector.md`. The registry holds twenty-eight
-   * tools: twelve read, fifteen write, and `report_issue` in neither scope.
+   * and the total in `docs/mcp-connector.md`. The registry holds twenty-nine
+   * tools: twelve read, sixteen write, and `report_issue` in neither scope.
    */
   scopes:
-    'The read tools need the scope noble-notations:read. The fifteen write ' +
+    'The read tools need the scope noble-notations:read. The sixteen write ' +
     'tools also need noble-notations:write. list_deleted is a read tool, so ' +
     'it needs the read scope only. The system checks the scope on each ' +
     'call. report_issue needs no extra scope. Each connector can file a ' +
