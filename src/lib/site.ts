@@ -209,6 +209,24 @@ export function revisionOrdinal(revisionNumber: number): string | undefined {
 }
 
 /**
+ * `Variation of Dan dan noodles`, for the mono run beside a card's badge.
+ *
+ * It goes in the `code` slot rather than in a slot of its own, because that
+ * slot is already "one free string with ` · ` separators" and the design
+ * draws three segments in it on `/cuisines/[slug]`. A card is a summary; the
+ * link to the dish it varies is one click away on the recipe's own page,
+ * where the sentence under the title says it with a link inside it.
+ *
+ * `undefined` for a recipe that varies nothing, so the segment is dropped by
+ * the same `.filter(Boolean)` every caller already writes (R-STA-05).
+ */
+export function variationCode(
+  variantOf: { title: string } | null | undefined,
+): string | undefined {
+  return variantOf ? `Variation of ${variantOf.title}` : undefined;
+}
+
+/**
  * How much of a summary a card shows, in characters. C-05 of the
  * specification says 160; M4 removed the cut (D-11) and this restores it,
  * on the terms D-11 itself set out.

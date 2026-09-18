@@ -270,7 +270,7 @@ The two copies are held together by `e2e/writing-style.spec.ts`, which
 enumerates the rules and fails naming the one that drifted.
 
 Resources are not tools and they do not move the tool count: the registry
-still holds twenty-eight. `resources/list` advertises this document and
+still holds twenty-nine. `resources/list` advertises this document and
 `resources/read` serves it.
 
 ## Reporting a fault

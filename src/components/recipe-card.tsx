@@ -84,7 +84,7 @@
 
 import type { ReactNode } from 'react';
 
-import { cardSummary, revisionOrdinal } from '@/lib/site';
+import { cardSummary, revisionOrdinal, variationCode } from '@/lib/site';
 import type { RecipeSummaryView } from '@/lib/queries/read';
 
 import { Empty } from './f/notice';
@@ -103,7 +103,14 @@ export function RecipeCard({ recipe }: { recipe: RecipeSummaryView }) {
   return (
     <Card
       kind={recipe.kind}
-      code={revisionOrdinal(recipe.revisionNumber)}
+      code={
+        [
+          variationCode(recipe.variantOf),
+          revisionOrdinal(recipe.revisionNumber),
+        ]
+          .filter(Boolean)
+          .join(' · ') || undefined
+      }
       title={recipe.title}
       href={`/recipes/${recipe.slug}`}
       subtitle={recipe.subtitle}

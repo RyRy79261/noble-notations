@@ -193,6 +193,22 @@ export interface MassFlowStageView {
   emphasis: boolean;
 }
 
+/**
+ * The dish a recipe is a variation OF, as a card needs it: enough to say so
+ * and to link there, and nothing more.
+ *
+ * Null on a base dish, which is nearly every recipe — and null too when the
+ * parent has been deleted, because `attachVariantOf` reads the live view. A
+ * card that said "a variation of" and linked at a 404 would be worse than a
+ * card that said nothing.
+ */
+export interface VariantOfView {
+  slug: string;
+  title: string;
+  /** What makes this one different: "With shiitake instead of pork". */
+  note: string | null;
+}
+
 export interface RecipeSummaryView {
   slug: string;
   title: string;
@@ -204,6 +220,35 @@ export interface RecipeSummaryView {
   revisionNumber: number;
   updatedAt: string;
   terms: TermView[];
+  /**
+   * Set on a variation, so a card can say which dish it varies. The owner
+   * asked for this in the same breath as the panel: a base and its three
+   * variations otherwise read as four unrelated near-identical dishes on the
+   * index, and the reader has no way to tell which one is the original.
+   */
+  variantOf: VariantOfView | null;
+}
+
+/**
+ * One recipe in a variation family, flattened into the order it is drawn:
+ * the base dish first, then each branch under the recipe it varies.
+ *
+ * A LIST and not a nested tree, because the panel draws an indent rather
+ * than a nesting, and because `depth` is the only thing the markup needs
+ * from the shape — a `children` array would make every consumer walk it
+ * again to get back to the order it is already in.
+ */
+export interface VariantNodeView {
+  slug: string;
+  title: string;
+  /** What makes it different. Null on the base dish, and where nothing was said. */
+  variantNote: string | null;
+  /** 0 for the base dish, 1 for a variation of it, and so on. */
+  depth: number;
+  /** How many versions this member has of its own. */
+  revisionCount: number;
+  /** True for the one recipe the page is about. */
+  self: boolean;
 }
 
 export interface RecipeView extends RecipeSummaryView {
@@ -260,6 +305,21 @@ export interface RecipeView extends RecipeSummaryView {
     /** True for a version recorded after the fact. */
     backfilled: boolean;
   }[];
+  /**
+   * Every member of this recipe's variation family, base dish first, or an
+   * empty list when this recipe varies nothing and nothing varies it.
+   *
+   * The WHOLE family and not just a parent and its children: the owner's
+   * word for these was siblings, and a panel that showed only one step in
+   * each direction would put a sibling two clicks away and would look
+   * different from every member of the same family. `variantFamily` climbs
+   * to the base dish and comes back down, so any member draws the same tree.
+   *
+   * A family of one is an empty list rather than a list holding this recipe.
+   * A tab with nothing behind it is a dead control (R-SCR-27), and "one
+   * variation: this one" is nothing.
+   */
+  variantFamily: VariantNodeView[];
   links: { kind: string; note: string | null; recipe: RecipeSummaryView }[];
   backlinks: { kind: string; recipe: RecipeSummaryView }[];
   experiments: { slug: string; title: string; startedAt: string | null }[];
@@ -280,6 +340,8 @@ const recipeSummaryColumns = {
   heroImageAlt: recipesLive.heroImageAlt,
   updatedAt: recipesLive.updatedAt,
   revisionNumber: recipeRevisionsLive.revisionNumber,
+  variantOfId: recipesLive.variantOfId,
+  variantNote: recipesLive.variantNote,
 };
 
 /** Attach taxonomy terms to a batch of recipes in one extra query. */
@@ -335,6 +397,43 @@ async function attachTerms<T extends { id: string }>(
   return byRecipe;
 }
 
+/**
+ * Resolve the parent of every variation in a batch, in one extra query.
+ *
+ * The same shape as `attachTerms` and for the same reason: a card needs the
+ * parent's title and slug, those live on another row, and a join inside
+ * `recipeSummaryColumns` would mean adding one to all seven queries that
+ * spread it. One keyed lookup afterwards is the pattern this file already
+ * uses.
+ *
+ * `recipesLive`, so a deleted parent resolves to nothing and the card falls
+ * back to saying nothing at all.
+ */
+async function attachVariantOf<T extends { variantOfId: string | null }>(
+  rows: T[],
+): Promise<Map<string, { slug: string; title: string }>> {
+  const byId = new Map<string, { slug: string; title: string }>();
+  const wanted = [
+    ...new Set(
+      rows.map((r) => r.variantOfId).filter((id): id is string => id !== null),
+    ),
+  ];
+  if (wanted.length === 0) return byId;
+
+  const parents = await db
+    .select({
+      id: recipesLive.id,
+      slug: recipesLive.slug,
+      title: recipesLive.title,
+    })
+    .from(recipesLive)
+    .where(inArray(recipesLive.id, wanted));
+  for (const parent of parents) {
+    byId.set(parent.id, { slug: parent.slug, title: parent.title });
+  }
+  return byId;
+}
+
 function toSummary(
   row: {
     id: string;
@@ -347,9 +446,13 @@ function toSummary(
     heroImageAlt: string | null;
     updatedAt: Date;
     revisionNumber: number | null;
+    variantOfId: string | null;
+    variantNote: string | null;
   },
   terms: TermView[],
+  parents: Map<string, { slug: string; title: string }>,
 ): RecipeSummaryView {
+  const parent = row.variantOfId ? parents.get(row.variantOfId) : undefined;
   return {
     slug: row.slug,
     title: row.title,
@@ -361,7 +464,137 @@ function toSummary(
     revisionNumber: row.revisionNumber ?? 1,
     updatedAt: row.updatedAt.toISOString(),
     terms,
+    variantOf: parent
+      ? { slug: parent.slug, title: parent.title, note: row.variantNote }
+      : null,
   };
+}
+
+/**
+ * How deep a family is walked before the query gives up.
+ *
+ * `assertNoVariantCycle` makes a loop unreachable through the write layer,
+ * so this bound is never met by anything the connector wrote. It is here for
+ * what the write layer does not own: a hand-written `UPDATE` against the
+ * database, or a restore of something strange. Without it a loop is not a
+ * wrong panel, it is a recursive CTE that never returns — a page that hangs
+ * rather than a page that is wrong, and on the public site.
+ *
+ * Twenty is far past anything real. A variation of a variation of a
+ * variation is already unusual.
+ */
+const VARIANT_DEPTH_LIMIT = 20;
+
+/**
+ * Every member of one recipe's variation family, base dish first, each
+ * branch under the recipe it varies.
+ *
+ * ── THE TWO WALKS ─────────────────────────────────────────────────────
+ *
+ * `up` climbs from this recipe to the base dish; `down` descends from the
+ * base dish through every branch. Two walks and not one, because the panel
+ * has to look the same from every member — standing on "with shiitake" you
+ * see the base, your sibling "with lamb" and your own branch below, which is
+ * exactly what the owner meant by siblings. One walk downwards from the
+ * addressed recipe would show a different family to each member, and no
+ * member would ever see the dish it came from.
+ *
+ * ── WHAT COUNTS AS A MEMBER ───────────────────────────────────────────
+ *
+ * `visible` is the definition, and it is one rule covering two cases:
+ *
+ *   live, and not a draft — **or** this recipe itself.
+ *
+ * A DELETED recipe is not a member. Its `variant_of_id` is untouched by the
+ * delete and its children keep theirs, so nothing is lost: the family simply
+ * breaks at the gap, the branch below becomes a family of its own, and
+ * `restore_record` joins them back exactly. That is the same answer
+ * `recipe_terms` gives for an edge to a deleted tag.
+ *
+ * A DRAFT is not a member either, and breaks the chain the same way. `draft`
+ * means "hidden from listings", and a panel on a public page is a listing.
+ * The exception for the addressed recipe is what lets a draft variation show
+ * its own family on its own page while it is being written — otherwise the
+ * one screen that needs the family most would be the one screen without it.
+ *
+ * ── THE ORDER ─────────────────────────────────────────────────────────
+ *
+ * `path` accumulates the titles down each branch, so ordering by it is a
+ * pre-order walk with siblings alphabetical — stable across page loads, and
+ * stable when a sibling is added, which an ordering by `created_at` is not.
+ *
+ * NOT EXPORTED, and that is a decision rather than an oversight. It takes a
+ * recipe id where every exported read takes a slug, and `getRecipeBySlug` is
+ * the only caller — so exporting it would add an entry to
+ * `e2e/deleted-census.ts`'s table that could only be reached by looking an
+ * id up first. The census still covers it: the family rides on the kept
+ * recipe's result, and the fixture puts a DELETED member in the family so
+ * the scan has something to find.
+ */
+async function variantFamily(recipeId: string): Promise<VariantNodeView[]> {
+  const rows = await db.execute<{
+    slug: string;
+    title: string;
+    variant_note: string | null;
+    depth: number;
+    revision_count: number;
+    is_self: boolean;
+  }>(sql`
+    WITH RECURSIVE visible AS (
+      SELECT id, variant_of_id, slug, title, variant_note
+        FROM recipes_live
+        WHERE status <> 'draft' OR id = ${recipeId}
+    ),
+    up AS (
+      SELECT id, variant_of_id FROM visible WHERE id = ${recipeId}
+      UNION
+      SELECT v.id, v.variant_of_id
+        FROM visible v
+        JOIN up ON v.id = up.variant_of_id
+    ),
+    root AS (
+      SELECT up.id
+        FROM up
+        WHERE NOT EXISTS (
+          SELECT 1 FROM visible p WHERE p.id = up.variant_of_id
+        )
+        LIMIT 1
+    ),
+    down AS (
+      SELECT v.id, 0 AS depth, ARRAY[v.title] AS path
+        FROM visible v
+        JOIN root ON root.id = v.id
+      UNION ALL
+      SELECT c.id, d.depth + 1, d.path || c.title
+        FROM visible c
+        JOIN down d ON c.variant_of_id = d.id
+        WHERE d.depth < ${VARIANT_DEPTH_LIMIT}
+    )
+    SELECT v.slug,
+           v.title,
+           v.variant_note,
+           d.depth,
+           (SELECT count(*)::int
+              FROM recipe_revisions_live rr
+              WHERE rr.recipe_id = v.id) AS revision_count,
+           (v.id = ${recipeId}) AS is_self
+      FROM down d
+      JOIN visible v ON v.id = d.id
+      ORDER BY d.path
+  `);
+
+  // A family of one is this recipe alone, and that is not a family. The
+  // panel is not drawn and the tab is not offered (R-SCR-27).
+  if (rows.rows.length < 2) return [];
+
+  return rows.rows.map((row) => ({
+    slug: row.slug,
+    title: row.title,
+    variantNote: row.variant_note,
+    depth: Number(row.depth),
+    revisionCount: Number(row.revision_count),
+    self: Boolean(row.is_self),
+  }));
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -392,8 +625,11 @@ export async function listRecipes(options?: {
     .limit(options?.limit ?? 200)
     .offset(options?.offset ?? 0);
 
-  const terms = await attachTerms(rows);
-  return rows.map((r) => toSummary(r, terms.get(r.id) ?? []));
+  const [terms, parents] = await Promise.all([
+    attachTerms(rows),
+    attachVariantOf(rows),
+  ]);
+  return rows.map((r) => toSummary(r, terms.get(r.id) ?? [], parents));
 }
 
 export interface SearchResult extends RecipeSummaryView {
@@ -482,11 +718,14 @@ export async function searchRecipes(
     hero_image_alt: string | null;
     updated_at: Date;
     revision_number: number | null;
+    variant_of_id: string | null;
+    variant_note: string | null;
     rank: number;
     total: number;
   }>(sql`
     SELECT r.id, r.slug, r.title, r.subtitle, r.summary, r.kind,
            r.hero_image_url, r.hero_image_alt, r.updated_at,
+           r.variant_of_id, r.variant_note,
            rev.revision_number,
            ${rank} AS rank,
            COUNT(*) OVER () AS total
@@ -509,11 +748,17 @@ export async function searchRecipes(
     hero_image_alt: string | null;
     updated_at: string | Date;
     revision_number: number | null;
+    variant_of_id: string | null;
+    variant_note: string | null;
     rank: number | string;
     total: number | string;
   }[];
 
-  const terms = await attachTerms(list);
+  const withParent = list.map((r) => ({ ...r, variantOfId: r.variant_of_id }));
+  const [terms, parents] = await Promise.all([
+    attachTerms(list),
+    attachVariantOf(withParent),
+  ]);
   return {
     total: list.length > 0 ? Number(list[0]!.total) : 0,
     results: list.map((r) => ({
@@ -529,8 +774,11 @@ export async function searchRecipes(
           heroImageAlt: r.hero_image_alt,
           updatedAt: new Date(r.updated_at),
           revisionNumber: r.revision_number,
+          variantOfId: r.variant_of_id,
+          variantNote: r.variant_note,
         },
         terms.get(r.id) ?? [],
+        parents,
       ),
       rank: Number(r.rank),
     })),
@@ -696,6 +944,8 @@ export async function getRecipeBySlug(
       heroImageAlt: recipesLive.heroImageAlt,
       originNote: recipesLive.originNote,
       currentRevisionId: recipesLive.currentRevisionId,
+      variantOfId: recipesLive.variantOfId,
+      variantNote: recipesLive.variantNote,
       createdAt: recipesLive.createdAt,
       updatedAt: recipesLive.updatedAt,
     })
@@ -927,7 +1177,13 @@ export async function getRecipeBySlug(
       .orderBy(desc(experimentsLive.startedAt)),
   ]);
 
-  const linkedTerms = await attachTerms([...linkRows, ...backlinkRows]);
+  const [linkedTerms, linkedParents, family] = await Promise.all([
+    attachTerms([...linkRows, ...backlinkRows]),
+    // The recipe itself rides along, so its own parent is resolved in the
+    // same query as its links' parents rather than in one more of its own.
+    attachVariantOf([recipe, ...linkRows, ...backlinkRows]),
+    variantFamily(recipe.id),
+  ]);
 
   return {
     id: recipe.id,
@@ -1034,14 +1290,23 @@ export async function getRecipeBySlug(
        */
       backfilled: r.occurredAt !== null && r.occurredAt < r.createdAt,
     })),
+    variantOf:
+      recipe.variantOfId && linkedParents.has(recipe.variantOfId)
+        ? {
+            slug: linkedParents.get(recipe.variantOfId)!.slug,
+            title: linkedParents.get(recipe.variantOfId)!.title,
+            note: recipe.variantNote,
+          }
+        : null,
+    variantFamily: family,
     links: linkRows.map((row) => ({
       kind: row.linkKind,
       note: row.linkNote,
-      recipe: toSummary(row, linkedTerms.get(row.id) ?? []),
+      recipe: toSummary(row, linkedTerms.get(row.id) ?? [], linkedParents),
     })),
     backlinks: backlinkRows.map((row) => ({
       kind: row.linkKind,
-      recipe: toSummary(row, linkedTerms.get(row.id) ?? []),
+      recipe: toSummary(row, linkedTerms.get(row.id) ?? [], linkedParents),
     })),
     experiments: experimentRows,
   };
@@ -1217,7 +1482,10 @@ export async function getTerm(
     )
     .orderBy(desc(recipesLive.updatedAt));
 
-  const terms = await attachTerms(rows);
+  const [terms, parents] = await Promise.all([
+    attachTerms(rows),
+    attachVariantOf(rows),
+  ]);
 
   const toTermView = (row: {
     id: string;
@@ -1251,7 +1519,7 @@ export async function getTerm(
     term: toTermView(term),
     parent: parentRows[0] ? toTermView(parentRows[0]) : null,
     children: childRows.map(toTermView),
-    recipes: rows.map((r) => toSummary(r, terms.get(r.id) ?? [])),
+    recipes: rows.map((r) => toSummary(r, terms.get(r.id) ?? [], parents)),
   };
 }
 
@@ -1345,18 +1613,16 @@ export async function getIngredient(slug: string): Promise<{
           eq(recipesLive.status, 'active'),
         ),
       )
-      .groupBy(
-        recipesLive.id,
-        recipesLive.slug,
-        recipesLive.title,
-        recipesLive.subtitle,
-        recipesLive.summary,
-        recipesLive.kind,
-        recipesLive.heroImageUrl,
-        recipesLive.heroImageAlt,
-        recipesLive.updatedAt,
-        recipeRevisionsLive.revisionNumber,
-      )
+      /*
+       * Every selected column, derived rather than listed. `recipes_live` is
+       * a VIEW, so Postgres cannot apply its functional-dependency shortcut
+       * and `GROUP BY r.id` is not enough — every column of the select list
+       * has to be named. Listed by hand this broke the moment
+       * `recipeSummaryColumns` grew `variant_of_id`: the page threw, and it
+       * threw in a query no type checker reads. Spreading the same object
+       * the select takes makes the two impossible to disagree.
+       */
+      .groupBy(...Object.values(recipeSummaryColumns))
       .orderBy(desc(recipesLive.updatedAt)),
     db
       .select({
@@ -1396,8 +1662,9 @@ export async function getIngredient(slug: string): Promise<{
       ),
   ]);
 
-  const [terms, sourcesByNote] = await Promise.all([
+  const [terms, parents, sourcesByNote] = await Promise.all([
     attachTerms(usedIn),
+    attachVariantOf(usedIn),
     noteSourcesByNote(noteRows.map((x) => x.id)),
   ]);
 
@@ -1413,7 +1680,7 @@ export async function getIngredient(slug: string): Promise<{
       aliases: row.aliases,
       recipeCount: usedIn.length,
     },
-    recipes: usedIn.map((r) => toSummary(r, terms.get(r.id) ?? [])),
+    recipes: usedIn.map((r) => toSummary(r, terms.get(r.id) ?? [], parents)),
     substitutes: subs,
     notes: noteRows.map((x) => ({
       id: x.id,
@@ -2489,7 +2756,7 @@ export async function getScienceStudy(
   // Wellington's one source hangs off a `warning`.
   const citedNotes = noteRows.filter((row) => row.experimentId === null);
 
-  const [sourceRows, appliedInRows] = await Promise.all([
+  const [sourceRows, appliedInRows, variantRows] = await Promise.all([
     citedNotes.length
       ? db
           .select({
@@ -2518,14 +2785,17 @@ export async function getScienceStudy(
           )
       : [],
     // "Applied in" is the recipes that lean on this study, and which edge
-    // says so depends on the kind. An *incoming* `references`,
-    // `derived_from` or `variant_of` means the other recipe was built on
-    // this one. An *outgoing* `component_of` means the same thing the other
-    // way round — "demi-glace is a component of the Wellington" is written
-    // from demi-glace, and it is the Wellington that applies demi-glace.
-    // Reading every incoming edge, as the first draft did, printed that one
+    // says so depends on the kind. An *incoming* `references` or
+    // `derived_from` means the other recipe was built on this one. An
+    // *outgoing* `component_of` means the same thing the other way round —
+    // "demi-glace is a component of the Wellington" is written from
+    // demi-glace, and it is the Wellington that applies demi-glace. Reading
+    // every incoming edge, as the first draft did, printed that one
     // backwards. `pairs_with` is an association in neither direction and is
-    // not an application, so it is left out.
+    // not an application, so it is left out. This is D-05's table, and it
+    // lost a row when `variant_of` left this table for a column of its own:
+    // a variation is still an application of the study it varies, and the
+    // query below it picks those up.
     db
       .select(recipeSummaryColumns)
       .from(recipeLinks)
@@ -2535,11 +2805,7 @@ export async function getScienceStudy(
           and(
             eq(recipesLive.id, recipeLinks.fromRecipeId),
             eq(recipeLinks.toRecipeId, recipe.id),
-            inArray(recipeLinks.kind, [
-              'references',
-              'derived_from',
-              'variant_of',
-            ]),
+            inArray(recipeLinks.kind, ['references', 'derived_from']),
           ),
           and(
             eq(recipesLive.id, recipeLinks.toRecipeId),
@@ -2558,6 +2824,20 @@ export async function getScienceStudy(
           eq(recipeLinks.fromRecipeId, recipe.id),
         ),
       )
+      .orderBy(asc(recipesLive.title)),
+    // The variations of this study, which D-05's incoming `variant_of` row
+    // used to cover. A query of its own rather than a fourth arm of the `or`
+    // above, because that one reads `FROM recipe_links` — a variation that
+    // holds no link row at all would never reach the join, and a variation
+    // usually holds none.
+    db
+      .select(recipeSummaryColumns)
+      .from(recipesLive)
+      .leftJoin(
+        recipeRevisionsLive,
+        eq(recipeRevisionsLive.id, recipesLive.currentRevisionId),
+      )
+      .where(eq(recipesLive.variantOfId, recipe.id))
       .orderBy(asc(recipesLive.title)),
   ]);
 
@@ -2590,10 +2870,15 @@ export async function getScienceStudy(
   // joined by more than one edge and the same recipe arrive twice. It would
   // read as a duplicate card, a duplicate React key and an inflated count.
   const appliedIn = [
-    ...new Map(appliedInRows.map((row) => [row.id, row])).values(),
-  ];
+    ...new Map(
+      [...appliedInRows, ...variantRows].map((row) => [row.id, row]),
+    ).values(),
+  ].sort((a, b) => a.title.localeCompare(b.title));
 
-  const appliedTerms = await attachTerms(appliedIn);
+  const [appliedTerms, appliedParents] = await Promise.all([
+    attachTerms(appliedIn),
+    attachVariantOf(appliedIn),
+  ]);
 
   return {
     slug: recipe.slug,
@@ -2604,7 +2889,7 @@ export async function getScienceStudy(
     mechanisms,
     citations,
     appliedIn: appliedIn.map((row) =>
-      toSummary(row, appliedTerms.get(row.id) ?? []),
+      toSummary(row, appliedTerms.get(row.id) ?? [], appliedParents),
     ),
   };
 }

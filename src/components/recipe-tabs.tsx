@@ -117,12 +117,64 @@ import { FOCUS_RING } from './f/button';
  *                    border-bottom, border-radius, background, colour
  *   .recipe-aside    position, top, gap
  *
- * `overflow-x: auto` on the phone strip was the one that had to be turned
- * off rather than inherited: the design's four `flex-1` tabs fit 328px with
- * room to spare, and an `overflow-x` scroller that never scrolls is exactly
- * the UNREACHABLE shape R-ACC-11 exists for. `max-recipe:overflow-visible`
- * below is that answer, and it stays — it is now the only writer of the
- * property, not a correction of one.
+ * ── THE PHONE STRIP SCROLLS, AND ONLY WHEN IT MUST ────────────────────
+ *
+ * `overflow-x: auto` was turned off at M7, not inherited, and the reason
+ * given was that the design's four `flex-1` tabs fit 328px with room to
+ * spare — so a scroller there would never scroll. That was true of four
+ * tabs. It stopped being true at five.
+ *
+ * MEASURED, at 320px, with all five panels present: the tabs are already at
+ * their own label widths (66 + 46 + 46 + 54 + 60) and four 4px gaps, which
+ * is 288px inside a 288px content box. Exactly full, with nothing left. A
+ * flex item's `min-width` defaults to `auto`, so a tab does NOT squish below
+ * its label — it holds its width and the strip overflows instead. With
+ * `overflow-visible` that overflow is the PAGE scrolling sideways, which
+ * `pnpm audit:ui` counts as a major fault and a reader meets as a tab they
+ * cannot reach. A sixth panel, or one longer word, is all it takes.
+ *
+ * So the property comes back, and the old reasoning is answered rather than
+ * ignored:
+ *
+ * - **It is not a scroller that never scrolls.** `auto` paints no affordance
+ *   and takes no scroll while the content fits, so four tabs and five tabs
+ *   are byte-for-byte what they were: `flex-1 basis-0` still distributes the
+ *   whole width between them.
+ * - **It is not the UNREACHABLE shape either, and that shape is not
+ *   representable here.** R-ACC-11's check fires on a child stranded PAST
+ *   THE START EDGE with `scrollLeft === 0`, which is what
+ *   `justify-content: flex-end` plus `overflow-x: auto` did to the nav. This
+ *   strip has no `justify-content` at all, so its overflow goes off the END
+ *   edge, where scrolling reaches it. **Never give this row a
+ *   `justify-*` utility.** That one class is the whole difference between a
+ *   scroller and a blocker.
+ *
+ * On touch this is a drag, for free. A pointer at ≤900 gets the wheel and a
+ * scrollbar; there is no drag-to-pan handler, because that costs a
+ * pointer-event listener on a control strip to serve a narrow desktop
+ * window, and the keyboard already moves between tabs with the arrow keys.
+ *
+ * **The scrollbar is not hidden**, though every instinct says to hide it on
+ * a control strip this small. `auto` only paints one when the content really
+ * does overflow, so hiding it would suppress the only visible signal in the
+ * one case it exists to serve — and it would suppress it for the pointer
+ * user, who has no drag. A phone shows nothing at rest either way, because
+ * that platform's scrollbars are overlays.
+ *
+ * `overflow-y` is NOT left visible, and it cannot be: the spec computes a
+ * `visible` on one axis to `auto` when the other is not, so turning on the
+ * horizontal scroller makes this row a clip box on BOTH axes. `FOCUS_RING`
+ * is `outline-2 outline-offset-2`, which paints 4px outside a tab's border
+ * box, and the drawing gives the 360 strip no padding — so the ring was
+ * clipped by exactly 4px, top and bottom, on every tab.
+ *
+ * `max-recipe:py-1` is that 4px and not a pixel more. Measured at 360 with
+ * the strip forced into its overflow state: at `py-0` the ring clears the
+ * clip edge by −4px top and bottom, and at `py-1` by 0px — fully inside,
+ * with nothing spare. The phone strip is 34px rather than the drawn 26px,
+ * and that is the one place this departs from the export. A focus ring that
+ * is half-drawn is worse than a strip 8px taller than the artboard, and the
+ * designer owns the real answer now that the strip can scroll.
  */
 
 const LABELS = {
@@ -130,6 +182,7 @@ const LABELS = {
   method: 'Method',
   science: 'Science',
   revisions: 'Revisions',
+  variations: 'Variations',
 } as const;
 
 type TabKey = keyof typeof LABELS;
@@ -254,7 +307,12 @@ const COLUMN = cn('flex min-w-0 flex-1 flex-col gap-0', 'max-recipe:contents');
 const STRIP = cn(
   'flex w-full shrink-0 flex-row flex-nowrap items-center',
   'max-recipe:sticky max-recipe:top-[calc(var(--header-h,7rem)_+_0.5rem)]',
-  'max-recipe:z-20 max-recipe:gap-1 max-recipe:overflow-visible',
+  'max-recipe:z-20 max-recipe:gap-1',
+  // Scrolls only when the tabs stop fitting. See the header block: the
+  // `py-1` is the focus ring's clearance from the clip edge `overflow-y`
+  // brings with it, and there is deliberately no `justify-*` here.
+  'max-recipe:overflow-x-auto max-recipe:overscroll-x-contain',
+  'max-recipe:py-1',
   'max-recipe:bg-paper',
   'recipe:static recipe:gap-2 recipe:bg-transparent recipe:pb-2.5',
   'recipe:[border-style:solid] recipe:[border-width:0px_0px_1px_0px] recipe:border-b-hair',
@@ -374,6 +432,7 @@ const PANEL_SHOWN: Partial<Record<TabKey, string>> = {
   ),
   science: 'group-data-[active=science]/panels:flex',
   revisions: 'group-data-[active=revisions]/panels:flex',
+  variations: 'group-data-[active=variations]/panels:flex',
 };
 
 /**
@@ -407,6 +466,7 @@ export function RecipeTabs({
   method,
   science,
   revisions,
+  variations,
 }: {
   /**
    * Omitted by a recipe with nothing to put in the aside — a research
@@ -418,6 +478,21 @@ export function RecipeTabs({
   method: ReactNode;
   science?: ReactNode;
   revisions?: ReactNode;
+  /**
+   * The variation family — the dish this one came from, the ones beside it,
+   * and the ones below it.
+   *
+   * Beside Revisions and not inside it, which is the owner's own framing and
+   * is also the distinction the whole feature exists to keep: the Revisions
+   * panel is this dish over time, and the Variations panel is the dishes
+   * beside it. One panel holding both would put "revision 3" and "with
+   * shiitake" in one list, which is exactly the confusion that makes an
+   * agent reach for `revise_recipe`.
+   *
+   * Omitted — like `science` and `revisions` — when there is nothing behind
+   * it, so a dish with no family offers no tab (R-SCR-27).
+   */
+  variations?: ReactNode;
 }) {
   const [active, setActive] = useState<TabKey>(
     ingredients ? 'ingredients' : 'method',
@@ -439,6 +514,7 @@ export function RecipeTabs({
   panels.push({ key: 'method', content: method });
   if (science) panels.push({ key: 'science', content: science });
   if (revisions) panels.push({ key: 'revisions', content: revisions });
+  if (variations) panels.push({ key: 'variations', content: variations });
 
   const deskTabs = panels.length - (ingredients ? 1 : 0);
 

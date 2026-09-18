@@ -106,6 +106,7 @@ test.beforeAll(async () => {
 
   const binRecipe = `zzbin-recipe-${stamp}`;
   const keepRecipe = `zzkeep-recipe-${stamp}`;
+  const keepVariant = `zzkeep-variation-${stamp}`;
   const binRun = `zzbin-run-${stamp}`;
   const keepRun = `zzkeep-run-${stamp}`;
   const binIngredient = `zzbin-allspice-${stamp}`;
@@ -212,7 +213,9 @@ test.beforeAll(async () => {
     summary: `${KEEP} summary of the dish that stays.`,
     rationale: `${KEEP} rationale.`,
     categories: { technique: [binTagLabel, `${KEEP} roasting ${stamp}`] },
-    links: [{ kind: 'variant_of', slug: binRecipe, note: `${BIN} link note.` }],
+    links: [
+      { kind: 'derived_from', slug: binRecipe, note: `${BIN} link note.` },
+    ],
     ingredients: [
       { name: `${KEEP} flour ${stamp}`, quantity: 200, unit: 'g' },
       {
@@ -248,6 +251,32 @@ test.beforeAll(async () => {
     recipeSlug: keepRecipe,
     revisionNumber: 1,
     outcome: `${KEEP} outcome.`,
+  });
+
+  // ── A VARIATION FAMILY across the line, which is the fifth way a deleted
+  // row could reach a live page. `variantFamily` is not exported, so the
+  // census cannot call it directly: it rides on `getRecipeBySlug` of the
+  // kept recipe, and the only thing that puts a sentinel in its reach is a
+  // deleted MEMBER of the family that recipe belongs to.
+  //
+  // The doomed recipe becomes a variation of the kept one, and a live
+  // variation is created beside it. After the delete the family is the kept
+  // dish and the live variation; a walk over `recipes` instead of
+  // `recipes_live` would put the doomed recipe's title — which carries the
+  // sentinel — into that list and nowhere else on the page.
+  await mcp.call('update_recipe', {
+    slug: binRecipe,
+    variantOf: keepRecipe,
+    variantNote: `${BIN} the variation that goes.`,
+  });
+  await mcp.call('create_variant', {
+    title: `${KEEP} kept variation`,
+    slug: keepVariant,
+    variantOf: keepRecipe,
+    variantNote: `${KEEP} the variation that stays.`,
+    rationale: `${KEEP} rationale for a variation.`,
+    ingredients: [{ name: `${KEEP} flour ${stamp}`, quantity: 300, unit: 'g' }],
+    steps: [{ instruction: `Roast the ${KEEP} thing for longer.` }],
   });
 
   // ── Now delete. Four calls: one cascade and three leaves.

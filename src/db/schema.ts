@@ -188,9 +188,23 @@ export const ingredientRelationKind = pgEnum('ingredient_relation_kind', [
   'component_of',
 ]);
 
+/**
+ * The editorial edges between two recipes. All five are optional, unordered
+ * and many-to-many: a recipe may reference six others and be referenced by
+ * ten.
+ *
+ * **`variant_of` is NOT in this list, and its absence is the point.** It was
+ * here until migration 0011 and it was the wrong shape for what it said. The
+ * other four are remarks a writer makes about two finished dishes; being a
+ * variation is structural — it is at most one parent, it must not form a
+ * cycle, it decides what the Variations panel draws and it is what makes two
+ * recipes siblings. An edge in a table that `applyLinks` rewrites wholesale
+ * could hold none of that, and a caller echoing back the list it was shown
+ * would drop the parentage every time. It is `recipes.variant_of_id` now:
+ * one column, one parent, one meaning. See that column's comment.
+ */
 export const recipeLinkKind = pgEnum('recipe_link_kind', [
   'derived_from',
-  'variant_of',
   'component_of',
   'pairs_with',
   'references',
@@ -375,6 +389,74 @@ export const recipes = pgTable(
      * `listRecipes` print a recipe whose page 404s.
      */
     currentRevisionId: uuid('current_revision_id'),
+    /**
+     * The recipe this one is a VARIATION of. Null for a base dish, which is
+     * the ordinary case.
+     *
+     * ── WHY THIS IS A COLUMN AND NOT A `recipe_links` ROW ──────────────
+     *
+     * A variation is not a revision and it is not a remark. Dan dan noodles
+     * with shiitake is not a refinement of dan dan noodles — nothing was
+     * learned and the older version was not superseded — so it cannot be a
+     * revision, which would move `current_revision_id` and take the original
+     * off the page. It is a second dish that keeps its own name, its own
+     * slug, its own revisions and its own batch logs, and says where it came
+     * from.
+     *
+     * `recipe_links.kind = 'variant_of'` said that sentence and could not
+     * hold it. Three things a variation needs and an edge in that table
+     * cannot give:
+     *
+     * 1. **At most one.** A dish varies one dish. Two `variant_of` rows out
+     *    of one recipe put it in two families and the panel drew both.
+     *    A column has one value; the partial unique index a link table would
+     *    have needed is the column itself.
+     * 2. **No cycles.** A is a variation of B is a variation of A has no
+     *    root, and the recursive walk that draws the family would not
+     *    terminate. `assertNoVariantCycle` in `write.ts` refuses it; the
+     *    `variant_not_self` check below refuses the one-step case in the
+     *    database, where no write path can get around it.
+     * 3. **It survives a list rewrite.** `applyLinks` replaces a recipe's
+     *    whole link list, and `get_recipe` hides an edge whose target is
+     *    deleted — so a caller sending back exactly what it was shown
+     *    dropped the parentage silently, and the Variations panel, the
+     *    breadcrumb and every sibling went with it. The same shape as the
+     *    bug the link tables' own comment records, with more to lose.
+     *    `update_recipe` touches this only when it is named.
+     *
+     * ── WHAT A DELETE DOES TO A FAMILY ────────────────────────────────
+     *
+     * Nothing, and that is deliberate. The column is not cleared and no
+     * child is touched, because a delete here is soft and a restore has to
+     * put the family back exactly. What changes is what a READER sees:
+     * `variantFamily` walks `recipes_live`, so a deleted recipe is not a
+     * node and is not a path — its children become roots of their own
+     * families until it is restored, and the branch below them stays
+     * attached to them throughout. That is the same answer `recipe_terms`
+     * gives for an edge to a deleted tag, for the same reason.
+     *
+     * `ON DELETE SET NULL` is the hard-delete backstop, matching
+     * `taxonomy_terms.parent_id`. No application path hard-deletes a recipe;
+     * if one ever does, a child is orphaned rather than destroyed.
+     */
+    variantOfId: uuid('variant_of_id').references(
+      (): AnyPgColumn => recipes.id,
+      { onDelete: 'set null' },
+    ),
+    /**
+     * What makes this variation different, in one line: "With shiitake
+     * instead of pork", "Vegan". Drawn beside the title in the Variations
+     * panel and on the card that marks a variation on the index, so a
+     * reader can tell three siblings apart without opening all three.
+     *
+     * Null when nothing was said, and the panel then draws the title alone.
+     * Meaningless without `variant_of_id`, and `variantOfShape` in
+     * `schemas.ts` refuses the pair where the note is set and the parent is
+     * not — a caller that writes one and forgets the other has almost
+     * certainly made a mistake, and a stray line of prose on a base dish is
+     * invisible until somebody makes it a variation months later.
+     */
+    variantNote: text('variant_note'),
     heroImageUrl: text('hero_image_url'),
     heroImageAlt: text('hero_image_alt'),
     /** Where this came from — a cookbook, a conversation, a restaurant. */
@@ -388,6 +470,23 @@ export const recipes = pgTable(
   (t) => [
     index('idx_recipes_status').on(t.status),
     index('idx_recipes_kind').on(t.kind),
+    /**
+     * Every variation read starts from a parent id — the family walk
+     * descends by it and `listRecipes` marks a card by it — and unlike the
+     * deleted indexes below this one covers the LIVE side, because the
+     * predicate is the whole query rather than a filter on top of a slug.
+     */
+    index('idx_recipes_variant_of')
+      .on(t.variantOfId)
+      .where(sql`${t.variantOfId} IS NOT NULL`),
+    /**
+     * The one-step cycle, refused where no write path can reach around it.
+     * The longer ones are `assertNoVariantCycle`'s job: Postgres has no
+     * declarative constraint for "this edge closes a loop", and a trigger
+     * doing the walk would fire on every recipe write to catch a case the
+     * write layer already has the row locked for.
+     */
+    check('variant_not_self', sql`${t.variantOfId} <> ${t.id}`),
     index('idx_recipes_deleted')
       .on(t.deletedAt.desc())
       .where(sql`${t.deletedAt} IS NOT NULL`),
