@@ -3,11 +3,12 @@ import 'server-only';
 /**
  * The live view of the repository, and the one deliberate hole in it.
  *
- * Six tables carry a soft delete — `recipes`, `recipe_revisions`, `notes`,
- * `experiments`, `ingredients`, `taxonomy_terms` — and `src/db/schema.ts`
+ * Seven tables carry a soft delete — `recipes`, `recipe_revisions`, `notes`,
+ * `experiments`, `ingredients`, `taxonomy_terms`, `images` — and
+ * `src/db/schema.ts`
  * defines a `*_live` view over each one that is `WHERE deleted_at IS NULL`
  * and nothing else. `read.ts` selects from those views and from no base
- * table, and `eslint.config.mjs` makes naming one of the six in `read.ts` a
+ * table, and `eslint.config.mjs` makes naming one of the seven in `read.ts` a
  * lint error, which is a CI gate.
  *
  * This module exists so the two exceptions to that ban have a name that says
@@ -31,6 +32,7 @@ export {
   experimentsLive,
   ingredientsLive,
   taxonomyTermsLive,
+  imagesLive,
 } from '@/db/schema';
 
 /**

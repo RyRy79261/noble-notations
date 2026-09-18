@@ -39,6 +39,7 @@ import { and, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { db } from '@/db/client';
 import {
   experiments,
+  images,
   ingredients,
   notes,
   recipeRevisions,
@@ -542,6 +543,57 @@ async function loadParents(
   return out;
 }
 
+/**
+ * Pictures in the bin.
+ *
+ * An image has no slug and no parent, so this is the simplest of the seven:
+ * it is addressed by `id` alone, exactly as a note is, and its `parents` is
+ * always empty. An image belongs to nothing — a recipe, an ingredient and a
+ * tag can all name the same picture, because what they hold is an address
+ * rather than a foreign key — so no restore of it is ever blocked, and
+ * deleting a recipe never takes one with it.
+ *
+ * The handle is the alt text, which is the only human-readable thing an
+ * image carries. That is a second reason `upload_image` demands one: without
+ * it this listing would be a column of uuids.
+ */
+async function deletedImages(take: number): Promise<{
+  rows: RawDeleted[];
+  total: number;
+}> {
+  const found = await db
+    .select({
+      id: images.id,
+      alt: images.alt,
+      width: images.width,
+      height: images.height,
+      deletedAt: images.deletedAt,
+      deletedBy: images.deletedBy,
+      reason: images.deletedReason,
+      eventId: images.deletedEventId,
+      total: sql<string>`COUNT(*) OVER ()`,
+    })
+    .from(images)
+    .where(isNotNull(images.deletedAt))
+    .orderBy(desc(images.deletedAt), desc(images.id))
+    .limit(take);
+
+  return {
+    total: found.length > 0 ? Number(found[0]!.total) : 0,
+    rows: found.map((row) => ({
+      kind: 'image' as const,
+      id: row.id,
+      address: { kind: 'image' as const, id: row.id },
+      handle: `image: ${row.alt} (${row.width}×${row.height})`,
+      deletedAt: row.deletedAt!,
+      deletedBy: row.deletedBy,
+      reason: row.reason,
+      eventId: row.eventId,
+      parents: [],
+    })),
+  };
+}
+
 /* ── The listing ───────────────────────────────────────────────────────── */
 
 const FETCHERS: Record<
@@ -554,6 +606,7 @@ const FETCHERS: Record<
   experiment: deletedExperiments,
   ingredient: deletedIngredients,
   tag: deletedTags,
+  image: deletedImages,
 };
 
 /**

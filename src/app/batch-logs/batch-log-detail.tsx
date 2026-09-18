@@ -7,6 +7,7 @@ import { citationDate } from '@/components/f/citation';
 import { PageHead, PageHero } from '@/components/f/page-head';
 import { SectionHead } from '@/components/f/section-label';
 import { Stat } from '@/components/f/stat';
+import { RecordImage, RecordImageGallery } from '@/components/record-image';
 import { cardinal, revisionOrdinal, roman } from '@/lib/site';
 import { cn } from '@/lib/utils';
 
@@ -80,9 +81,25 @@ export function BatchLogDetail({
       .filter(Boolean)
       .join(' · ') || 'Batch log';
 
-  /* `II` when the outcome section is drawn above it, `I` when it is not. */
+  /*
+   * The numbered sections, COUNTED rather than written down.
+   *
+   * It used to be one ternary — `II` when the outcome section was drawn
+   * above the table and `I` when it was not — and that stops working at
+   * three sections that can each be absent. A counter advanced in the order
+   * the sections are drawn cannot get out of step with them.
+   *
+   * The pictures come last of the three. A reader opens a batch log for the
+   * numbers, and a gallery above the per-piece record would put six
+   * photographs between the summary and the measurements.
+   */
   const hasAccount = Boolean(log.outcome) || log.notes.length > 0;
-  const tableOrdinal = roman(hasAccount ? 2 : 1);
+  const hasGallery = log.images.length > 0;
+  const accountOrdinal = hasAccount ? roman(1) : '';
+  const tableOrdinal = table ? roman(hasAccount ? 2 : 1) : '';
+  const galleryOrdinal = hasGallery
+    ? roman(1 + (hasAccount ? 1 : 0) + (table ? 1 : 0))
+    : '';
 
   return (
     <>
@@ -106,6 +123,17 @@ export function BatchLogDetail({
           lede={log.summary ?? undefined}
         />
 
+        {/* Above the ledger, because a run is the record a photograph is
+            worth most to: the figures say 10 kg became 4.5 kg, and the
+            picture is what says whether that was a good batch. */}
+        {log.heroImageUrl ? (
+          <RecordImage
+            url={log.heroImageUrl}
+            alt={log.heroImageAlt}
+            className="shell:max-w-190"
+          />
+        ) : null}
+
         {figures.length > 0 ? (
           <BatchLedger>
             {figures.map((figure) => (
@@ -125,7 +153,7 @@ export function BatchLogDetail({
         {hasAccount ? (
           <>
             <SectionHead
-              ordinal={roman(1)}
+              ordinal={accountOrdinal}
               title="How it went"
               meta={accountMeta(log)}
             />
@@ -161,6 +189,19 @@ export function BatchLogDetail({
               in. The table scrolls sideways inside its own box; the page does
               not move with it.
             </p>
+          </>
+        ) : null}
+
+        {hasGallery ? (
+          <>
+            <SectionHead
+              ordinal={galleryOrdinal}
+              title="Pictures"
+              meta={`${cardinal(log.images.length)} picture${
+                log.images.length === 1 ? '' : 's'
+              }`}
+            />
+            <RecordImageGallery images={log.images} />
           </>
         ) : null}
       </div>

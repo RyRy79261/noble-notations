@@ -163,6 +163,14 @@ test('the guide and the instructions name only tools that exist', async () => {
     'initial_weight',
     'final_weight',
     'days_to_cut',
+    // The one name here that is named in order to be DENIED. Issue #54
+    // asked for a `delete_image` tool, and the answer is that this
+    // repository has one delete and it is soft — so `upload_image` and the
+    // guide both say, in those words, that there is no `delete_image` and
+    // that `delete_record { kind: "image" }` is the way. An agent that has
+    // read the issue would otherwise try the name and get a
+    // tool-not-found, which is the exact failure this test exists to stop.
+    'delete_image',
   ]);
 
   const mcp = agent();
@@ -514,6 +522,18 @@ const CALLS: Record<string, Record<string, unknown>> = {
   },
   delete_record: { kind: 'recipe', slug: GHOST },
   restore_record: { kind: 'recipe', slug: GHOST },
+  // A one-pixel PNG, so the scope check is reached without the sweep
+  // spending a resize on a photograph. It is refused for its scope before
+  // the bytes are looked at, and refused for its `attachTo` after — either
+  // way nothing is stored.
+  upload_image: {
+    data:
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmM' +
+      'IQAAAABJRU5ErkJggg==',
+    mimeType: 'image/png',
+    alt: 'A scope sweep, one pixel and no meaning.',
+    attachTo: { recipeSlug: GHOST },
+  },
 };
 
 const WRITE_TOOLS = [
@@ -533,6 +553,7 @@ const WRITE_TOOLS = [
   'update_note',
   'delete_record',
   'restore_record',
+  'upload_image',
 ];
 
 /** English for a count, because the guide writes the number in words. */

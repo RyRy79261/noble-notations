@@ -12,7 +12,7 @@ import 'server-only';
  * NOTHING IN THIS FILE READS A DELETED ROW.
  * ─────────────────────────────────────────────────────────────────────────
  *
- * Six tables carry a soft delete, and each has a `*_live` view over it in
+ * Seven tables carry a soft delete, and each has a `*_live` view over it in
  * `src/db/schema.ts` that is `WHERE deleted_at IS NULL` and nothing else.
  * This file selects from those views. A read that names the base table by
  * mistake publishes a record somebody deleted, and it fails silently:
@@ -20,7 +20,7 @@ import 'server-only';
  *
  * Three things hold that, in decreasing order of strength:
  *
- * 1. **`eslint.config.mjs` bans the six base tables from this file.** A new
+ * 1. **`eslint.config.mjs` bans the seven base tables from this file.** A new
  *    query CANNOT name one, and `pnpm lint` is a CI gate. This was chosen
  *    over a shared `and(live(t), …)` helper for one reason: a helper can be
  *    left out of a new query, an import ban cannot.
@@ -53,9 +53,11 @@ import { alias } from 'drizzle-orm/pg-core';
 import type { SQLWrapper } from 'drizzle-orm';
 import { db } from '@/db/client';
 import {
+  experimentImages,
   experimentItems,
   experimentObservations,
   experimentsLive,
+  imagesLive,
   ingredientRelations,
   ingredientsLive,
   noteSources,
@@ -106,6 +108,16 @@ export interface TermView {
   label: string;
   description: string | null;
   isPrimary?: boolean;
+  /**
+   * Optional, unlike the two on a recipe, and the shape says why: a tag is
+   * read in two places. `getTerm` draws the tag's own PAGE and fills these;
+   * `attachTerms` draws the chips on a recipe card, where a picture has
+   * nowhere to go and reading two more columns per tag per card would be
+   * paid for on every index. Absent means "this read did not ask", which is
+   * a different fact from `null` — "there is no picture".
+   */
+  heroImageUrl?: string | null;
+  heroImageAlt?: string | null;
 }
 
 export interface IngredientLineView {
@@ -1493,12 +1505,16 @@ export async function getTerm(
     slug: string;
     label: string;
     description: string | null;
+    heroImageUrl: string | null;
+    heroImageAlt: string | null;
   }): TermView => ({
     id: row.id,
     categoryType: row.facet as CategoryType,
     slug: row.slug,
     label: row.label,
     description: row.description,
+    heroImageUrl: row.heroImageUrl,
+    heroImageAlt: row.heroImageAlt,
   });
 
   const parentRows = term.parentId
@@ -1536,6 +1552,14 @@ export interface IngredientWithUsage {
   densityGPerMl: number | null;
   defaultUnit: string | null;
   aliases: string[];
+  /**
+   * A picture of the raw ingredient. Required on this view rather than
+   * optional, unlike `TermView`: both readers of it — the index and the
+   * detail page — can use one, and the index is where telling two chillies
+   * apart actually matters.
+   */
+  heroImageUrl: string | null;
+  heroImageAlt: string | null;
   recipeCount: number;
 }
 
@@ -1550,6 +1574,8 @@ export async function listIngredients(): Promise<IngredientWithUsage[]> {
       densityGPerMl: ingredientsLive.densityGPerMl,
       defaultUnit: ingredientsLive.defaultUnit,
       aliases: ingredientsLive.aliases,
+      heroImageUrl: ingredientsLive.heroImageUrl,
+      heroImageAlt: ingredientsLive.heroImageAlt,
       recipeCount: sql<number>`COUNT(DISTINCT r.id)`,
     })
     .from(ingredientsLive)
@@ -1571,6 +1597,8 @@ export async function listIngredients(): Promise<IngredientWithUsage[]> {
       ingredientsLive.densityGPerMl,
       ingredientsLive.defaultUnit,
       ingredientsLive.aliases,
+      ingredientsLive.heroImageUrl,
+      ingredientsLive.heroImageAlt,
     )
     .orderBy(desc(sql`COUNT(DISTINCT r.id)`), asc(ingredientsLive.name));
 
@@ -1678,6 +1706,8 @@ export async function getIngredient(slug: string): Promise<{
       densityGPerMl: n(row.densityGPerMl),
       defaultUnit: row.defaultUnit,
       aliases: row.aliases,
+      heroImageUrl: row.heroImageUrl,
+      heroImageAlt: row.heroImageAlt,
       recipeCount: usedIn.length,
     },
     recipes: usedIn.map((r) => toSummary(r, terms.get(r.id) ?? [], parents)),
@@ -1722,6 +1752,23 @@ export interface ExperimentView {
    */
   revisionWithdrawn: boolean;
   recipe: { slug: string; title: string } | null;
+  /** The one picture that stands for the run. */
+  heroImageUrl: string | null;
+  heroImageAlt: string | null;
+  /**
+   * The rest of the run's pictures, in reading order.
+   *
+   * A run is the only record here that takes a LIST, and the reason is what
+   * a run is: the account of what was actually seen. One run produces
+   * several pictures — the meat going in, the box on day three, the slice on
+   * day nine — and a single hero would throw away the two that carry the
+   * argument.
+   */
+  images: {
+    url: string;
+    alt: string | null;
+    caption: string | null;
+  }[];
   items: { label: string; note: string | null }[];
   observations: {
     item: string | null;
@@ -1759,6 +1806,9 @@ export interface ExperimentSummary {
   /** What came out. `null` when the run never weighed anything out. */
   finished: { value: number; unit: string } | null;
   recipe: { slug: string; title: string } | null;
+  /** The run's hero image, for the card. Its gallery is on the page only. */
+  heroImageUrl: string | null;
+  heroImageAlt: string | null;
 }
 
 /**
@@ -1786,6 +1836,8 @@ export async function listExperiments(options?: {
       startedAt: experimentsLive.startedAt,
       costTotal: experimentsLive.costTotal,
       currency: experimentsLive.currency,
+      heroImageUrl: experimentsLive.heroImageUrl,
+      heroImageAlt: experimentsLive.heroImageAlt,
       revisionNumber: recipeRevisionsAll.revisionNumber,
       // THE ONE JOIN IN THIS FILE THAT READS A DELETED ROW ON PURPOSE.
       // See `recipeRevisionsAll` in `./live` and §4.3: a run outlives the
@@ -1825,6 +1877,8 @@ export async function listExperiments(options?: {
     raw: weights.get(r.id)?.raw ?? null,
     finished: weights.get(r.id)?.finished ?? null,
     recipe: r.recipeSlug ? { slug: r.recipeSlug, title: r.recipeTitle! } : null,
+    heroImageUrl: r.heroImageUrl,
+    heroImageAlt: r.heroImageAlt,
   }));
 }
 
@@ -1953,6 +2007,8 @@ export async function getExperiment(
       outcome: experimentsLive.outcome,
       costTotal: experimentsLive.costTotal,
       currency: experimentsLive.currency,
+      heroImageUrl: experimentsLive.heroImageUrl,
+      heroImageAlt: experimentsLive.heroImageAlt,
       // The second of the two deliberate exceptions — see `listExperiments`.
       revisionNumber: recipeRevisionsAll.revisionNumber,
       revisionWithdrawn: sql<boolean>`${recipeRevisionsAll.deletedAt} IS NOT NULL`,
@@ -1971,7 +2027,7 @@ export async function getExperiment(
   const row = found[0];
   if (!row) return null;
 
-  const [itemRows, observationRows, noteRows] = await Promise.all([
+  const [itemRows, observationRows, noteRows, imageRows] = await Promise.all([
     db
       .select({ label: experimentItems.label, note: experimentItems.note })
       .from(experimentItems)
@@ -2016,6 +2072,18 @@ export async function getExperiment(
         asc(notesLive.position),
         asc(notesLive.id),
       ),
+    // A child table, so it carries no delete flag of its own and needs none
+    // — its lifetime is the run's, and this read already started from a live
+    // one. `position` is the order `upload_image` appends in.
+    db
+      .select({
+        url: experimentImages.imageUrl,
+        alt: experimentImages.imageAlt,
+        caption: experimentImages.caption,
+      })
+      .from(experimentImages)
+      .where(eq(experimentImages.experimentId, row.id))
+      .orderBy(asc(experimentImages.position)),
   ]);
 
   const sourcesByNote = await noteSourcesByNote(noteRows.map((x) => x.id));
@@ -2035,6 +2103,9 @@ export async function getExperiment(
     recipe: row.recipeSlug
       ? { slug: row.recipeSlug, title: row.recipeTitle! }
       : null,
+    heroImageUrl: row.heroImageUrl,
+    heroImageAlt: row.heroImageAlt,
+    images: imageRows,
     items: itemRows,
     observations: observationRows.map((o) => ({ ...o, value: n(o.value) })),
     notes: noteRows.map((x) => ({
@@ -2932,6 +3003,65 @@ export async function getStats(): Promise<{
     notes: Number(row?.notes ?? 0),
     experiments: Number(row?.experiments ?? 0),
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Images
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface ImageView {
+  id: string;
+  /** Where the bytes are. Only `/images/[id]` uses it, to redirect. */
+  blobUrl: string;
+  mimeType: string;
+  alt: string;
+  caption: string | null;
+  width: number;
+  height: number;
+  bytes: number;
+}
+
+/**
+ * One stored picture, or null when there is no live row with that id.
+ *
+ * The only caller is the route handler at `/images/[id]`, and the `_live`
+ * view is the whole mechanism: a deleted image row makes that address 404,
+ * which makes every recipe, ingredient, tag, run and stored step that names
+ * it stop showing a picture at once — without a single one of those rows
+ * being rewritten. `src/db/schema.ts` § `images` is the argument for it.
+ *
+ * The id is not validated as a uuid here. It arrives from a URL segment, so
+ * anything can be in it; Postgres refuses a malformed uuid on the comparison
+ * and the handler turns that into the same 404 it would have given anyway.
+ */
+export async function getImage(id: string): Promise<ImageView | null> {
+  // A uuid comparison against a value that is not one raises `22P02` rather
+  // than matching nothing, and a 500 on a mistyped address is worse than a
+  // 404 on one. The shape check is cheap and keeps the failure honest.
+  if (
+    !/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
+      id,
+    )
+  ) {
+    return null;
+  }
+
+  const found = await db
+    .select({
+      id: imagesLive.id,
+      blobUrl: imagesLive.blobUrl,
+      mimeType: imagesLive.mimeType,
+      alt: imagesLive.alt,
+      caption: imagesLive.caption,
+      width: imagesLive.width,
+      height: imagesLive.height,
+      bytes: imagesLive.bytes,
+    })
+    .from(imagesLive)
+    .where(eq(imagesLive.id, id))
+    .limit(1);
+
+  return found[0] ?? null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────

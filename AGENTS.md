@@ -268,7 +268,8 @@ wrong.
 
 The connector has full CRUD. Every record an agent can create it can now
 update and delete, and a delete is soft: the row stays, it stops being
-visible, and it can be restored.
+visible, and it can be restored. `delete_record` takes seven kinds — a
+recipe, a version, a note, a run, an ingredient, a tag and an image.
 
 ### Why the rule changed
 
@@ -309,12 +310,14 @@ deleted_reason    text        NULL
 deleted_event_id  uuid        NULL
 ```
 
-On `recipes`, `recipe_revisions`, `notes`, `experiments`, `ingredients` and
-`taxonomy_terms`. Eleven other tables deliberately do not carry them:
+On `recipes`, `recipe_revisions`, `notes`, `experiments`, `ingredients`,
+`taxonomy_terms` and `images`. Twelve other tables deliberately do not carry
+them:
 
 - **Children** — `recipe_ingredients`, `recipe_steps`, `recipe_mass_flows`,
   `recipe_mass_flow_stages`, `note_sources`, `experiment_items`,
-  `experiment_observations`. Their lifetime is their parent's, and every read
+  `experiment_observations`, `experiment_images`. Their lifetime is their
+  parent's, and every read
   that reaches them starts from a live parent, so the parent's filter is
   theirs. See the Conventions bullet on replacing a child with its parent.
 - **Link tables** — `recipe_terms`, `recipe_step_ingredients`,
@@ -458,12 +461,13 @@ is the explicit way to say what people read.
 
 Three layers, and the second is a CI gate rather than a convention.
 
-1. **Six views.** `recipes_live`, `recipe_revisions_live`, `notes_live`,
-   `experiments_live`, `ingredients_live`, `taxonomy_terms_live`, declared in
-   `src/db/schema.ts` and generated into the migration. `read.ts` selects
-   from nothing else.
+1. **Seven views.** `recipes_live`, `recipe_revisions_live`, `notes_live`,
+   `experiments_live`, `ingredients_live`, `taxonomy_terms_live`,
+   `images_live`, declared in `src/db/schema.ts` and generated into the
+   migration. `read.ts` selects from nothing else.
 2. **An import ban.** `eslint.config.mjs` scopes a `no-restricted-imports`
-   rule to `src/lib/queries/read.ts` and refuses the six base tables by name,
+   rule to `src/lib/queries/read.ts` and refuses the seven base tables by
+   name,
    under `paths` for `@/db/schema` and under `patterns` for every relative
    spelling of the same module — `'../../db/schema'` passed the `paths` form,
    which matches a literal specifier. A new query there cannot name a base
@@ -528,6 +532,48 @@ something different:
 A fourth meaning would make all four unreadable. **No code, comment, tool
 name, description or document may use the word "archive" for a delete.** A
 caller says delete; the row survives; restore brings it back.
+
+## Images
+
+`upload_image` is the only way a picture gets into this repository, and issue
+#54 is why it exists: every image field took a web address and nothing here
+could make one, so an agent holding a photograph could not fill any of them.
+
+The bytes go to **Vercel Blob**. The row goes in `images`, the seventh
+soft-deletable table. **What a recipe stores is `/images/<id>` — this site's
+own address, never the blob's** — and that is the decision the rest follows
+from. A reference to a picture is a text column and not a foreign key (a
+recipe may point at somebody else's site), so deleting an image row cannot
+touch the rows naming it. Serving from `/images/[id]`, which reads
+`images_live`, makes one soft delete take the picture off every record at
+once and a restore bring them all back, with no stored revision rewritten.
+The alternative was a delete that edited versions people cooked from in
+order to hide a photograph. `docs/mcp-connector.md` § _Images_ has the
+rest, including the four questions the issue left open and what each was
+answered with.
+
+**There is no `delete_image`.** The issue asked for one; `image` is a kind
+of `delete_record` instead. See § _Delete is soft, and it is called delete_ —
+a second delete verb would need a second undo, and then there are two
+answers to "how do I get it back".
+
+Three records gained `hero_image_url` and `hero_image_alt` with this:
+ingredient, experiment and taxonomy term. A run also gained a LIST,
+`experiment_images`, because a run is the record a photograph is worth most
+to and one run produces several.
+
+`sharp` resizes and re-encodes on the way in — 2000 pixels on the longest
+edge, WebP, with anything over 15 MB decoded refused. `@vercel/blob` is
+behind `src/lib/images/blob.ts` and nothing else imports the SDK.
+
+**`upload_image` is registered only when `BLOB_READ_WRITE_TOKEN` is set**,
+the same way `report_issue` depends on `GITHUB_ISSUE_TOKEN`. It is set in
+Production and Preview and on neither a developer's machine nor CI, so
+`pnpm build` and every gate stay green without it, and the guide describes
+the tool only where it exists. The e2e suite sets a stub token and points
+`VERCEL_BLOB_API_URL` at `e2e/blob-stub.ts`, so the suite never reaches
+blob.vercel-storage.com — the same guarantee `e2e/github-stub.ts` gives for
+GitHub.
 
 ## Local development
 
@@ -599,6 +645,13 @@ See `.env.example`. `DATABASE_URL` is required for content;
 required for the MCP connector's consent screen (Vercel injects the first,
 you set the other two); `MCP_PUBLIC_URL` should be set in production (see
 the `VERCEL_URL` gotcha in `docs/mcp-connector.md`).
+
+`BLOB_READ_WRITE_TOKEN` turns `upload_image` on. The Vercel Blob
+integration sets it, along with `BLOB_STORE_ID` and
+`BLOB_WEBHOOK_PUBLIC_KEY`, in Production and Preview; this repository reads
+only the first. Without it the tool is not registered at all, the guide
+stops naming it, and every other tool works unchanged — so a local database
+and `pnpm build` need nothing.
 
 `GITHUB_ISSUE_TOKEN` turns `report_issue` on. It must be a **fine-grained**
 token on `RyRy79261/noble-notations` only, with **Issues: read and write**

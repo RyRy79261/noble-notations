@@ -19,6 +19,7 @@ import {
   type CensusFixture,
   type CensusReport,
 } from './deleted-census-contract';
+import { BLUE_6X4_PNG, RED_4X4_PNG } from './image-fixtures';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────
@@ -70,6 +71,10 @@ function rw(): McpClient {
 
 interface NoteResult {
   noteId: string;
+}
+interface UploadResult {
+  id: string;
+  url: string;
 }
 interface DeleteResult {
   kind: string;
@@ -132,7 +137,26 @@ test.beforeAll(async () => {
     // `listRecipeSlugs`, the sitemap and `pnpm export` deal in slugs alone.
     forbidden: [BIN, binRecipe, binRun, binIngredient, binTag],
     keepMarkers: [KEEP, keepRecipe],
+    // Filled below: an image has no slug, so its id is only known after the
+    // upload that makes it.
+    binImage: '',
+    keepImage: '',
   };
+
+  // ── Two pictures, one of each fate. The sentinel is in the alt text,
+  // which is the only free-text field an image has.
+  const keepImage = await mcp.call<UploadResult>('upload_image', {
+    data: RED_4X4_PNG,
+    mimeType: 'image/png',
+    alt: `${KEEP} a picture that stays.`,
+  });
+  const binImage = await mcp.call<UploadResult>('upload_image', {
+    data: BLUE_6X4_PNG,
+    mimeType: 'image/png',
+    alt: `${BIN} a picture that goes in the bin.`,
+  });
+  fixture.keepImage = keepImage.id;
+  fixture.binImage = binImage.id;
 
   // ── Two tags and two ingredients, described, so both read the same way.
   await mcp.call('upsert_category', {
@@ -308,6 +332,11 @@ test.beforeAll(async () => {
     slug: binTag,
     categoryType: 'technique',
     reason: `${BIN} a tag that does not group anything.`,
+  });
+  await mcp.call('delete_record', {
+    kind: 'image',
+    id: binImage.id,
+    reason: `${BIN} a picture of the wrong dish.`,
   });
 });
 
@@ -799,7 +828,7 @@ test('no read tool returns a deleted record, and list_deleted is the one that mu
   }
 
   // list_deleted is the one read module that does not filter, so the bin
-  // holds all four deletes with their reasons. A bin that showed nothing
+  // holds all five deletes with their reasons. A bin that showed nothing
   // would make every assertion above vacuous.
   const bin = await mcp.call<{
     rows: {
@@ -827,6 +856,10 @@ test('no read tool returns a deleted record, and list_deleted is the one that mu
       'revision',
       'revision',
       'tag',
+      // The picture. It carries the sentinel in its ALT TEXT, which is the
+      // only free-text field an image has and therefore the only thing its
+      // handle can be built from.
+      'image',
     ].sort(),
   );
   // The reason is the only thing that tells the next reader why a record

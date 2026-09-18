@@ -94,6 +94,12 @@ const DEFAULTS: CensusFixture = {
   keepTag: 'zzkeep-roasting',
   binTagLabel: `${BIN} curing`,
   binIngredientName: `${BIN} allspice`,
+  // No unstamped default is possible: an image has no slug, so the only
+  // handle it has is the id the upload minted. Run by hand, `getImage`
+  // returns null for both — which reads as a blind call in the report and
+  // says so, rather than quietly passing.
+  binImage: '',
+  keepImage: '',
   forbidden: [
     BIN,
     'zzbin-recipe',
@@ -342,6 +348,23 @@ const CALLS: Record<string, Call[]> = {
     // Six integers. No sentinel can reach them; `e2e/data-deleted.spec.ts`
     // asserts the counts themselves, by measuring a delete and a restore.
     { label: 'the six counts', run: () => read.getStats() },
+  ],
+
+  /**
+   * The read behind `/images/[id]`, and the mechanism a soft-deleted
+   * picture depends on.
+   *
+   * An image is named by four text columns in five tables — a recipe's
+   * hero, a step's picture, an ingredient's, a tag's, a run's and its
+   * gallery — and none of them is a foreign key. So the delete cannot
+   * rewrite them and does not try: it is THIS read going dark that takes
+   * the picture off every one of those pages at once. A leak here would
+   * mean a deleted photograph still being served from every record that
+   * ever named it.
+   */
+  getImage: [
+    { label: 'the deleted image', run: () => read.getImage(FIXTURE.binImage) },
+    { label: 'the kept image', run: () => read.getImage(FIXTURE.keepImage) },
   ],
 
   buildShoppingList: [

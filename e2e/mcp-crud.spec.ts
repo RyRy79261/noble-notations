@@ -1411,9 +1411,9 @@ test('the five new write tools need the write scope and list_deleted answers on 
   expect(typeof bin.total).toBe('number');
 });
 
-test('the six kinds delete_record accepts are the six kinds the schema advertises', async () => {
+test('the kinds delete_record accepts are the kinds the schema advertises', async () => {
   // The enum in the schema is how a model learns what it may delete — that
-  // is the whole argument for two generic tools rather than twelve typed
+  // is the whole argument for two generic tools rather than fourteen typed
   // ones, so the enum has to be there and it has to be complete.
   const advertised: AdvertisedTool[] = await rw().listToolSchemas();
   const kinds = (name: string) => {
@@ -1425,10 +1425,21 @@ test('the six kinds delete_record accepts are the six kinds the schema advertise
     return (schema.properties?.kind?.enum ?? []).sort();
   };
 
-  const six = ['experiment', 'ingredient', 'note', 'recipe', 'revision', 'tag'];
-  expect(kinds('delete_record')).toEqual(six);
-  expect(kinds('restore_record')).toEqual(six);
-  expect(kinds('list_deleted')).toEqual(six);
+  // `image` is the seventh, and issue #54 asked for a `delete_image` tool
+  // instead. It is here rather than there because this repository has one
+  // delete and it is soft: a second verb would have needed a second undo.
+  const all = [
+    'experiment',
+    'image',
+    'ingredient',
+    'note',
+    'recipe',
+    'revision',
+    'tag',
+  ];
+  expect(kinds('delete_record')).toEqual(all);
+  expect(kinds('restore_record')).toEqual(all);
+  expect(kinds('list_deleted')).toEqual(all);
 });
 
 // ═════════════════════════════════════════════════════════════════════════
