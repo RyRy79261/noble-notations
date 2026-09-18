@@ -12,10 +12,10 @@
  *   1. The six `_live` views. They only help a query that selects from them.
  *   2. The ESLint import ban scoped to `read.ts` in `eslint.config.mjs`. It
  *      makes naming a base table fail CI — but it reads imports, and it
- *      CANNOT SEE INSIDE A TEMPLATE LITERAL. `read.ts` has six raw-SQL
+ *      CANNOT SEE INSIDE A TEMPLATE LITERAL. `read.ts` has seven raw-SQL
  *      sites: `searchRecipes`, `searchExperiments`, `searchNotes`,
- *      `getStats`, `listIngredients`' join, and the `noteRecipeId` /
- *      `noteBelongsToRecipe` fragments.
+ *      `getStats`, `listIngredients`' join, `variantFamily`'s recursive
+ *      walk, and the `noteRecipeId` / `noteBelongsToRecipe` fragments.
  *   3. This.
  *
  * The property worth more than the assertions is the enumeration. This file
@@ -194,9 +194,13 @@ const CALLS: Record<string, Call[]> = {
     },
     {
       // The dense one. This result carries the recipe, its whole revision
-      // history, its lines, its steps, its notes, its links, its backlinks
-      // and its runs — and the fixture points a link, a line, a tag and a
-      // note of this live recipe at records that are deleted.
+      // history, its lines, its steps, its notes, its links, its backlinks,
+      // its runs and its variation family — and the fixture points a link,
+      // a line, a tag, a note and a VARIATION of this live recipe at
+      // records that are deleted. `variantFamily` is not exported, so this
+      // call is the whole of its coverage: a walk over `recipes` rather
+      // than `recipes_live` would put the deleted variation's title in this
+      // result and nowhere else.
       label: 'the kept recipe',
       run: () => read.getRecipeBySlug(FIXTURE.keepRecipe),
     },

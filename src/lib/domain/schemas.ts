@@ -303,9 +303,19 @@ export const INGREDIENT_CATEGORIES = [
   'other',
 ] as const;
 
+/**
+ * The four editorial edges. `variant_of` was the fifth until migration 0011
+ * and is now `variantOf` — a field of its own on the recipe, because being a
+ * variation is structural rather than editorial: at most one parent, no
+ * cycles, and a whole panel drawn from it. `src/db/schema.ts` argues it at
+ * `recipes.variantOfId`.
+ *
+ * A caller still sending `{ kind: 'variant_of' }` is not silently ignored.
+ * `recipeLinkSchema` names the field to use instead, because the sentence
+ * the caller meant is still sayable — it just has a better home.
+ */
 export const RECIPE_LINK_KINDS = [
   'derived_from',
-  'variant_of',
   'component_of',
   'pairs_with',
   'references',
@@ -772,11 +782,92 @@ function checkMassFlowStages(
 }
 
 export const recipeLinkSchema = z.object({
-  kind: z.enum(RECIPE_LINK_KINDS),
+  /**
+   * A retired kind gets a message that names its replacement, rather than
+   * zod's list of four. The enum stays four values wide, so
+   * `CreateRecipeInput['links']` cannot hold a `variant_of` the write layer
+   * would then have to refuse a second time.
+   */
+  kind: z.enum(RECIPE_LINK_KINDS, {
+    error: (issue) =>
+      issue.input === 'variant_of'
+        ? 'variant_of is not a link. A variation is a recipe of its own ' +
+          'with its own versions, so it is a field on the recipe, not an ' +
+          'edge between two: send `variantOf` with that slug instead, and ' +
+          '`variantNote` for what makes it different. create_variant does ' +
+          'both in one call.'
+        : undefined,
+  }),
   /** Slug of the other recipe. Must already exist. */
   slug: z.string().min(1).max(120),
   note: z.string().max(1000).optional(),
 });
+
+/**
+ * Where a variation hangs, and what makes it different.
+ *
+ * The two travel together and `checkVariantPair` refuses half of them. They
+ * are spread into `create_recipe`, `update_recipe` and `create_variant`
+ * rather than written three times, so the three tools cannot drift on what
+ * a variation is.
+ *
+ * **Nullable, and the null is the way out.** `variantOf: null` on
+ * `update_recipe` promotes a variation to a base dish — it is how a wrong
+ * parent is corrected and how a family is split. Absent means leave it
+ * alone, which is what every other field on that tool means. The write
+ * layer clears `variantNote` with it: a note saying "with shiitake instead
+ * of pork" on a recipe that varies nothing is a line with no subject.
+ */
+export const variantOfShape = {
+  variantOf: z
+    .string()
+    .min(1)
+    .max(120)
+    .nullish()
+    .describe(
+      'Slug of the recipe this one is a variation of. The two are then ' +
+        'siblings in one family, and each keeps its own versions. Send ' +
+        'null to make this a dish of its own again.',
+    ),
+  variantNote: z
+    .string()
+    .max(300)
+    .nullish()
+    .describe(
+      'What makes this variation different, in one line: "With shiitake ' +
+        'instead of pork". Shown beside the title wherever the family is ' +
+        'listed.',
+    ),
+};
+
+/**
+ * A note about a variation, on a recipe that varies nothing, is a line with
+ * no subject — and it is invisible until somebody makes that recipe a
+ * variation months later and a sentence nobody wrote appears beside it.
+ *
+ * Only refused when the note is set and the parent is explicitly cleared or
+ * absent on a create. On `update_recipe` an absent `variantOf` means "leave
+ * it alone", and a recipe that is ALREADY a variation may correct its note
+ * alone — so that case is checked at write time, where the stored parent is
+ * in hand, and not here.
+ */
+export function checkVariantPair(
+  value: { variantOf?: string | null; variantNote?: string | null },
+  ctx: z.RefinementCtx,
+  parentMayBeStored: boolean,
+): void {
+  if (value.variantNote == null) return;
+  if (value.variantOf != null) return;
+  if (parentMayBeStored && value.variantOf === undefined) return;
+  ctx.addIssue({
+    code: 'custom',
+    path: ['variantNote'],
+    message:
+      'variantNote says what makes a variation different, and this names ' +
+      'no recipe to vary. Give `variantOf` the slug of the dish this one ' +
+      'is a variation of, or drop the note.',
+  });
+}
 
 /**
  * Taxonomy as a record keyed by facet — the shape easiest to fill in.
@@ -1338,6 +1429,7 @@ export const createRecipeShape = {
     .optional(),
   /** Why this recipe exists at all — recorded on revision 1. */
   rationale: z.string().max(4000).optional(),
+  ...variantOfShape,
 };
 
 export const createRecipeSchema = z
@@ -1345,7 +1437,63 @@ export const createRecipeSchema = z
   .superRefine(checkStepReferences)
   .superRefine((value, ctx) =>
     checkMassFlowStages(value.massFlow?.stages, ctx, ['massFlow', 'stages']),
+  )
+  .superRefine((value, ctx) => checkVariantPair(value, ctx, false));
+
+// ─────────────────────────────────────────────────────────────────────────
+// Variations
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Create a recipe that is a VARIATION of one already stored.
+ *
+ * It creates a recipe, exactly as `create_recipe` does — its own slug, its
+ * own revision 1, its own history from there. The only difference is that
+ * `variantOf` is required rather than optional, and the reason it is a tool
+ * of its own rather than an argument is the same reason `revise_recipe` is
+ * not a flag on `update_recipe`: **the tool name is the question.**
+ *
+ * The question this one answers is the one the connector otherwise gets
+ * wrong. Dan dan noodles with shiitake instead of pork is not revision 4 of
+ * dan dan noodles — nothing was learned and the pork version was not
+ * superseded — but `revise_recipe` is the tool an agent reaches for, and it
+ * would move `current_revision_id` and take the original off the page. So
+ * the three sit beside each other and each states what it is for:
+ *
+ * | The dish                        | The tool         |
+ * | ------------------------------- | ---------------- |
+ * | got better                      | `revise_recipe`  |
+ * | went a different way            | `create_variant` |
+ * | is fine, the record is wrong    | `update_recipe`  |
+ *
+ * Nothing is carried forward from the parent. A variation states its own
+ * ingredients and its own steps, for the reason `backfill_revision` states
+ * its own: inheriting them would record a dish nobody cooked, and the whole
+ * point of a variation is the part that differs.
+ */
+export const createVariantShape = {
+  ...recipeBodyShape,
+  slug: createRecipeShape.slug,
+  rationale: createRecipeShape.rationale,
+  variantOf: z
+    .string()
+    .min(1)
+    .max(120)
+    .describe(
+      'Slug of the recipe this one is a variation of. Required — that is ' +
+        'what makes this create_variant and not create_recipe.',
+    ),
+  variantNote: variantOfShape.variantNote,
+};
+
+export const createVariantSchema = z
+  .object(createVariantShape)
+  .superRefine(checkStepReferences)
+  .superRefine((value, ctx) =>
+    checkMassFlowStages(value.massFlow?.stages, ctx, ['massFlow', 'stages']),
   );
+export type CreateVariantArgs = z.input<typeof createVariantSchema>;
+export type CreateVariantInput = z.infer<typeof createVariantSchema>;
 
 /**
  * `Input` is what a caller sends (defaults not yet applied); `CreateRecipeInput`
@@ -2257,6 +2405,7 @@ export const updateRecipeShape = {
     ),
   categories: recipeBodyShape.categories,
   links: recipeBodyShape.links,
+  ...variantOfShape,
   originNote: recipeBodyShape.originNote,
   heroImageUrl: recipeBodyShape.heroImageUrl,
   heroImageAlt: recipeBodyShape.heroImageAlt,
@@ -2288,6 +2437,10 @@ export const updateRecipeSchema = z
   .object(updateRecipeShape)
   .superRefine((value, ctx) => {
     requireSomethingToDo(value, UPDATE_RECIPE_FIELDS, ctx, 'recipe');
+    // `true`: an absent `variantOf` here means "leave it alone", so a recipe
+    // that is already a variation may correct its note on its own. The
+    // write layer makes that call, holding the stored parent.
+    checkVariantPair(value, ctx, true);
   });
 export type UpdateRecipeArgs = z.input<typeof updateRecipeSchema>;
 export type UpdateRecipeInput = z.infer<typeof updateRecipeSchema>;

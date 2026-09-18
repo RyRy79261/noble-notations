@@ -1,9 +1,117 @@
 {
-  "id": "f4ab1410-f79c-4583-9d4b-659f7fb92b59",
-  "prevId": "8b1bb806-fa00-458a-8fce-5269e51dc0c8",
+  "id": "c093bd37-c3ee-458f-aa02-b0479137b73e",
+  "prevId": "f4ab1410-f79c-4583-9d4b-659f7fb92b59",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
+    "public.experiment_images": {
+      "name": "experiment_images",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "experiment_id": {
+          "name": "experiment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "image_url": {
+          "name": "image_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "image_alt": {
+          "name": "image_alt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "caption": {
+          "name": "caption",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uq_experiment_image_position": {
+          "name": "uq_experiment_image_position",
+          "columns": [
+            {
+              "expression": "experiment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "position",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_experiment_images_experiment": {
+          "name": "idx_experiment_images_experiment",
+          "columns": [
+            {
+              "expression": "experiment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "experiment_images_experiment_id_experiments_id_fk": {
+          "name": "experiment_images_experiment_id_experiments_id_fk",
+          "tableFrom": "experiment_images",
+          "tableTo": "experiments",
+          "columnsFrom": [
+            "experiment_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.experiment_items": {
       "name": "experiment_items",
       "schema": "",
@@ -319,6 +427,18 @@
           "notNull": false,
           "default": "'EUR'"
         },
+        "hero_image_url": {
+          "name": "hero_image_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hero_image_alt": {
+          "name": "hero_image_alt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -445,6 +565,166 @@
           ]
         }
       },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.images": {
+      "name": "images",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "blob_url": {
+          "name": "blob_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "blob_pathname": {
+          "name": "blob_pathname",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mime_type": {
+          "name": "mime_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "alt": {
+          "name": "alt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "caption": {
+          "name": "caption",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "width": {
+          "name": "width",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "height": {
+          "name": "height",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bytes": {
+          "name": "bytes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "checksum": {
+          "name": "checksum",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deleted_by": {
+          "name": "deleted_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deleted_reason": {
+          "name": "deleted_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deleted_event_id": {
+          "name": "deleted_event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "uq_images_checksum": {
+          "name": "uq_images_checksum",
+          "columns": [
+            {
+              "expression": "checksum",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_images_deleted": {
+          "name": "idx_images_deleted",
+          "columns": [
+            {
+              "expression": "deleted_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"images\".\"deleted_at\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_images_deleted_event": {
+          "name": "idx_images_deleted_event",
+          "columns": [
+            {
+              "expression": "deleted_event_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"images\".\"deleted_event_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -600,6 +880,18 @@
         },
         "description": {
           "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hero_image_url": {
+          "name": "hero_image_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hero_image_alt": {
+          "name": "hero_image_alt",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -2911,6 +3203,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "hero_image_url": {
+          "name": "hero_image_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hero_image_alt": {
+          "name": "hero_image_alt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "parent_id": {
           "name": "parent_id",
           "type": "uuid",
@@ -3230,6 +3534,18 @@
           "notNull": false,
           "default": "'EUR'"
         },
+        "hero_image_url": {
+          "name": "hero_image_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hero_image_alt": {
+          "name": "hero_image_alt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -3269,8 +3585,116 @@
           "notNull": false
         }
       },
-      "definition": "select \"id\", \"slug\", \"recipe_id\", \"revision_id\", \"title\", \"summary\", \"started_at\", \"completed_at\", \"scale_factor\", \"outcome\", \"cost_total\", \"currency\", \"created_at\", \"updated_at\", \"deleted_at\", \"deleted_by\", \"deleted_reason\", \"deleted_event_id\" from \"experiments\" where \"experiments\".\"deleted_at\" is null",
+      "definition": "select \"id\", \"slug\", \"recipe_id\", \"revision_id\", \"title\", \"summary\", \"started_at\", \"completed_at\", \"scale_factor\", \"outcome\", \"cost_total\", \"currency\", \"hero_image_url\", \"hero_image_alt\", \"created_at\", \"updated_at\", \"deleted_at\", \"deleted_by\", \"deleted_reason\", \"deleted_event_id\" from \"experiments\" where \"experiments\".\"deleted_at\" is null",
       "name": "experiments_live",
+      "schema": "public",
+      "isExisting": false,
+      "materialized": false
+    },
+    "public.images_live": {
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "blob_url": {
+          "name": "blob_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "blob_pathname": {
+          "name": "blob_pathname",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mime_type": {
+          "name": "mime_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "alt": {
+          "name": "alt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "caption": {
+          "name": "caption",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "width": {
+          "name": "width",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "height": {
+          "name": "height",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bytes": {
+          "name": "bytes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "checksum": {
+          "name": "checksum",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deleted_by": {
+          "name": "deleted_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deleted_reason": {
+          "name": "deleted_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deleted_event_id": {
+          "name": "deleted_event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "definition": "select \"id\", \"blob_url\", \"blob_pathname\", \"mime_type\", \"alt\", \"caption\", \"width\", \"height\", \"bytes\", \"checksum\", \"created_at\", \"updated_at\", \"deleted_at\", \"deleted_by\", \"deleted_reason\", \"deleted_event_id\" from \"images\" where \"images\".\"deleted_at\" is null",
+      "name": "images_live",
       "schema": "public",
       "isExisting": false,
       "materialized": false
@@ -3312,6 +3736,18 @@
         },
         "description": {
           "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hero_image_url": {
+          "name": "hero_image_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hero_image_alt": {
+          "name": "hero_image_alt",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -3374,7 +3810,7 @@
           "notNull": false
         }
       },
-      "definition": "select \"id\", \"slug\", \"name\", \"plural\", \"category\", \"description\", \"density_g_per_ml\", \"default_unit\", \"aliases\", \"created_at\", \"updated_at\", \"deleted_at\", \"deleted_by\", \"deleted_reason\", \"deleted_event_id\" from \"ingredients\" where \"ingredients\".\"deleted_at\" is null",
+      "definition": "select \"id\", \"slug\", \"name\", \"plural\", \"category\", \"description\", \"hero_image_url\", \"hero_image_alt\", \"density_g_per_ml\", \"default_unit\", \"aliases\", \"created_at\", \"updated_at\", \"deleted_at\", \"deleted_by\", \"deleted_reason\", \"deleted_event_id\" from \"ingredients\" where \"ingredients\".\"deleted_at\" is null",
       "name": "ingredients_live",
       "schema": "public",
       "isExisting": false,
@@ -3809,6 +4245,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "hero_image_url": {
+          "name": "hero_image_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hero_image_alt": {
+          "name": "hero_image_alt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "parent_id": {
           "name": "parent_id",
           "type": "uuid",
@@ -3854,7 +4302,7 @@
           "notNull": false
         }
       },
-      "definition": "select \"id\", \"facet\", \"slug\", \"label\", \"description\", \"parent_id\", \"created_at\", \"updated_at\", \"deleted_at\", \"deleted_by\", \"deleted_reason\", \"deleted_event_id\" from \"taxonomy_terms\" where \"taxonomy_terms\".\"deleted_at\" is null",
+      "definition": "select \"id\", \"facet\", \"slug\", \"label\", \"description\", \"hero_image_url\", \"hero_image_alt\", \"parent_id\", \"created_at\", \"updated_at\", \"deleted_at\", \"deleted_by\", \"deleted_reason\", \"deleted_event_id\" from \"taxonomy_terms\" where \"taxonomy_terms\".\"deleted_at\" is null",
       "name": "taxonomy_terms_live",
       "schema": "public",
       "isExisting": false,

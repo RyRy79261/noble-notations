@@ -92,14 +92,39 @@ import { AddToBasket } from './shopping-basket';
 import { StepIngredients } from './step-ingredients';
 import { TermList } from './tags';
 
-/** §10.2.3's five link kinds, in the specification's own words. */
+/**
+ * §10.2.3's link kinds, in the specification's own words — four of the five
+ * it listed.
+ *
+ * `variant_of` is not here. It left `recipe_links` for a column of its own
+ * and a panel of its own: a variation is a recipe with its own versions and
+ * its own siblings, not a bullet in a Related list. The Variations panel
+ * below is where it is drawn now.
+ */
 const LINK_LABELS: Record<string, string> = {
   derived_from: 'Derived from',
-  variant_of: 'Variant of',
   component_of: 'Component of',
   pairs_with: 'Pairs with',
   references: 'References',
 };
+
+/**
+ * How far each level of a family is indented, above `shell:` only.
+ *
+ * Written out rather than computed, because Tailwind v4 scans raw source
+ * text: `shell:pl-${depth * 6}` emits no utility at all and the indent
+ * simply would not exist. Four levels, then flat — a variation of a
+ * variation of a variation of a variation is already past what the 328px
+ * phone column can give away, and the family stays readable as a list when
+ * the indent stops.
+ */
+const FAMILY_INDENT = [
+  '',
+  'shell:pl-6',
+  'shell:pl-12',
+  'shell:pl-18',
+  'shell:pl-24',
+] as const;
 
 /**
  * The phase letter beside a step number — `A`, `B`, `C`. The design numbers
@@ -572,6 +597,7 @@ export function RecipeDetail({
             <MarkQuiet tone={isHistorical ? 'warn' : 'neutral'}>
               {ordinal}
             </MarkQuiet>
+            {recipe.variantOf ? <MarkQuiet>Variation</MarkQuiet> : null}
             {rev.source !== 'human' ? (
               <MarkQuiet tone="faint">Via {rev.source}</MarkQuiet>
             ) : null}
@@ -610,6 +636,27 @@ export function RecipeDetail({
           {recipe.subtitle ? (
             <p className="m-0 w-full text-16 leading-150 font-serif italic text-ink-2 recipe:text-21 recipe:leading-normal">
               {recipe.subtitle}
+            </p>
+          ) : null}
+
+          {/* Where a variation came from, said once, where a reader is
+              already looking.
+
+              A sentence with the link inside it, which is D-10's shape for a
+              body link, and NOT an F/Notice: a notice is for something that
+              is wrong or surprising, and being a variation is neither. The
+              badge above says what this is and this says what it varies; the
+              Variations panel holds the rest of the family. */}
+          {recipe.variantOf ? (
+            <p className="m-0 w-full text-15 leading-170 font-sans text-ink-2">
+              A variation of{' '}
+              <Link
+                href={`/recipes/${recipe.variantOf.slug}`}
+                className={PROSE_LINK}
+              >
+                {recipe.variantOf.title}
+              </Link>
+              {recipe.variantOf.note ? `. ${recipe.variantOf.note}` : '.'}
             </p>
           ) : null}
 
@@ -1104,6 +1151,65 @@ export function RecipeDetail({
                     </Revision>
                   );
                 })}
+              </Band>
+            ) : undefined
+          }
+          /* ── Variations: the family ─────────────────────────────────── */
+          variations={
+            recipe.variantFamily.length > 0 ? (
+              <Band
+                data-family=""
+                label="Variations"
+                meta={String(recipe.variantFamily.length)}
+                bodyClassName="gap-0"
+              >
+                <p className="m-0 w-full max-w-155 text-15 leading-170 font-sans text-ink-2">
+                  A variation is the same dish taken a different way. Each one
+                  keeps its own versions, and none of them replaces another. The
+                  first is the dish the rest came from.
+                </p>
+                {recipe.variantFamily.map((member) => (
+                  <Revision
+                    key={member.slug}
+                    data-variant={member.slug}
+                    data-depth={member.depth}
+                    className={
+                      FAMILY_INDENT[
+                        Math.min(member.depth, FAMILY_INDENT.length - 1)
+                      ]
+                    }
+                    /* The title, in place of `First revision`. The slot is
+                       the design's 21px serif lead and the entries are the
+                       same shape as the timeline's on purpose: a reader who
+                       has learnt to read one panel can read the other. */
+                    ordinal={member.title}
+                    /* The DATE slot, which is 9px mono and tabular. What a
+                       reader wants here is not a date — every member has a
+                       different history — but how much history there is. */
+                    date={
+                      member.revisionCount === 1
+                        ? '1 version'
+                        : `${member.revisionCount} versions`
+                    }
+                    /* No link on the entry a reader is already on, which is
+                       the rule the revision timeline above uses and the one
+                       cue the design gives for "you are here". */
+                    href={member.self ? undefined : `/recipes/${member.slug}`}
+                    current={member.self}
+                    currentLabel="You are here"
+                  >
+                    {member.variantNote ??
+                      (member.depth === 0 ? (
+                        <span className="text-ink-3">
+                          The dish the others came from.
+                        </span>
+                      ) : (
+                        <span className="text-ink-3">
+                          No difference recorded.
+                        </span>
+                      ))}
+                  </Revision>
+                ))}
               </Band>
             ) : undefined
           }

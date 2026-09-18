@@ -203,7 +203,7 @@ test('update_recipe corrects the record and touches no version', async () => {
     // tag sends it back; that is why the description says to call get_recipe
     // first, and it is the behaviour asserted here.
     categories: { technique: [`CRUD right ${id}`] },
-    links: [{ kind: 'variant_of', slug: other }],
+    links: [{ kind: 'derived_from', slug: other }],
   });
 
   const after = await mcp.call<RecipeResult>('get_recipe', { slug });

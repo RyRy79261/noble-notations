@@ -66,6 +66,7 @@ import type {
   AttachToInput,
   BackfillRevisionInput,
   CreateRecipeInput,
+  CreateVariantInput,
   DeletableKind,
   DescribeMechanismInput,
   IngredientLineInput,
@@ -999,6 +1000,137 @@ async function applyLinks(
   return unresolved;
 }
 
+/**
+ * THE VARIANT GRAPH MUTEX, and why a cycle needs one.
+ *
+ * `assertNoVariantCycle` below walks UP from the proposed parent looking for
+ * the child. Unlocked that is check-then-act across two rows, and it loses to
+ * itself in exactly the way `updateRecipe`'s pointer check did: set A's
+ * parent to B while another call sets B's parent to A, and each walk starts
+ * before the other commits, each finds a chain with no loop in it, and both
+ * write. The result is a family with no root — and the recursive walk
+ * `variantFamily` does to draw the panel then has no base case.
+ *
+ * Row locks cannot fix it, because the rows that would close the loop are
+ * not known until the walk has run. One mutex over the whole graph is the
+ * honest answer and it costs nothing: re-parenting is rare — it happens on a
+ * `create_variant`, and on the `update_recipe` that corrects a wrong parent —
+ * while every other write in this file never takes it at all.
+ *
+ * **A writer takes at most ONE advisory lock, and takes it first.** That is
+ * the whole rule that keeps this from meeting `RECIPE_TREE_LOCK`. The two
+ * writers here take this one and never that one; `deleteRecord` and
+ * `restoreRecord` take that one and never this one, because neither changes
+ * a parent. Two writers that never both want two locks cannot form a cycle,
+ * whatever order they take their rows in afterwards.
+ */
+const VARIANT_GRAPH_LOCK = 8318;
+
+async function lockVariantGraph(tx: Tx): Promise<void> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(${VARIANT_GRAPH_LOCK})`);
+}
+
+/**
+ * Refuse an edge that would close a loop.
+ *
+ * `UNION` and not `UNION ALL`, deliberately. The two are the same query while
+ * the graph is a forest, which is the state this function exists to keep it
+ * in — but `UNION` dedupes on the whole row, so a cycle that somehow got in
+ * (a hand-written `UPDATE` against the database, a restore of something
+ * strange) makes this walk terminate and report rather than spin a backend
+ * at 100% until the statement timeout. A guard that hangs on the one input
+ * it guards against is not a guard.
+ *
+ * Deleted rows are walked, and that is not an oversight. A deleted ancestor
+ * still holds its `variant_of_id`, so skipping it would let a cycle be built
+ * through the gap and then completed by a `restore_record` — a refusal
+ * arriving as a broken panel, days later, from a tool that refuses nothing.
+ * What a reader sees is `variantFamily`'s business; what may be WRITTEN is
+ * this one's, and they ask different questions of the same column.
+ */
+async function assertNoVariantCycle(
+  tx: Tx,
+  childId: string,
+  parentId: string,
+  childTitle: string,
+  parentLabel: string,
+): Promise<void> {
+  const loop = await tx.execute<{ id: string }>(
+    sql`WITH RECURSIVE up AS (
+          SELECT id, variant_of_id FROM recipes WHERE id = ${parentId}
+          UNION
+          SELECT r.id, r.variant_of_id
+            FROM recipes r
+            JOIN up ON r.id = up.variant_of_id
+        )
+        SELECT id FROM up WHERE id = ${childId} LIMIT 1`,
+  );
+  if (loop.rows.length === 0) return;
+  throw new ConflictError(
+    `"${parentLabel}" is already a variation of "${childTitle}", directly ` +
+      'or through another recipe. Making this edge as well would give the ' +
+      'family no base dish. Clear the other one first with update_recipe ' +
+      '{ variantOf: null }.',
+  );
+}
+
+/**
+ * Find the recipe a variation hangs off, and refuse every way it can be wrong.
+ *
+ * `childId` is null on a create: the row does not exist yet, so no edge can
+ * reach back to it and the cycle walk has nothing to look for.
+ *
+ * A DELETED parent is refused rather than reported as missing, the same way
+ * `applyLinks` refuses a deleted target and for the same reason — the row is
+ * there, so "no recipe with that slug" would send the caller hunting a
+ * spelling mistake that does not exist. Unlike a link, there is no
+ * echoing-back case to allow: `get_recipe` does not draw a deleted parent, so
+ * a caller cannot be sending one back.
+ */
+async function resolveVariantParent(
+  tx: Tx,
+  childId: string | null,
+  childTitle: string,
+  slug: string,
+): Promise<string> {
+  const found = await tx
+    .select({
+      id: recipes.id,
+      title: recipes.title,
+      deletedAt: recipes.deletedAt,
+    })
+    .from(recipes)
+    .where(eq(recipes.slug, slug))
+    .limit(1);
+  const parent = found[0];
+  if (!parent) {
+    throw new NotFoundError(
+      `No recipe with slug "${slug}", so there is nothing for this to be a ` +
+        'variation of. Create that dish first, or check the slug with ' +
+        'search_recipes.',
+    );
+  }
+  if (parent.deletedAt) {
+    throw new ConflictError(deletedRefusal(`${parent.title} (${slug})`));
+  }
+  if (childId !== null) {
+    if (parent.id === childId) {
+      throw new ConflictError(
+        `"${childTitle}" cannot be a variation of itself. Name the dish it ` +
+          'varies, or send variantOf: null to make it a dish of its own.',
+      );
+    }
+    await assertNoVariantCycle(
+      tx,
+      childId,
+      parent.id,
+      childTitle,
+      `${parent.title} (${slug})`,
+    );
+  }
+  return parent.id;
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Recipes
 // ─────────────────────────────────────────────────────────────────────────
@@ -1131,6 +1263,11 @@ export async function createRecipe(
   source: 'human' | 'mcp' | 'import' = 'mcp',
 ): Promise<WriteResult> {
   return withTransaction(async (tx) => {
+    // First statement of the transaction when there is a parent to resolve,
+    // and only then. See `VARIANT_GRAPH_LOCK`: a writer takes at most one
+    // advisory lock and takes it first.
+    if (input.variantOf) await lockVariantGraph(tx);
+
     /**
      * Every slug, DELETED ONES INCLUDED, and that is deliberate. A slug is
      * the public address of a recipe and a deleted recipe still holds
@@ -1163,6 +1300,12 @@ export async function createRecipe(
         taken.map((r) => r.slug),
       );
 
+    // `null` for the child: this row does not exist yet, so nothing can
+    // point at it and no edge from it can close a loop.
+    const variantOfId = input.variantOf
+      ? await resolveVariantParent(tx, null, input.title, input.variantOf)
+      : null;
+
     const recipeRow = await tx
       .insert(recipes)
       .values({
@@ -1172,6 +1315,8 @@ export async function createRecipe(
         summary: input.summary ?? null,
         kind: input.kind ?? 'recipe',
         status: input.status ?? 'active',
+        variantOfId,
+        variantNote: variantOfId ? (input.variantNote ?? null) : null,
         originNote: input.originNote ?? null,
         heroImageUrl: input.heroImageUrl ?? null,
         heroImageAlt: input.heroImageAlt ?? null,
@@ -1224,6 +1369,28 @@ export async function createRecipe(
       needsDescription: await collectNeedsDescription(tx, recipeId, revisionId),
     };
   });
+}
+
+/**
+ * Create a recipe that is a variation of one already stored.
+ *
+ * It is `createRecipe` with `variantOf` required, and it is a function of its
+ * own for the same reason the tool is: what separates a variation from a
+ * revision is a question about the food, and a caller that has to answer it
+ * by remembering an optional argument will one day answer it by calling
+ * `revise_recipe` — which moves `current_revision_id` and takes the dish the
+ * variation came from off its own page.
+ *
+ * The parent is only ever read here. It keeps its versions, its pointer and
+ * its page exactly as they were; the new recipe carries the edge. That is
+ * the difference the owner asked for in one sentence: a variation branches,
+ * a revision supersedes.
+ */
+export async function createVariant(
+  input: CreateVariantInput,
+  source: 'human' | 'mcp' | 'import' = 'mcp',
+): Promise<WriteResult> {
+  return createRecipe(input, source);
 }
 
 export async function reviseRecipe(
@@ -3411,11 +3578,16 @@ export async function updateRecipe(
   input: UpdateRecipeInput,
 ): Promise<WriteResult> {
   return withTransaction(async (tx) => {
+    // First statement, and only when a parent is actually being resolved.
+    // Clearing one closes no loop, so `variantOf: null` does not take it.
+    if (input.variantOf) await lockVariantGraph(tx);
+
     const found = await tx
       .select({
         id: recipes.id,
         title: recipes.title,
         currentRevisionId: recipes.currentRevisionId,
+        variantOfId: recipes.variantOfId,
         deletedAt: recipes.deletedAt,
       })
       .from(recipes)
@@ -3483,6 +3655,62 @@ export async function updateRecipe(
       : [];
 
     /**
+     * The three states of `variantOf`, which are three different sentences:
+     *
+     * | Sent   | Means                            |
+     * | ------ | -------------------------------- |
+     * | absent | leave the family alone           |
+     * | a slug | this is a variation of that dish |
+     * | `null` | this is a dish of its own again  |
+     *
+     * `undefined` and `null` therefore cannot be collapsed here, which is why
+     * `variantOfShape` is `.nullish()` and every branch below tests against
+     * `undefined` explicitly.
+     *
+     * **Clearing the parent clears the note with it.** "With shiitake instead
+     * of pork" on a recipe that varies nothing is a line with no subject, and
+     * leaving it would put it back on screen the day somebody makes that
+     * recipe a variation of something else.
+     *
+     * **A child keeps its own children.** Promoting a variation to a base
+     * dish does not re-parent the branch below it onto the grandparent; that
+     * branch was a variation of THIS dish and still is. It simply becomes the
+     * root of a family of its own, which is what `variantFamily` then draws
+     * from every member of it.
+     */
+    const variantOfId =
+      input.variantOf === undefined
+        ? undefined
+        : input.variantOf === null
+          ? null
+          : await resolveVariantParent(
+              tx,
+              recipe.id,
+              recipe.title,
+              input.variantOf,
+            );
+
+    /**
+     * The half-pair the schema cannot judge. `checkVariantPair` lets a
+     * `variantNote` through with no `variantOf` beside it, because on THIS
+     * tool an absent parent means "leave it alone" and a recipe that is
+     * already a variation is entitled to correct its note alone. Whether it
+     * is one is a fact about the stored row, and this is the first place that
+     * row is in hand.
+     */
+    if (
+      input.variantNote != null &&
+      variantOfId === undefined &&
+      recipe.variantOfId === null
+    ) {
+      throw new ConflictError(
+        `"${recipe.title}" is not a variation of anything, so a note about ` +
+          'what makes it different has nothing to be different from. Send ' +
+          '`variantOf` with the slug of the dish it varies.',
+      );
+    }
+
+    /**
      * THE SAME CHECK, AGAIN, UNDER THE RECIPE ROW'S LOCK — and it is the
      * check that counts. The one above ran unlocked and is check-then-act
      * across two rows: a concurrent `delete_record` of the very revision
@@ -3535,6 +3763,12 @@ export async function updateRecipe(
           : {}),
         ...(input.kind !== undefined ? { kind: input.kind } : {}),
         ...(input.status !== undefined ? { status: input.status } : {}),
+        ...(variantOfId !== undefined ? { variantOfId } : {}),
+        ...(variantOfId === null
+          ? { variantNote: null }
+          : input.variantNote !== undefined
+            ? { variantNote: input.variantNote ?? null }
+            : {}),
         ...(input.originNote !== undefined
           ? { originNote: input.originNote ?? null }
           : {}),
@@ -4070,6 +4304,7 @@ const SEE_DELETED_LOCKED = { allowDeleted: true, lock: true } as const;
  * | `reviseRecipe`              | ingredients, terms → new revision → recipes  |
  * | `updateRevision`            | ingredients → revision → recipes             |
  * | `updateRecipe`              | terms, links → recipes                       |
+ * | `createVariant`             | new rows only (`createRecipe`)               |
  * | `deleteRecord` (ingredient) | ingredients → notes → recipes (search vector)|
  * | `deleteRecord` (tag)        | terms → recipes (search vector)              |
  * | `deleteRecord` (revision)   | revision → recipes                           |
@@ -4083,6 +4318,14 @@ const SEE_DELETED_LOCKED = { allowDeleted: true, lock: true } as const;
  *
  * Any integer identifies the namespace; it only has to be one this database
  * does not use for something else.
+ *
+ * **There is a second advisory lock, `VARIANT_GRAPH_LOCK`, and the two never
+ * meet.** The rule that keeps it that way is stated where it is defined: a
+ * writer takes at most one advisory lock, and takes it first. `createRecipe`
+ * and `updateRecipe` take the variant mutex and never this one; `deleteRecord`
+ * and `restoreRecord` take this one and never that one, because neither
+ * changes a `variant_of_id` — a delete is soft and the family comes back
+ * exactly as it was.
  */
 const RECIPE_TREE_LOCK = 8317;
 

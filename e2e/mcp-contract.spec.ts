@@ -71,6 +71,7 @@ const TOOLS = [
   'backfill_revision',
   'build_shopping_list',
   'create_recipe',
+  'create_variant',
   'delete_record',
   'describe_mechanism',
   'get_experiment',

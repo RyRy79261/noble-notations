@@ -23,6 +23,8 @@ import {
   addNoteShape,
   createRecipeSchema,
   createRecipeShape,
+  createVariantSchema,
+  createVariantShape,
   deleteRecordSchema,
   deleteRecordShape,
   describeMechanismSchema,
@@ -88,6 +90,7 @@ import {
   addNote,
   ConflictError,
   createRecipe,
+  createVariant,
   deleteRecord,
   describeMechanism,
   logExperiment,
@@ -441,7 +444,12 @@ export function registerTools(server: McpServer): void {
         'related recipes, recorded experiments, and the list of every revision ' +
         'with the rationale for each. Read the rationales before revising — ' +
         'they say what has already been tried and rejected. Pass ' +
-        'revisionNumber to read a superseded version.',
+        'revisionNumber to read a superseded version.\n\n' +
+        '`variantFamily` is the variations of this dish: the one it came ' +
+        'from, the ones beside it, and the ones below it, in the order they ' +
+        'are shown. It is empty when this dish has no family. Read it ' +
+        'before adding a variation — the one you are about to write may ' +
+        'already be there.',
       inputSchema: {
         slug: z.string().min(1).max(120),
         revisionNumber: z
@@ -738,6 +746,10 @@ export function registerTools(server: McpServer): void {
         'this repository is that a recipe improves across revisions rather ' +
         'than being re-derived each time. Creating a duplicate loses the ' +
         'history that makes the original useful.\n\n' +
+        'If this dish is a version of a stored one that went a different ' +
+        'way — the same dish with shiitake instead of pork — it is a ' +
+        'variation. Call create_variant. It keeps the two as siblings and ' +
+        'leaves the original exactly as people read it.\n\n' +
         'Everything except the title is optional. Set `kind` to ' +
         '"preparation" for a part another recipe pulls in (a spice ' +
         'dredge, a demi-glace), "process" for a technique with no fixed ' +
@@ -772,6 +784,57 @@ export function registerTools(server: McpServer): void {
             ...result,
             url: `/recipes/${result.slug}`,
             message: followUpMessage('Created.', result),
+          };
+        },
+      ),
+  );
+
+  server.registerTool(
+    'create_variant',
+    {
+      title: 'Create a variation of a recipe',
+      description:
+        'Create a recipe that is a VARIATION of one already stored. Dan dan ' +
+        'noodles with shiitake instead of pork is a variation of dan dan ' +
+        'noodles.\n\n' +
+        'A variation is not a revision. A revision is the same dish made ' +
+        'better, and it becomes the version people read. A variation is the ' +
+        'same dish taken a different way, and it changes nothing about the ' +
+        'dish it came from: that recipe keeps its page, its versions and ' +
+        'its name.\n\n' +
+        'Ask which one you have:\n' +
+        '- The dish got better. Call revise_recipe.\n' +
+        '- The dish went a different way. Call create_variant.\n' +
+        '- The dish is fine and the record is wrong. Call update_recipe.\n\n' +
+        'The new recipe gets its own address, its own versions and its own ' +
+        'batch logs. It can be revised, and it can have variations of its ' +
+        'own. Every variation of one dish is a sibling of the others, and ' +
+        'the recipe page shows the whole family.\n\n' +
+        'Nothing carries over from the recipe it varies. Send the whole ' +
+        'ingredient list and the whole method, the way create_recipe takes ' +
+        'them. Give `variantNote` one line for what makes this one ' +
+        'different: "With shiitake instead of pork".' +
+        PLAIN_ENGLISH,
+      inputSchema: createVariantShape,
+    },
+    async (args, extra) =>
+      runTool(
+        extra as AuthCtx,
+        'create_variant',
+        { slug: args.slug, title: args.title, variantOf: args.variantOf },
+        async (principal) => {
+          requireWrite(principal);
+          const input = createVariantSchema.parse(args);
+          const result = await createVariant(input, 'mcp');
+          return {
+            ...result,
+            url: `/recipes/${result.slug}`,
+            variantOf: input.variantOf,
+            message: followUpMessage(
+              `Created as a variation of "${input.variantOf}". That recipe ` +
+                'is unchanged.',
+              result,
+            ),
           };
         },
       ),
@@ -1326,6 +1389,12 @@ export function registerTools(server: McpServer): void {
         'recipe.\n\n' +
         '`categories` and `links` each replace the whole list. Call ' +
         'get_recipe first. Then send back each one that you want to keep.\n\n' +
+        '`variantOf` says which recipe this one is a variation of. It is ' +
+        'not a list and it is not replaced by accident: leave it out and ' +
+        'nothing changes. Send a slug to move this recipe into that ' +
+        'family. Send null to make it a dish of its own again. Use it to ' +
+        'correct a wrong parent — to CREATE a variation, call ' +
+        'create_variant.\n\n' +
         '`currentRevisionNumber` moves the recipe to another stored ' +
         'version. People then read that version. Every version stays.',
       inputSchema: updateRecipeShape,

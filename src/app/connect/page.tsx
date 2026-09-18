@@ -43,7 +43,7 @@ export const metadata: Metadata = {
  * THE TOOL LISTS ARE THE REAL ONES. The design draws four read tools and
  * three write tools with invented names — `search_entries`, `add_state`.
  * This list is the one a person reads before approving write access, so it
- * names every tool the scope grants and not a sample: twelve, sixteen and
+ * names every tool the scope grants and not a sample: twelve, seventeen and
  * the one that is in neither scope, from `src/lib/mcp/tools.ts`.
  * `docs/mcp-connector.md` §Tools and that file are the other two places the
  * set is written down; all three move together, and `TOOLS` in
@@ -318,7 +318,7 @@ const READ_TOOLS: Tool[] = [
 ];
 
 /**
- * The sixteen the write scope grants. Approving it grants all of them.
+ * The seventeen the write scope grants. Approving it grants all of them.
  *
  * ONE OF THEM IS CONDITIONAL, and this page lists it anyway. `upload_image`
  * is registered only where `BLOB_READ_WRITE_TOKEN` is set, which is
@@ -330,6 +330,10 @@ const READ_TOOLS: Tool[] = [
  */
 const WRITE_TOOLS: Tool[] = [
   { name: 'create_recipe', text: 'A genuinely new dish. Search first.' },
+  {
+    name: 'create_variant',
+    text: 'The same dish taken a different way. It becomes a recipe of its own, and the dish it came from does not change.',
+  },
   {
     name: 'revise_recipe',
     text: 'The usual case: append a revision with the reason it was made. The recipe keeps its name.',
@@ -393,7 +397,7 @@ const WRITE_TOOLS: Tool[] = [
 ];
 
 /**
- * The twenty-ninth tool, and the only one in neither scope.
+ * The thirtieth tool, and the only one in neither scope.
  *
  * It is listed on its own because neither of the two lists above is true of
  * it: it needs no scope, and its effect lands outside this system. Reading
@@ -419,7 +423,7 @@ const REPORT_TOOLS: Tool[] = [
  * ingredient name is 14px Geist, the description is Geist where the alias is
  * serif italic, the scope is a 9px tracked label where the count is 12px
  * mono — so reusing it would mean three new props on a shared component for
- * one screen. A list is also the truer shape: this is twelve or sixteen
+ * one screen. A list is also the truer shape: this is twelve or seventeen
  * things of one kind, not a record with four fields, and a screen reader
  * announces the count.
  *
