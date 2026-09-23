@@ -39,6 +39,8 @@ const GITHUB_PORT = Number(process.env.E2E_GITHUB_PORT ?? 3101);
  * pair. Taking 3102 put this stub under the no-token server, and every test
  * that spoke to it got a 404 from a blob store. Anything new goes above,
  * or is allocated the way `e2e/screen-degraded.spec.ts` allocates one.
+ * `+ 7` is taken since: `e2e/site-report.spec.ts` starts the owner's server
+ * there.
  */
 const BLOB_PORT = Number(
   process.env.E2E_BLOB_PORT ?? Number(process.env.E2E_PORT ?? 3100) + 6,

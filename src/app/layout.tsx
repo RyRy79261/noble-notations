@@ -80,6 +80,7 @@ import { Announcer } from './announcer';
 import { SiteHeader } from '@/components/f/site-header';
 import { SkipLink } from '@/components/f/skip-link';
 import { HeaderHeight } from '@/components/header-height';
+import { ShakeToReport } from '@/components/shake-to-report';
 
 /**
  * THE PAGE FOOT IS A PARALLEL ROUTE, AND THIS IS WHY.
@@ -242,6 +243,10 @@ export default function RootLayout({
               note above `RootLayout`. */}
           {foot}
         </div>
+
+        {/* Shake the phone to report a problem. Inert unless the visitor
+            is the signed-in owner; see the component. */}
+        <ShakeToReport />
       </body>
     </html>
   );

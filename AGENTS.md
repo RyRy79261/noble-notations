@@ -670,7 +670,17 @@ only the first. Without it neither tool is registered, the guide stops
 naming them, and every other tool works unchanged — so a local database
 and `pnpm build` need nothing.
 
-`GITHUB_ISSUE_TOKEN` turns `report_issue` on. It must be a **fine-grained**
+`GITHUB_ISSUE_TOKEN` turns `report_issue` on, and it also turns on **shake
+to report** on the site (`src/components/shake-to-report.tsx`, ported from
+Intake Tracker): the signed-in owner shakes the phone, or adds `?report=1`
+to any address, and a sheet files a GitHub issue through `/api/report`
+with the page, the browser and the errors the tab caught. It is inert for
+everybody else — the sheet asks `GET /api/report` first and mounts only for
+an administrator on `ALLOWED_EMAILS` — because the repository is public and
+a report form open to every reader would write issues under the owner's
+token. An upload link's token is removed from the page address before it
+leaves the browser and again on the server. Issues carry `site-report`
+and `report:bug` or `report:idea`. It must be a **fine-grained**
 token on `RyRy79261/noble-notations` only, with **Issues: read and write**
 and **Metadata: read**, and nothing else — never a classic `repo` token,
 which would let this endpoint read private code and push. Without the
