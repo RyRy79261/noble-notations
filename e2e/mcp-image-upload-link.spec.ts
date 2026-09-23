@@ -125,6 +125,12 @@ test('a person opens the link, picks a photograph, and it becomes the hero image
   ).toBeVisible();
   await expect(page.getByText(link.target).first()).toBeVisible();
 
+  // Before a photo is chosen the one thing to press is the picker, and there
+  // is no Upload button to press by mistake — the first real upload was
+  // tried by pressing an Upload button that looked live and was not.
+  await expect(page.getByText('Choose a photo')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Upload' })).toHaveCount(0);
+
   const upload = page.locator('input[type="file"]');
   await upload.setInputFiles({
     name: 'photo.jpg',
@@ -135,6 +141,9 @@ test('a person opens the link, picks a photograph, and it becomes the hero image
   // button waits for it.
   const button = page.getByRole('button', { name: 'Upload' });
   await expect(button).toBeDisabled();
+  await expect(
+    page.getByText('Write what the picture shows, then press Upload.'),
+  ).toBeVisible();
   await page
     .getByLabel('What the picture shows')
     .fill('Grilled chicken, charred skin, on a banana leaf.');
@@ -181,6 +190,60 @@ test('a person opens the link, picks a photograph, and it becomes the hero image
   await expect(
     page.getByRole('heading', { name: 'This link is used' }),
   ).toBeVisible();
+});
+
+test('a send that cannot reach the store fails in seconds, says so, and the same link works on the second try', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  const mcp = rw();
+  const slug = await makeRecipe(mcp, 'upload-link-retry');
+  const link = await mcp.call<LinkResult>('request_image_upload', {
+    attachTo: { recipeSlug: slug },
+    alt: 'A bowl of dipping sauce with red onion and toasted rice.',
+  });
+
+  // THE FAILURE THE FIRST PHONE UPLOAD MET, reproduced at the network layer:
+  // the browser's PUT to the store never gets an answer it can use. Before
+  // the fix this was a button frozen at "Sending… 0%" for seventeen minutes
+  // of silent retries. Now it has to be an error on the screen and a line
+  // in the server log.
+  const blobPort = Number(process.env.E2E_PORT ?? 3100) + 6;
+  const blobPut = `http://127.0.0.1:${blobPort}/?pathname=*`;
+  await page.route(blobPut, (route) =>
+    route.request().method() === 'PUT'
+      ? route.abort('failed')
+      : route.continue(),
+  );
+  const reported = page.waitForRequest(
+    (r) => r.url().endsWith('/report') && r.method() === 'POST',
+  );
+
+  await page.goto(link.link);
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'nam-jim-jaew.jpg',
+    mimeType: 'image/jpeg',
+    buffer: await uniqueJpeg(1200, 900),
+  });
+  await page.getByRole('button', { name: 'Upload' }).click();
+
+  await expect(page.locator('[data-upload-error]')).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(page.locator('[data-upload-error]')).toContainText(
+    'could not be sent to storage',
+  );
+  const report = await reported;
+  expect(report.postDataJSON()).toMatchObject({ stage: 'send' });
+
+  // The link was not spent by the failure, so the same page tries again.
+  await page.unroute(blobPut);
+  await page.getByRole('button', { name: 'Try again' }).click();
+  await expect(page.locator('[data-upload-done]')).toBeVisible({
+    timeout: 30_000,
+  });
+  const recipe = await mcp.call<RecipeResult>('get_recipe', { slug });
+  expect(recipe.heroImageUrl).toMatch(/^\/images\/[0-9a-f-]{36}$/);
 });
 
 // ═════════════════════════════════════════════════════════════════════════

@@ -24,26 +24,40 @@ import { buttonClasses, FOCUS_RING } from '@/components/f/button';
  * what makes an iPhone hand over a JPEG: Safari converts a HEIC photograph
  * when the page does not say it takes HEIC, and the server cannot decode
  * HEIC.
+ *
+ * **NO PROGRESS PERCENTAGE, and that is the fix for the first real upload.**
+ * With `onUploadProgress` the SDK sends the file as a STREAMED request body.
+ * The first photograph sent from a phone in production sat at "Sending… 0%"
+ * and never reached `complete`: the logs show step 1 and nothing after it.
+ * A streamed body cannot be sent twice, so once one attempt failed every
+ * retry failed the same way, and the SDK retries a network error ten times
+ * with backoff — about seventeen minutes of a frozen button. Without
+ * `onUploadProgress` the SDK sends the `File` as one ordinary request, which
+ * works over any HTTP version and can be retried, and which is the path the
+ * e2e suite has always exercised. The page shows what it is doing and how
+ * long it has taken instead of a number.
+ *
+ * **A FAILURE IS SHOWN, AND REPORTED.** `VERCEL_BLOB_RETRIES` is set low in
+ * `next.config.ts`, so a request that cannot reach the store fails in
+ * seconds, and a watchdog aborts one that simply never answers. Either way
+ * the person sees the error and a "Try again" button — the link is not spent
+ * until a picture lands — and the error text goes to
+ * `/api/uploads/<token>/report`, so the next failure is in the runtime logs
+ * rather than only on somebody's phone.
  */
 const ACCEPT = 'image/jpeg,image/png,image/webp,image/avif';
 
 /**
- * Whether the SDK may report progress. With `onUploadProgress` it sends the
- * file as a STREAMED request body, and Chrome streams a body only over
- * HTTP/2, which a browser speaks only over TLS. The real store is https, so
- * production shows a percentage. The e2e stub is plain http, and there a
- * streamed body fails with ERR_ALPN_NEGOTIATION_FAILED and the SDK retries
- * forever — so against an http store the file goes as one ordinary request
- * and the button says "Sending…" without a number.
+ * How long the PUT may take before the page gives up. A 25 MB file over a
+ * poor 2 Mbit/s mobile connection takes about 100 seconds; three minutes
+ * leaves room and still ends a request that is never going to answer.
  */
-const CAN_STREAM = !(process.env.NEXT_PUBLIC_VERCEL_BLOB_API_URL ?? '')
-  .trim()
-  .startsWith('http:');
+const SEND_TIMEOUT_MS = 3 * 60 * 1000;
 
 type Phase =
   | { kind: 'idle' }
-  | { kind: 'sending'; percent: number | null }
-  | { kind: 'processing' }
+  | { kind: 'sending'; startedAt: number }
+  | { kind: 'processing'; startedAt: number }
   | { kind: 'done'; width: number; height: number; target: string }
   | { kind: 'failed'; message: string };
 
@@ -55,6 +69,23 @@ async function readError(response: Response): Promise<string> {
     // Fall through to the status line.
   }
   return `The server answered ${response.status}.`;
+}
+
+function megabytes(bytes: number): string {
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/** Seconds since `startedAt`, redrawn once a second while it matters. */
+function useElapsed(startedAt: number | null): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (startedAt === null) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [startedAt]);
+  return startedAt === null
+    ? 0
+    : Math.max(0, Math.floor((now - startedAt) / 1000));
 }
 
 export function UploadForm({
@@ -85,13 +116,35 @@ export function UploadForm({
   }, [file]);
 
   const busy = phase.kind === 'sending' || phase.kind === 'processing';
+  const elapsed = useElapsed(busy ? phase.startedAt : null);
   const tooBig = file ? file.size > maxBytes : false;
-  const ready = Boolean(file) && !tooBig && alt.trim().length > 0 && !busy;
+  const missingAlt = alt.trim().length === 0;
+  const ready = Boolean(file) && !tooBig && !missingAlt && !busy;
+
+  async function report(stage: string, message: string) {
+    try {
+      await fetch(`/api/uploads/${token}/report`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          stage,
+          message: message.slice(0, 1000),
+          fileBytes: file?.size ?? null,
+          fileType: file?.type ?? null,
+        }),
+      });
+    } catch {
+      // A report that cannot be sent changes nothing for the person.
+    }
+  }
 
   async function send() {
     if (!file || !ready) return;
+    let stage = 'token';
+    const abort = new AbortController();
+    const watchdog = setTimeout(() => abort.abort(), SEND_TIMEOUT_MS);
     try {
-      setPhase({ kind: 'sending', percent: CAN_STREAM ? 0 : null });
+      setPhase({ kind: 'sending', startedAt: Date.now() });
 
       const tokenResponse = await fetch(`/api/uploads/${token}/token`, {
         method: 'POST',
@@ -102,19 +155,27 @@ export function UploadForm({
         pathname: string;
       };
 
-      const blob = await put(pathname, file, {
-        access: 'public',
-        token: clientToken,
-        contentType: file.type || undefined,
-        ...(CAN_STREAM
-          ? {
-              onUploadProgress: ({ percentage }: { percentage: number }) =>
-                setPhase({ kind: 'sending', percent: Math.round(percentage) }),
-            }
-          : {}),
-      });
+      stage = 'send';
+      let blob: { pathname: string };
+      try {
+        blob = await put(pathname, file, {
+          access: 'public',
+          token: clientToken,
+          contentType: file.type || undefined,
+          abortSignal: abort.signal,
+        });
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        throw new Error(
+          abort.signal.aborted
+            ? `The photo did not finish sending in ${SEND_TIMEOUT_MS / 60000} minutes. Check the connection and try again.`
+            : `The photo could not be sent to storage: ${detail}`,
+          { cause: err },
+        );
+      }
 
-      setPhase({ kind: 'processing' });
+      stage = 'complete';
+      setPhase({ kind: 'processing', startedAt: Date.now() });
       const done = await fetch(`/api/uploads/${token}/complete`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -137,10 +198,11 @@ export function UploadForm({
         target: result.attachedTo ?? target,
       });
     } catch (err) {
-      setPhase({
-        kind: 'failed',
-        message: err instanceof Error ? err.message : String(err),
-      });
+      const message = err instanceof Error ? err.message : String(err);
+      setPhase({ kind: 'failed', message });
+      void report(stage, message);
+    } finally {
+      clearTimeout(watchdog);
     }
   }
 
@@ -171,47 +233,80 @@ export function UploadForm({
         void send();
       }}
     >
-      <div className="flex w-full flex-col items-start gap-2">
+      {/* THE PICKER IS A BUTTON-SIZED LABEL, NOT THE NATIVE CONTROL. The
+          native one draws a small "Choose File" in the browser's own type,
+          and on a phone it did not read as the first thing to press — the
+          person pressed "Upload" instead. The input stays in the DOM, hidden
+          from sight only, so the label opens it and a screen reader still
+          announces it. */}
+      <input
+        id={fileId}
+        name="file"
+        type="file"
+        accept={ACCEPT}
+        disabled={busy}
+        className="sr-only"
+        onChange={(event) => {
+          setPhase({ kind: 'idle' });
+          setFile(event.target.files?.[0] ?? null);
+        }}
+      />
+
+      {!file ? (
         <label
           htmlFor={fileId}
-          className="text-09 leading-normal font-mono tracking-label uppercase text-ink-3"
-        >
-          Photograph
-        </label>
-        <input
-          id={fileId}
-          name="file"
-          type="file"
-          accept={ACCEPT}
-          disabled={busy}
-          onChange={(event) => {
-            setPhase({ kind: 'idle' });
-            setFile(event.target.files?.[0] ?? null);
-          }}
+          data-upload-pick=""
           className={cn(
-            'w-full text-12 leading-150 font-mono text-ink',
+            'flex w-full cursor-pointer flex-col items-center justify-center gap-2',
+            'border border-dashed border-ink-3 bg-desk px-4 py-10 text-center',
             FOCUS_RING,
           )}
-        />
-        {tooBig ? (
-          <p role="alert" className="m-0 text-12 leading-150 text-warn">
-            That file is {(file!.size / 1024 / 1024).toFixed(1)} MB. The limit
-            is {maxBytes / 1024 / 1024} MB.
-          </p>
-        ) : null}
-      </div>
-
-      {preview ? (
-        // A local object URL of the file just picked. The optimiser cannot
-        // read one, and the point is to show exactly what will be sent.
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={preview}
-          alt=""
-          data-upload-preview=""
-          className="h-auto max-h-96 w-full object-contain"
-        />
-      ) : null}
+        >
+          <span className="text-15 leading-150 font-serif text-ink">
+            Choose a photo
+          </span>
+          <span className="text-12 leading-150 text-ink-3">
+            From this device. Up to {megabytes(maxBytes)}.
+          </span>
+        </label>
+      ) : (
+        <div className="flex w-full flex-col items-start gap-2">
+          {preview ? (
+            // A local object URL of the file just picked. The optimiser
+            // cannot read one, and the point is to show exactly what will be
+            // sent.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={preview}
+              alt=""
+              data-upload-preview=""
+              className="h-auto max-h-96 w-full object-contain"
+            />
+          ) : null}
+          <div className="flex w-full flex-row items-baseline justify-between gap-3">
+            <span className="min-w-0 truncate text-12 leading-150 font-mono text-ink-3">
+              {file.name} · {megabytes(file.size)}
+            </span>
+            {!busy ? (
+              <label
+                htmlFor={fileId}
+                className={cn(
+                  'shrink-0 cursor-pointer text-12 leading-150 text-ink underline',
+                  FOCUS_RING,
+                )}
+              >
+                Choose another
+              </label>
+            ) : null}
+          </div>
+          {tooBig ? (
+            <p role="alert" className="m-0 text-12 leading-150 text-warn">
+              That file is {megabytes(file.size)}. The limit is{' '}
+              {megabytes(maxBytes)}.
+            </p>
+          ) : null}
+        </div>
+      )}
 
       <div className="flex w-full flex-col items-start gap-2">
         <label
@@ -240,29 +335,59 @@ export function UploadForm({
         </p>
       </div>
 
-      {phase.kind === 'failed' ? (
-        <p
-          role="alert"
-          data-upload-error=""
-          className="m-0 text-12 leading-150 text-warn"
+      {busy ? (
+        <div
+          role="status"
+          data-upload-status=""
+          className="flex w-full flex-col items-start gap-1 bg-desk px-4 py-3"
         >
-          {phase.message}
-        </p>
+          <p className="m-0 text-15 leading-150 font-serif text-ink">
+            {phase.kind === 'sending'
+              ? `Sending the photo (${megabytes(file?.size ?? 0)})…`
+              : 'Making it smaller and saving it…'}
+          </p>
+          <p className="m-0 text-12 leading-150 font-mono text-ink-3">
+            {phase.kind === 'sending' ? 'Step 1 of 2' : 'Step 2 of 2'} ·{' '}
+            {elapsed} s. Keep this page open.
+          </p>
+        </div>
       ) : null}
 
-      <button
-        type="submit"
-        disabled={!ready}
-        className={buttonClasses('primary', 'w-full shell:w-fit')}
-      >
-        {phase.kind === 'sending'
-          ? phase.percent === null
-            ? 'Sending…'
-            : `Sending… ${phase.percent}%`
-          : phase.kind === 'processing'
-            ? 'Making it smaller…'
-            : 'Upload'}
-      </button>
+      {phase.kind === 'failed' ? (
+        <div
+          role="alert"
+          data-upload-error=""
+          className="flex w-full flex-col items-start gap-1 bg-warn-wash px-4 py-3"
+        >
+          <p className="m-0 text-15 leading-150 font-serif text-ink">
+            The upload did not work.
+          </p>
+          <p className="m-0 text-12 leading-150 text-ink-2">{phase.message}</p>
+          <p className="m-0 text-12 leading-150 text-ink-3">
+            The link is not used up. Press the button to try again.
+          </p>
+        </div>
+      ) : null}
+
+      {file && !busy ? (
+        <>
+          <button
+            type="submit"
+            disabled={!ready}
+            className={buttonClasses(
+              'primary',
+              'w-full shell:w-fit disabled:cursor-not-allowed disabled:opacity-40',
+            )}
+          >
+            {phase.kind === 'failed' ? 'Try again' : 'Upload'}
+          </button>
+          {missingAlt ? (
+            <p className="m-0 text-12 leading-150 text-ink-3">
+              Write what the picture shows, then press Upload.
+            </p>
+          ) : null}
+        </>
+      ) : null}
     </form>
   );
 }

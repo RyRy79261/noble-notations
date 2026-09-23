@@ -41,6 +41,16 @@ const csp = [
 const nextConfig: NextConfig = {
   reactStrictMode: true,
 
+  // `@vercel/blob` retries a request that fails at the network ten times
+  // with backoff, which is about seventeen minutes, and says nothing while
+  // it does. On the upload page that was a button frozen at "Sending… 0%".
+  // Three tries fail in a few seconds and hand the page an error it can show
+  // and report. The value is inlined at build time, so it reaches the SDK in
+  // the browser bundle, where there is no runtime environment to read.
+  env: {
+    VERCEL_BLOB_RETRIES: '2',
+  },
+
   // `next dev` otherwise appends a generated block to AGENTS.md on every
   // run. That file is hand-written and is this repository's source of
   // truth, so the advice it wanted to add lives there in our own words
