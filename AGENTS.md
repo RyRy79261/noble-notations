@@ -535,9 +535,20 @@ caller says delete; the row survives; restore brings it back.
 
 ## Images
 
-`upload_image` is the only way a picture gets into this repository, and issue
-#54 is why it exists: every image field took a web address and nothing here
-could make one, so an agent holding a photograph could not fill any of them.
+Two tools put a picture into this repository. Issue #54 is why the first
+exists: every image field took a web address and nothing here could make
+one, so an agent holding a photograph could not fill any of them.
+
+**A photograph never passes through the model.** That is issues #56 and #58,
+and it is the rule to keep. The model writes every character of a tool call,
+so a photograph sent as base64 is millions of tokens: it fills the context
+and fails. `request_image_upload` returns a one-hour, one-picture link; the
+person opens it and picks the file; the browser writes the original straight
+to the blob store (a Vercel function refuses a body over 4.5 MB); the server
+shrinks it and puts it on the record the link named. `upload_image` keeps
+`sourceUrl`, fetched by the server behind an SSRF guard, and `data`, which is
+for a small picture the agent made. `docs/mcp-connector.md` § _Getting a
+photograph in_ has the design.
 
 The bytes go to **Vercel Blob**. The row goes in `images`, the seventh
 soft-deletable table. **What a recipe stores is `/images/<id>` — this site's
@@ -562,16 +573,22 @@ ingredient, experiment and taxonomy term. A run also gained a LIST,
 `experiment_images`, because a run is the record a photograph is worth most
 to and one run produces several.
 
-`sharp` resizes and re-encodes on the way in — 2000 pixels on the longest
-edge, WebP, with anything over 15 MB decoded refused. `@vercel/blob` is
-behind `src/lib/images/blob.ts` and nothing else imports the SDK.
+`sharp` resizes and re-encodes on the way in — 2400 pixels on the longest
+edge, WebP, with anything over 25 MB refused — and makes 480, 960 and 1600
+pixel copies beside it. `/images/<id>?w=` picks between them and the site's
+`<img>` tags name them in `srcset`. Every way in goes through
+`src/lib/images/ingest.ts`, so the three cannot drift. `@vercel/blob` is
+behind `src/lib/images/blob.ts` and nothing else imports the server SDK;
+the upload page imports `@vercel/blob/client` for the browser `put`.
 
-**`upload_image` is registered only when `BLOB_READ_WRITE_TOKEN` is set**,
-the same way `report_issue` depends on `GITHUB_ISSUE_TOKEN`. It is set in
-Production and Preview and on neither a developer's machine nor CI, so
-`pnpm build` and every gate stay green without it, and the guide describes
-the tool only where it exists. The e2e suite sets a stub token and points
-`VERCEL_BLOB_API_URL` at `e2e/blob-stub.ts`, so the suite never reaches
+**`upload_image` and `request_image_upload` are registered only when
+`BLOB_READ_WRITE_TOKEN` is set**, the same way `report_issue` depends on
+`GITHUB_ISSUE_TOKEN`. It is set in Production and Preview and on neither a
+developer's machine nor CI, so `pnpm build` and every gate stay green
+without it, and the guide describes the tools only where they exist. The
+e2e suite sets a stub token and points `VERCEL_BLOB_API_URL` (and, for the
+browser, `NEXT_PUBLIC_VERCEL_BLOB_API_URL`) at `e2e/blob-stub.ts`, so the
+suite never reaches
 blob.vercel-storage.com — the same guarantee `e2e/github-stub.ts` gives for
 GitHub.
 
@@ -646,11 +663,11 @@ required for the MCP connector's consent screen (Vercel injects the first,
 you set the other two); `MCP_PUBLIC_URL` should be set in production (see
 the `VERCEL_URL` gotcha in `docs/mcp-connector.md`).
 
-`BLOB_READ_WRITE_TOKEN` turns `upload_image` on. The Vercel Blob
+`BLOB_READ_WRITE_TOKEN` turns `upload_image` and `request_image_upload` on. The Vercel Blob
 integration sets it, along with `BLOB_STORE_ID` and
 `BLOB_WEBHOOK_PUBLIC_KEY`, in Production and Preview; this repository reads
-only the first. Without it the tool is not registered at all, the guide
-stops naming it, and every other tool works unchanged — so a local database
+only the first. Without it neither tool is registered, the guide stops
+naming them, and every other tool works unchanged — so a local database
 and `pnpm build` need nothing.
 
 `GITHUB_ISSUE_TOKEN` turns `report_issue` on. It must be a **fine-grained**

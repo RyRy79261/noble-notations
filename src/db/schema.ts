@@ -38,6 +38,7 @@ import {
   date,
   index,
   integer,
+  jsonb,
   numeric,
   pgEnum,
   pgTable,
@@ -1267,6 +1268,24 @@ export const images = pgTable(
     bytes: integer('bytes').notNull(),
     /** sha256 of the stored bytes. Unique, and that is the de-duplication. */
     checksum: text('checksum').notNull(),
+    /**
+     * Smaller copies of the same picture, for `srcset`. `blob_url` is the
+     * largest one; these are the widths below it that were worth making.
+     *
+     * A page asks `/images/<id>?w=960` and the route redirects to the
+     * smallest copy at least that wide. A phone on a slow connection then
+     * fetches a 960 px file and not a 2400 px one. The widths are made once,
+     * at upload, and not on each request: the image optimiser would re-read
+     * and re-encode the file on a cold cache for every size, for a result
+     * that never changes.
+     *
+     * Empty for a picture stored before this column existed. The route then
+     * answers every width with `blob_url`, which is what it did before.
+     */
+    renditions: jsonb('renditions')
+      .$type<ImageRendition[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     createdAt: now(),
     updatedAt: touched(),
     ...softDelete(),
@@ -1280,6 +1299,74 @@ export const images = pgTable(
       .on(t.deletedEventId)
       .where(sql`${t.deletedEventId} IS NOT NULL`),
   ],
+);
+
+/** One smaller copy of a stored picture. See `images.renditions`. */
+export interface ImageRendition {
+  width: number;
+  height: number;
+  bytes: number;
+  url: string;
+  pathname: string;
+}
+
+/**
+ * An upload link: permission to put ONE picture on ONE record, handed to a
+ * person by an agent.
+ *
+ * Issues #56 and #58. `upload_image` takes the bytes as base64 inside a tool
+ * call, and the model writes the tool call. So every base64 character is a
+ * token the model must emit. A phone photograph is millions of them. No chat
+ * session can send one, and the attempt fills the context window before it
+ * fails.
+ *
+ * The fix is to keep the bytes away from the model entirely.
+ * `request_image_upload` writes one of these rows and returns a link. The
+ * person opens it on the phone that took the picture and picks the file. The
+ * browser sends the file straight to the blob store, and the server then
+ * shrinks it and puts it on the record this row names. The model handles a
+ * link of about a hundred characters, whatever the size of the photograph.
+ *
+ * **The link is the credential.** Nobody signs in on the page. The token is
+ * 32 random bytes, only its sha256 is stored, it expires, and it is spent by
+ * the first picture that lands. That is the same trust as the consent screen
+ * the agent already passed: only a connector with the write scope can mint
+ * one, and it names the one record the picture may go on.
+ *
+ * **Not soft-deletable, and not a record.** It is plumbing, like
+ * `mcp_auth_codes`: nothing reads it back as content, and an expired row is
+ * inert.
+ */
+export const imageUploads = pgTable(
+  'image_uploads',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** sha256 of the token in the link. The token itself is never stored. */
+    tokenHash: text('token_hash').notNull(),
+    /** The principal that asked for the link, for the audit trail. */
+    userId: text('user_id').notNull(),
+    clientId: text('client_id').notNull(),
+    /**
+     * What the agent said the picture shows, if it had seen it. The page
+     * asks the person when this is empty, and lets them correct it when not.
+     */
+    alt: text('alt'),
+    caption: text('caption'),
+    /** The `attachTo` object of `upload_image`, checked when the row is made. */
+    attachTo: jsonb('attach_to').notNull(),
+    /**
+     * Where the picture will go, in the words the site uses — "the hero
+     * image of Gai yang". The page shows it so the person can see the link
+     * is for the dish they think it is.
+     */
+    target: text('target').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    /** Set once, by the picture that spends the link. */
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    imageId: uuid('image_id').references(() => images.id),
+    createdAt: now(),
+  },
+  (t) => [uniqueIndex('uq_image_uploads_token_hash').on(t.tokenHash)],
 );
 
 // ─────────────────────────────────────────────────────────────────────────

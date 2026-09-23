@@ -88,10 +88,10 @@ string, so a `redirect_uri` still in flight survives the rename.
 
 ## Scopes
 
-| Scope                   | Grants                                                                                                                                                                                                                                                                                                      |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `noble-notations:read`  | Every read tool, including `list_deleted`                                                                                                                                                                                                                                                                   |
-| `noble-notations:write` | `create_recipe`, `create_variant`, `revise_recipe`, `backfill_revision`, `add_note`, `add_mass_flow`, `describe_mechanism`, `upsert_ingredient`, `upsert_category`, `log_experiment`, `reattach_note`, `update_recipe`, `update_revision`, `update_note`, `delete_record`, `restore_record`, `upload_image` |
+| Scope                   | Grants                                                                                                                                                                                                                                                                                                                              |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `noble-notations:read`  | Every read tool, including `list_deleted`                                                                                                                                                                                                                                                                                           |
+| `noble-notations:write` | `create_recipe`, `create_variant`, `revise_recipe`, `backfill_revision`, `add_note`, `add_mass_flow`, `describe_mechanism`, `upsert_ingredient`, `upsert_category`, `log_experiment`, `reattach_note`, `update_recipe`, `update_revision`, `update_note`, `delete_record`, `restore_record`, `upload_image`, `request_image_upload` |
 
 **`list_deleted` is a read, and it is in the read scope.** It reports rows
 the public site does not show, which is why that looks wrong at first
@@ -122,19 +122,20 @@ Write: `create_recipe`, `create_variant`, `revise_recipe`,
 `backfill_revision`, `add_note`, `add_mass_flow`, `describe_mechanism`,
 `upsert_ingredient`, `upsert_category`, `log_experiment`, `reattach_note`,
 `update_recipe`, `update_revision`, `update_note`, `delete_record`,
-`restore_record`, `upload_image`.
+`restore_record`, `upload_image`, `request_image_upload`.
 
 Neither: `report_issue`.
 
-**Two of those are conditional, and the count is therefore a range.**
-`report_issue` is registered only when `GITHUB_ISSUE_TOKEN` is set and
-`upload_image` only when `BLOB_READ_WRITE_TOKEN` is; both are set in
+**Three of those are conditional, and the count is therefore a range.**
+`report_issue` is registered only when `GITHUB_ISSUE_TOKEN` is set, and
+`upload_image` and `request_image_upload` only when `BLOB_READ_WRITE_TOKEN`
+is; both are set in
 Production and Preview and neither is on a developer's machine. A tool that
 is advertised and cannot work is worse than one that is absent, because an
 agent calls it, fails, and cannot tell a misconfiguration from a fault in
 its own arguments. The guide follows the same predicates — `get_started`
-describes `upload_image` only where it exists, and the write-tool count in
-its `scopes` section is seventeen or sixteen accordingly.
+describes the two image tools only where they exist, and the write-tool
+count in its `scopes` section is eighteen or sixteen accordingly.
 
 `list_experiments`, `get_experiment` and `log_experiment` speak of
 experiments; the website calls the same record a batch log and serves it at
@@ -142,7 +143,7 @@ experiments; the website calls the same record a batch log and serves it at
 mapping, because one that knew only the tool word reported the page as
 missing.
 
-Thirty tools, fully configured. `/connect` and `TOOLS` in
+Thirty-one tools, fully configured. `/connect` and `TOOLS` in
 `e2e/mcp-contract.spec.ts` name the same set; a tool that appears or
 disappears without all three moving is drift, and that test is the line that
 says so. (`create_variant` reached the registry, `/connect` and that test
@@ -205,9 +206,10 @@ that sentence is allowed to name a tool that does not exist.
 
 Four smaller decisions, each of which the issue left open:
 
-- **Size.** Both, not either. Anything over 15 MB decoded is refused and the
-  refusal names the limit; everything under it is resized to 2000 pixels on
-  the longest edge and re-encoded to WebP, without comment. Refusing alone
+- **Size.** Both, not either. Anything over 25 MB is refused and the
+  refusal names the limit; everything under it is resized to 2400 pixels on
+  the longest edge and re-encoded to WebP, without comment, with smaller
+  copies beside it (see _Getting a photograph in_ below). Refusing alone
   puts the work back on the agent, which is the friction the issue was filed
   about; resizing alone means an unbounded decode, so there is a pixel
   ceiling as well as a byte one.
@@ -226,6 +228,82 @@ Four smaller decisions, each of which the issue left open:
   rows would mean two blobs, two bin entries and two ids for one picture.
   The second call still attaches, and still updates the alt text: only the
   bytes were already known.
+
+### Getting a photograph in without the model holding it
+
+Issues #56 and #58. `upload_image` shipped taking the picture as `data`, a
+base64 string, and that is correct for what an MCP call is: JSON, with no
+binary channel. The fault was who writes that string. **The model writes the
+tool call**, so every base64 character is a token the model emits. A phone
+photograph is two to five megabytes, which is three to seven million
+characters. No chat can send one, and trying fills the context window before
+it fails. One agent measured it: to get a 2.7 MB photograph under 100 000
+characters it had to shrink it to 640 pixels wide, and the server then
+stored a picture far smaller than the one it is built for.
+
+So the bytes must travel without the model. There are now three ways in,
+chosen by where the picture is:
+
+| The picture is               | The way in                          | What the model sends  |
+| ---------------------------- | ----------------------------------- | --------------------- |
+| a photograph the person has  | `request_image_upload`, then a link | a slug and a sentence |
+| on the public web            | `upload_image { sourceUrl }`        | an https address      |
+| small, and made by the agent | `upload_image { data, mimeType }`   | the base64 itself     |
+
+**`request_image_upload` returns a link.** The agent names the record in
+`attachTo` and gives the person the link; the person opens it on the phone
+that took the picture and picks the file. The model handles about a hundred
+characters, whatever the size of the photograph.
+
+- **The target is checked when the link is made.** `probeAttachTarget` runs
+  the real `attachImage` inside a savepoint and rolls it back, so every
+  refusal the finished upload could meet — no such recipe, a deleted run,
+  step 9 of six — is met in the tool call, where the agent can fix it. A
+  set of separate reads would be a second copy of those rules.
+- **The link is the credential.** Nobody signs in on the page. The token is
+  32 random bytes and only its sha256 is stored (`image_uploads`), it lasts
+  one hour, and the first picture to land spends it. Only a connector with
+  the write scope can mint one, and it names one record. The page is
+  `noindex` and sends no referrer.
+- **The browser writes the original to the blob store directly.** A Vercel
+  function refuses a request body over 4.5 MB, so a form posting to our own
+  route would fail on exactly the photographs the link is for. The page asks
+  `/api/uploads/<token>/token` for a client token scoped to one pathname,
+  the four accepted types and 25 MB; `put` from `@vercel/blob/client` sends
+  the file; `/api/uploads/<token>/complete` then reads it back, processes it
+  exactly as `upload_image` would, stores it, spends the link, and deletes
+  the original. The address it reads comes from the store's `head` answer,
+  never from the browser, and the pathname must sit under the link's own
+  prefix.
+- **Spending the link and storing the picture are one transaction.** The
+  row is locked `FOR UPDATE`, so two tabs finishing at once store one
+  picture; the second is told the link is used.
+- **`accept` names four types and not `image/*`.** That is what makes
+  Safari on an iPhone hand over a JPEG instead of a HEIC, which `sharp`
+  cannot decode.
+- **An agent with a shell can use the same link.** The result carries
+  `putUrl`; an HTTP PUT with the file as the body stores it. That path is
+  bounded by the 4.5 MB body limit, and the description says to shrink to
+  2400 pixels first, which loses nothing because 2400 is the largest copy
+  kept.
+
+**`sourceUrl` is a request forgery surface, and `fetch-remote.ts` is guarded
+accordingly.** https only; no user info; at most three redirects, each
+re-checked; the body capped while it streams; a 15 second timeout. The
+address check runs on what the name RESOLVES to, inside the socket's own DNS
+lookup, against every private, loopback, link-local and reserved range in
+both families — checking the name and letting the socket resolve it again is
+the rebinding hole. A literal IP is checked separately, because Node does
+not call the lookup for one. The refusal names the address and says why.
+
+**Every picture now has smaller copies.** `sharp` makes 480, 960 and 1600
+pixel wide copies beside the 2400 pixel one, at upload, and stores them in
+`images.renditions`. `/images/<id>?w=960` redirects to the narrowest copy at
+least that wide, and the site's `<img>` tags carry a `srcset` naming them,
+so a phone fetches a small file and a 2× laptop a large one. They are made
+once rather than by the Next.js image optimiser on each cache miss, because
+the answer never changes. A picture stored before this has no copies and
+answers every width with its one file.
 
 ### The three tools that reach a stored record
 
@@ -358,7 +436,7 @@ The two copies are held together by `e2e/writing-style.spec.ts`, which
 enumerates the rules and fails naming the one that drifted.
 
 Resources are not tools and they do not move the tool count: the registry
-still holds thirty. `resources/list` advertises this document and
+still holds thirty-one. `resources/list` advertises this document and
 `resources/read` serves it.
 
 ## Reporting a fault

@@ -388,8 +388,8 @@ test('a picture larger than the stored edge is made smaller, and a small one is 
 
   const big = await sharp({
     create: {
-      width: 3200,
-      height: 2400,
+      width: 4000,
+      height: 3000,
       channels: 3,
       background: { r: 120, g: 110, b: 60 },
     },
@@ -403,13 +403,13 @@ test('a picture larger than the stored edge is made smaller, and a small one is 
     alt: 'A photograph the size a phone actually produces.',
   });
 
-  // 2000 on the longest edge, and the aspect ratio kept.
-  expect(uploaded.width).toBe(2000);
-  expect(uploaded.height).toBe(1500);
+  // 2400 on the longest edge, and the aspect ratio kept.
+  expect(uploaded.width).toBe(2400);
+  expect(uploaded.height).toBe(1800);
   expect(uploaded.message).toContain('smaller');
 
   // A SMALL PICTURE IS NEVER SCALED UP. `withoutEnlargement` is what stops a
-  // 4 px fixture becoming a blurry 2000 px one.
+  // 4 px fixture becoming a blurry 2400 px one.
   const small = await mcp.call<UploadResult>('upload_image', {
     data: BLUE_6X4_PNG,
     mimeType: 'image/png',
@@ -453,9 +453,12 @@ test('alt text is required, and the schema says so before any byte is read', asy
   // `images.alt` is NOT NULL while `recipes.hero_image_alt` is nullable, and
   // the difference is deliberate: the recipe column predates this tool, and
   // a column that allows null collects nulls.
-  expect([...(schema.required ?? [])].sort()).toEqual(
-    ['alt', 'data', 'mimeType'].sort(),
-  );
+  //
+  // `alt` is the ONLY required field now. `data` and `mimeType` became
+  // optional when `sourceUrl` arrived (issue #56), and "exactly one of data
+  // or sourceUrl" is a refinement the JSON Schema cannot state — see
+  // e2e/mcp-image-upload-link.spec.ts for the refusal that enforces it.
+  expect([...(schema.required ?? [])].sort()).toEqual(['alt']);
 
   await expect(
     rw().call('upload_image', {

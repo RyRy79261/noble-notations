@@ -86,6 +86,7 @@ const TOOLS = [
   'log_experiment',
   'reattach_note',
   'report_issue',
+  'request_image_upload',
   'restore_record',
   'revise_recipe',
   'search_notes',

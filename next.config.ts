@@ -10,13 +10,29 @@ import type { NextConfig } from 'next';
  * route returns an HTML document-level redirect instead — see
  * `htmlRedirect()` in src/app/api/mcp/oauth/authorize/route.ts.
  */
+/**
+ * Where the upload page sends a photograph. The browser writes the original
+ * straight to the blob store's API — a Vercel function refuses a body over
+ * 4.5 MB — so that origin has to be in `connect-src`. The e2e suite points
+ * the SDK at its stub through `NEXT_PUBLIC_VERCEL_BLOB_API_URL`, which is
+ * read at build time here exactly as the SDK reads it in the browser bundle.
+ */
+const blobApiOrigin = (() => {
+  const configured = process.env.NEXT_PUBLIC_VERCEL_BLOB_API_URL?.trim();
+  try {
+    return new URL(configured || 'https://vercel.com/api/blob').origin;
+  } catch {
+    return 'https://vercel.com';
+  }
+})();
+
 const csp = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  "connect-src 'self' https://*.neon.tech",
+  `connect-src 'self' https://*.neon.tech ${blobApiOrigin}`,
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",

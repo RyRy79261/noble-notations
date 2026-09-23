@@ -21,6 +21,7 @@ import 'server-only';
  */
 import sharp, { type Metadata } from 'sharp';
 import { createHash } from 'node:crypto';
+import { MAX_STORED_EDGE, RENDITION_WIDTHS } from './widths';
 
 /** What a caller may send. The stored type is always WebP — see below. */
 export const ACCEPTED_MIME_TYPES = [
@@ -32,15 +33,17 @@ export const ACCEPTED_MIME_TYPES = [
 export type AcceptedMimeType = (typeof ACCEPTED_MIME_TYPES)[number];
 
 /**
- * The decoded byte ceiling, and the number the refusal names.
+ * The byte ceiling on what arrives, and the number the refusal names.
  *
- * 15 MB covers every phone in use — a 48-megapixel iPhone HEIC converted to
- * JPEG lands around 6 MB, and a 200-megapixel Android JPEG around 12 MB — so
- * a caller meeting this limit is sending something that is not a photograph.
- * Base64 inflates by a third in transit, which is why the check is on the
- * decoded length and the message says so.
+ * 25 MB covers every phone in use with room left over — a 48-megapixel
+ * iPhone photograph converted to JPEG lands around 6 MB, and a 200-megapixel
+ * Android JPEG around 12 MB — so a caller meeting this limit is sending
+ * something that is not a photograph. It was 15 MB while base64 was the only
+ * way in. An upload link carries the file itself, so the limit now describes
+ * the file and not what fits in a tool call; `upload_image` keeps its own
+ * smaller ceiling on `data` in `src/lib/domain/schemas.ts`.
  */
-export const MAX_INPUT_BYTES = 15 * 1024 * 1024;
+export const MAX_INPUT_BYTES = 25 * 1024 * 1024;
 
 /**
  * The decode ceiling, in pixels, and the reason the byte ceiling is not
@@ -51,14 +54,17 @@ export const MAX_INPUT_BYTES = 15 * 1024 * 1024;
 export const MAX_INPUT_PIXELS = 80_000_000;
 
 /**
- * The longest edge of what gets stored.
+ * The longest edge of the largest copy stored, and the smaller copies made
+ * beside it. Both live in `widths.ts`, which the components read too.
  *
  * A recipe hero renders at 1200 CSS pixels at the very widest, and a 2×
- * display asks for 2400. 2000 is the compromise: sharper than the layout
- * needs on a normal screen, one step short of doubling the file for a
- * retina case the page does not currently serve a second source for.
+ * display asks for 2400. It was 2000 while every reader got the one file,
+ * because doubling it for a retina screen doubled it for a phone too. Now a
+ * page names the smaller copies in `srcset` and the browser picks, so the
+ * largest copy can be the one a 2× screen wants without a phone paying for
+ * it.
  */
-export const MAX_STORED_EDGE = 2000;
+export { MAX_STORED_EDGE, RENDITION_WIDTHS };
 
 /**
  * Everything is stored as WebP, whatever arrived.
@@ -78,6 +84,13 @@ const STORED_QUALITY = 82;
 
 export class ImageRejected extends Error {}
 
+export interface ProcessedRendition {
+  data: Buffer;
+  width: number;
+  height: number;
+  bytes: number;
+}
+
 export interface ProcessedImage {
   /** The bytes to store. Always WebP. */
   data: Buffer;
@@ -89,6 +102,8 @@ export interface ProcessedImage {
   checksum: string;
   /** True when the picture was bigger than `MAX_STORED_EDGE` and was cut. */
   resized: boolean;
+  /** The smaller copies, narrowest first. See `RENDITION_WIDTHS`. */
+  renditions: ProcessedRendition[];
 }
 
 /** Decode base64 strictly: a value that is not base64 must not become bytes. */
@@ -114,19 +129,22 @@ export function decodeBase64(data: string): Buffer {
  *
  * `declaredMimeType` is checked against what the bytes actually are rather
  * than trusted. A caller that says PNG and sends a PDF is a caller whose
- * next call would put a PDF behind an `<img>` tag.
+ * next call would put a PDF behind an `<img>` tag. It is null where nobody
+ * declared anything — a file a person picked on the upload page, or one
+ * fetched from a web address — and then the bytes alone decide, against the
+ * same list.
  */
 export async function processImage(
   input: Buffer,
-  declaredMimeType: AcceptedMimeType,
+  declaredMimeType: AcceptedMimeType | null,
 ): Promise<ProcessedImage> {
   if (input.length > MAX_INPUT_BYTES) {
     const mb = (input.length / 1024 / 1024).toFixed(1);
     throw new ImageRejected(
-      `That image is ${mb} MB and the limit is ${MAX_INPUT_BYTES / 1024 / 1024} MB, ` +
-        'measured after base64 decoding. Send a smaller one. Every phone ' +
-        'camera is under the limit at full resolution, so an image above it ' +
-        'is usually a screenshot of a screenshot or a scan.',
+      `That image is ${mb} MB and the limit is ${MAX_INPUT_BYTES / 1024 / 1024} MB. ` +
+        'Send a smaller one. Every phone camera is under the limit at full ' +
+        'resolution, so an image above it is usually a scan or an export ' +
+        'from an editor.',
     );
   }
 
@@ -162,7 +180,7 @@ export async function processImage(
   }
 
   const normalisedActual = actual === 'image/jpg' ? 'image/jpeg' : actual;
-  if (normalisedActual !== declaredMimeType) {
+  if (declaredMimeType !== null && normalisedActual !== declaredMimeType) {
     throw new ImageRejected(
       `\`mimeType\` says ${declaredMimeType} and the bytes are ` +
         `${normalisedActual}. Send the type the bytes actually are.`,
@@ -199,14 +217,38 @@ export async function processImage(
   // the stored answer disagree often enough to matter for a page that sets
   // width and height to reserve the space.
   const out = await sharp(data).metadata();
+  const storedWidth = out.width ?? width;
+  const storedHeight = out.height ?? height;
+
+  // Each smaller copy is made from the stored copy and not from the input.
+  // The stored copy is already upright and already small, so this decodes
+  // 2400 pixels three times rather than 4000 three times, and every copy is
+  // certain to be the same picture as the one it stands in for.
+  const renditions: ProcessedRendition[] = [];
+  for (const target of RENDITION_WIDTHS) {
+    if (target >= storedWidth) break;
+    const copy = await sharp(data)
+      .resize({ width: target, withoutEnlargement: true })
+      .webp({ quality: STORED_QUALITY })
+      .toBuffer();
+    const copyMeta = await sharp(copy).metadata();
+    renditions.push({
+      data: copy,
+      width: copyMeta.width ?? target,
+      height:
+        copyMeta.height ?? Math.round((storedHeight * target) / storedWidth),
+      bytes: copy.length,
+    });
+  }
 
   return {
     data,
     mimeType: STORED_MIME_TYPE,
-    width: out.width ?? width,
-    height: out.height ?? height,
+    width: storedWidth,
+    height: storedHeight,
     bytes: data.length,
     checksum: createHash('sha256').update(data).digest('hex'),
     resized,
+    renditions,
   };
 }

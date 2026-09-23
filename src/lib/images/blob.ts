@@ -20,7 +20,9 @@ import 'server-only';
  * agent calls it, fails, and has no way to tell a misconfiguration from a
  * fault in its own arguments.
  */
-import { del, put } from '@vercel/blob';
+import { del, head, put } from '@vercel/blob';
+import { generateClientTokenFromReadWriteToken } from '@vercel/blob/client';
+import type { ProcessedRendition } from './process';
 
 /** The prefix every object this repository writes lives under. */
 const PREFIX = 'images';
@@ -43,6 +45,12 @@ export function isConfigured(): boolean {
 export interface StoredBlob {
   url: string;
   pathname: string;
+}
+
+export interface StoredRendition extends StoredBlob {
+  width: number;
+  height: number;
+  bytes: number;
 }
 
 /**
@@ -75,6 +83,131 @@ export async function putImage(
 }
 
 /**
+ * Write the smaller copies beside the stored picture. See
+ * `images.renditions` in `src/db/schema.ts`.
+ *
+ * Named after the checksum of the LARGEST copy, with the width appended, so
+ * every copy of one picture sits next to it in the store and a person
+ * looking in the dashboard can see which file each one belongs to.
+ */
+export async function putRenditions(
+  renditions: ProcessedRendition[],
+  checksum: string,
+): Promise<StoredRendition[]> {
+  if (!isConfigured()) throw new BlobNotConfigured();
+  return Promise.all(
+    renditions.map(async (r) => {
+      const result = await put(
+        `${PREFIX}/${checksum}-w${r.width}.webp`,
+        r.data,
+        {
+          access: 'public',
+          contentType: 'image/webp',
+          cacheControlMaxAge: 60 * 60 * 24 * 365,
+        },
+      );
+      return {
+        url: result.url,
+        pathname: result.pathname,
+        width: r.width,
+        height: r.height,
+        bytes: r.bytes,
+      };
+    }),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Upload links
+//
+// A person's browser sends the ORIGINAL file straight to the blob store and
+// not through a function. That is not a preference. A Vercel function
+// refuses a request body over 4.5 MB, and a phone photograph is often more,
+// so a form that posted to our own route would fail on exactly the pictures
+// the link exists for. The store takes the file directly when the browser
+// holds a client token, and a client token is something only the server can
+// sign.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Where the originals land. Nothing renders from here. */
+const UPLOAD_PREFIX = 'uploads';
+
+/** The pathname a link's original is written to, before the random suffix. */
+export function uploadPathname(uploadId: string): string {
+  return `${UPLOAD_PREFIX}/${uploadId}/original`;
+}
+
+/**
+ * Sign permission for ONE browser upload to ONE pathname.
+ *
+ * The token names the pathname, the types and the size, and it lasts ten
+ * minutes: long enough for a slow phone connection to send 25 MB, short
+ * enough that a token copied out of a browser is worth little. It cannot
+ * write anywhere else, because the store checks the pathname it was signed
+ * for.
+ */
+export async function issueUploadToken(
+  uploadId: string,
+  maxBytes: number,
+  contentTypes: readonly string[],
+): Promise<{ clientToken: string; pathname: string }> {
+  if (!isConfigured()) throw new BlobNotConfigured();
+  const pathname = uploadPathname(uploadId);
+  const clientToken = await generateClientTokenFromReadWriteToken({
+    token: process.env.BLOB_READ_WRITE_TOKEN,
+    pathname,
+    allowedContentTypes: [...contentTypes],
+    maximumSizeInBytes: maxBytes,
+    addRandomSuffix: true,
+    validUntil: Date.now() + 10 * 60 * 1000,
+  });
+  return { clientToken, pathname };
+}
+
+/**
+ * Ask the store where an uploaded original is, and how big it is.
+ *
+ * The browser reports the pathname it wrote. The address to READ is taken
+ * from the store's answer and never from the browser, so a page that lies
+ * about where its file went can at worst name another object in our own
+ * store under the same link's prefix — the caller checks the prefix before
+ * it asks.
+ */
+export async function findUpload(
+  pathname: string,
+): Promise<{ url: string; size: number; contentType: string } | null> {
+  if (!isConfigured()) throw new BlobNotConfigured();
+  try {
+    const found = await head(pathname);
+    return {
+      url: found.url,
+      size: found.size,
+      contentType: found.contentType,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Read an object this store holds, refusing one over `maxBytes`. */
+export async function readUpload(
+  url: string,
+  maxBytes: number,
+): Promise<Buffer> {
+  const response = await fetch(url, { cache: 'no-store' });
+  if (!response.ok) {
+    throw new Error(
+      `The blob store answered ${response.status} for an upload.`,
+    );
+  }
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (buffer.length > maxBytes) {
+    throw new Error('The upload is larger than the limit it was signed for.');
+  }
+  return buffer;
+}
+
+/**
  * Remove the bytes. Nothing in the connector calls this.
  *
  * It exists for the one job that will eventually need it — reclaiming the
@@ -88,4 +221,23 @@ export async function putImage(
 export async function removeImage(url: string): Promise<void> {
   if (!isConfigured()) throw new BlobNotConfigured();
   await del(url);
+}
+
+/**
+ * Remove an ORIGINAL once it has been processed. This one is called.
+ *
+ * It is not the delete `removeImage` refuses to be. An original is not a
+ * picture this repository stores — it is the file on its way in, and the
+ * stored picture is the WebP made from it. Keeping it would be the second
+ * copy nothing renders that `process.ts` says the store does not keep.
+ * A failure here is swallowed: the picture is already on the record, and an
+ * original left behind costs storage and nothing else.
+ */
+export async function discardUpload(url: string): Promise<void> {
+  if (!isConfigured()) return;
+  try {
+    await del(url);
+  } catch {
+    // See above.
+  }
 }

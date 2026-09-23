@@ -1,3 +1,5 @@
+import { RECORD_IMAGE_SIZES, storedImageSrcSet } from '@/lib/images/widths';
+
 /**
  * One stored picture, drawn the way the recipe hero has always been drawn.
  *
@@ -12,8 +14,9 @@
  * made. The address is `/images/<id>`, a route handler that redirects to the
  * blob store; the optimiser would have to be told that host is allowed and
  * would then re-fetch and re-encode a file this repository already resized
- * to 2000 pixels and re-encoded to WebP on the way in. The second pass buys
- * nothing and costs an invocation per image.
+ * and re-encoded to WebP on the way in. The smaller sizes it would make are
+ * made once instead, at upload, and `srcset` names them: `/images/<id>?w=`
+ * redirects to the right one. See `src/lib/images/widths.ts`.
  *
  * THE ALT TEXT IS ALSO THE CAPTION, and that is deliberate rather than lazy.
  * `upload_image` requires alt text and the guide tells an agent to describe
@@ -43,6 +46,8 @@ export function RecordImage({
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={url}
+        srcSet={storedImageSrcSet(url)}
+        sizes={storedImageSrcSet(url) ? RECORD_IMAGE_SIZES : undefined}
         alt={alt ?? ''}
         loading="lazy"
         decoding="async"

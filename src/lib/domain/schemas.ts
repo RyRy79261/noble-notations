@@ -2097,19 +2097,44 @@ export const attachToSchema = z
 export type AttachToInput = z.infer<typeof attachToSchema>;
 
 export const uploadImageShape = {
+  /**
+   * OPTIONAL NOW, and the description says what it costs. Issues #56 and
+   * #58: the model writes the tool call, so every base64 character is a
+   * token the model emits. A phone photograph is millions of them and no
+   * chat can send one. `data` stays right for a small picture the agent
+   * made itself; a photograph goes through `request_image_upload`, and a
+   * picture already on the web through `sourceUrl`.
+   */
   data: z
     .string()
     .min(1)
     .max(MAX_BASE64_LENGTH)
+    .optional()
     .describe(
-      'The image itself, base64 encoded. A data URL works too. The limit ' +
-        'is 15 MB once decoded, and every phone camera is under it.',
+      'The image itself, base64 encoded. A data URL works too. For a SMALL ' +
+        'image only — one you made, or a thumbnail. You write every ' +
+        'character of it yourself, so a photograph is millions of ' +
+        'characters and will not fit. For a photograph the person has, call ' +
+        'request_image_upload instead. Give `data` or `sourceUrl`, not both.',
+    ),
+  sourceUrl: z
+    .string()
+    .url()
+    .max(2000)
+    .optional()
+    .describe(
+      'An https address of a picture on the public web. The server fetches ' +
+        'it, so no bytes pass through you. It must open the picture itself, ' +
+        'not a page about it. A private or local address is refused. Give ' +
+        '`data` or `sourceUrl`, not both.',
     ),
   mimeType: z
     .enum(IMAGE_MIME_TYPES)
+    .optional()
     .describe(
-      'What the bytes are. It is checked against them, not trusted, and a ' +
-        'disagreement is refused.',
+      'With `data`: what the bytes are. It is checked against them, not ' +
+        'trusted, and a disagreement is refused. Not needed with ' +
+        '`sourceUrl`.',
     ),
   /**
    * REQUIRED, and this is the one place the contract is stricter than the
@@ -2142,10 +2167,31 @@ export const uploadImageShape = {
     ),
 };
 
-export const uploadImageSchema = z.object({
-  ...uploadImageShape,
-  attachTo: attachToSchema.optional(),
-});
+export const uploadImageSchema = z
+  .object({
+    ...uploadImageShape,
+    attachTo: attachToSchema.optional(),
+  })
+  .superRefine((value, ctx) => {
+    const has = (v: unknown) => v !== undefined && v !== null;
+    if (has(value.data) === has(value.sourceUrl)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['data'],
+        message:
+          'Give the picture one way: `data` (base64, for a small image) or ' +
+          '`sourceUrl` (an https address). For a photograph the person has, ' +
+          'call request_image_upload instead.',
+      });
+    }
+    if (has(value.data) && !has(value.mimeType)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['mimeType'],
+        message: '`data` needs `mimeType`, so the bytes can be checked.',
+      });
+    }
+  });
 export type UploadImageArgs = z.input<typeof uploadImageSchema>;
 export type UploadImageInput = z.infer<typeof uploadImageSchema>;
 
@@ -2844,3 +2890,49 @@ export const reportIssueSchema = z
   });
 export type ReportIssueArgs = z.input<typeof reportIssueSchema>;
 export type ReportIssueInput = z.infer<typeof reportIssueSchema>;
+
+// ─────────────────────────────────────────────────────────────────────────
+// request_image_upload — issues #56 and #58
+//
+// The way a photograph gets in from a chat. The agent names the record and
+// gets back a link; the person opens it and picks the file; the browser
+// sends the file to the blob store. The model handles the link and nothing
+// else, whatever the size of the photograph.
+// ─────────────────────────────────────────────────────────────────────────
+
+export const requestImageUploadShape = {
+  /**
+   * REQUIRED, unlike on `upload_image`. With `upload_image` the result
+   * carries the address back to the agent. With a link the picture lands
+   * after the tool call has returned, so the record named here is the only
+   * place the agent can find it again — through the read tool of that record.
+   */
+  attachTo: z
+    .object(attachToShape)
+    .describe(
+      'Which record the picture goes on. The same object upload_image ' +
+        'takes. It is checked now, so a link is never made for a record ' +
+        'that is not there.',
+    ),
+  alt: z
+    .string()
+    .min(1)
+    .max(300)
+    .optional()
+    .describe(
+      'What the picture shows, if you have seen it. The page shows it to ' +
+        'the person, who can correct it. Leave it out if you have not seen ' +
+        'the picture; the page then asks the person to write it.',
+    ),
+  caption: z
+    .string()
+    .max(500)
+    .nullish()
+    .describe('Shown under the picture. Optional.'),
+};
+
+export const requestImageUploadSchema = z.object({
+  ...requestImageUploadShape,
+  attachTo: attachToSchema,
+});
+export type RequestImageUploadInput = z.infer<typeof requestImageUploadSchema>;

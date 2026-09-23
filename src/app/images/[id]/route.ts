@@ -25,8 +25,26 @@ import { getImage } from '@/lib/queries/read';
  */
 export const dynamic = 'force-dynamic';
 
+/**
+ * `?w=<pixels>` asks for a copy at least that wide. The answer is the
+ * narrowest stored copy that is, or the largest copy when none is — so a
+ * picture stored before copies existed answers every width with the one
+ * file it has, and a width larger than the picture never scales it up.
+ * `srcset` on the site names these addresses and the browser picks.
+ */
+function pickBlob(
+  image: NonNullable<Awaited<ReturnType<typeof getImage>>>,
+  width: number | null,
+): string {
+  if (!width) return image.blobUrl;
+  const fit = [...image.renditions]
+    .sort((a, b) => a.width - b.width)
+    .find((r) => r.width >= width);
+  return fit && fit.width < image.width ? fit.url : image.blobUrl;
+}
+
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   // Next 16: route params are a Promise.
@@ -50,7 +68,10 @@ export async function GET(
   // deleted. So the redirect itself is only briefly cacheable while the
   // bytes it points at are cacheable for a year. `stale-while-revalidate`
   // keeps that cheap: a page that already has the picture does not wait.
-  return NextResponse.redirect(image.blobUrl, {
+  const w = Number(new URL(request.url).searchParams.get('w'));
+  const target = pickBlob(image, Number.isFinite(w) && w > 0 ? w : null);
+
+  return NextResponse.redirect(target, {
     status: 307,
     headers: {
       'Cache-Control': 'public, max-age=60, stale-while-revalidate=86400',
