@@ -57,6 +57,8 @@ import {
   updateRevisionShape,
   uploadImageSchema,
   uploadImageShape,
+  requestImageUploadSchema,
+  requestImageUploadShape,
   CATEGORY_TYPES,
   upsertIngredientSchema,
   upsertIngredientShape,
@@ -107,16 +109,15 @@ import {
   storeImage,
 } from '@/lib/queries/write';
 import type { WriteResult } from '@/lib/queries/write';
-import {
-  decodeBase64,
-  ImageRejected,
-  processImage,
-} from '@/lib/images/process';
+import { decodeBase64, ImageRejected } from '@/lib/images/process';
 import {
   BlobNotConfigured,
   isConfigured as blobConfigured,
-  putImage,
 } from '@/lib/images/blob';
+import { prepareImage, storeInput } from '@/lib/images/ingest';
+import { fetchRemoteImage } from '@/lib/images/fetch-remote';
+import { createImageUpload, UPLOAD_LINK_MINUTES } from '@/lib/queries/uploads';
+import { getPublicOriginFromHeaders } from '@/lib/mcp/origin';
 import { issueReportingConfigured, issueToken } from '@/lib/github/config';
 import { createGitHubIssues } from '@/lib/github/client';
 import { ReportFailedError, submitReport } from '@/lib/github/report';
@@ -127,6 +128,11 @@ import { hasScope, WRITE_SCOPE } from '@/lib/mcp/scopes';
 
 interface AuthCtx {
   authInfo?: AuthInfo;
+  /**
+   * The HTTP request the call arrived on. Read by `request_image_upload`
+   * only, to write the link on the host the connector actually reached.
+   */
+  requestInfo?: { headers?: Record<string, string | string[] | undefined> };
 }
 
 interface Principal {
@@ -350,7 +356,8 @@ function warnImageUploadIsOff(): void {
   if (warnedImageUploadIsOff) return;
   warnedImageUploadIsOff = true;
   console.warn(
-    '[mcp] BLOB_READ_WRITE_TOKEN is not set — upload_image is not registered.',
+    '[mcp] BLOB_READ_WRITE_TOKEN is not set — upload_image and ' +
+      'request_image_upload are not registered.',
   );
 }
 
@@ -1689,17 +1696,23 @@ export function registerTools(server: McpServer): void {
         title: 'Upload an image',
         description:
           'Put a picture into this repository and get back the address ' +
-          'every image field takes. Send the bytes base64 encoded. This is ' +
-          'the only way to fill heroImageUrl or a step imageUrl from a ' +
-          'conversation: those fields take an address, and this is what ' +
-          'makes one.\n\n' +
+          'every image field takes.\n\n' +
+          'FOR A PHOTOGRAPH THE PERSON HAS, DO NOT USE THIS TOOL. Call ' +
+          'request_image_upload. It gives you a link; the person opens it ' +
+          'and picks the file, at full size. You cannot send a photograph ' +
+          'here: `data` is base64 that you write one character at a time, ' +
+          'and a phone photograph is millions of characters.\n\n' +
+          'Use this tool for two things:\n' +
+          '- `sourceUrl`: an https address of a picture already on the ' +
+          'public web. The server fetches it. No bytes pass through you.\n' +
+          '- `data` with `mimeType`: a SMALL image, base64 encoded — one you ' +
+          'made yourself, or a thumbnail of a few kilobytes.\n\n' +
           '`alt` is required. Write what the picture SHOWS, for a reader ' +
           'who cannot see it: "Sliced biltong, dark red with a white fat ' +
           'seam", not "a photo of biltong".\n\n' +
           'The picture is resized and re-encoded. The longest edge becomes ' +
-          '2000 pixels and the stored file is WebP. A phone photograph is ' +
-          'fine as it comes off the phone. The limit is 15 MB once decoded, ' +
-          'and the refusal names it.\n\n' +
+          'at most 2400 pixels, the stored file is WebP, and smaller copies ' +
+          'are made for small screens.\n\n' +
           'Give `attachTo` to put the picture on a record in the same ' +
           'call. One record only:\n' +
           '- `{ recipeSlug }` — the hero image of a recipe.\n' +
@@ -1741,6 +1754,12 @@ export function registerTools(server: McpServer): void {
           {
             mimeType: args.mimeType,
             bytes: typeof args.data === 'string' ? args.data.length : 0,
+            // An address, not free text, and the one fact that says where
+            // a fetched picture came from.
+            sourceUrl:
+              typeof args.sourceUrl === 'string'
+                ? args.sourceUrl.slice(0, 300)
+                : undefined,
             recipeSlug: args.attachTo?.recipeSlug,
             stepPosition: args.attachTo?.stepPosition,
             ingredientSlug: args.attachTo?.ingredientSlug,
@@ -1753,30 +1772,24 @@ export function registerTools(server: McpServer): void {
             requireWrite(principal);
             const input = uploadImageSchema.parse(args);
 
-            const raw = decodeBase64(input.data);
-            const processed = await processImage(raw, input.mimeType);
+            // The schema has made sure exactly one of the two is here.
+            const prepared = input.sourceUrl
+              ? await prepareImage(
+                  await fetchRemoteImage(input.sourceUrl),
+                  null,
+                )
+              : await prepareImage(
+                  decodeBase64(input.data!),
+                  input.mimeType ?? null,
+                );
 
-            // THE BLOB IS WRITTEN BEFORE THE ROW, and the order is the only
-            // one that fails safely. A row naming a blob that was never
-            // written is a picture that 404s for good; a blob with no row is
-            // an object nobody can reach, which costs storage and nothing
-            // else. The checksum makes the second case self-healing: the
-            // next upload of the same bytes writes the same key and the row
-            // lands then.
-            const stored = await putImage(processed.data, processed.checksum);
-
-            const result = await storeImage({
-              blobUrl: stored.url,
-              blobPathname: stored.pathname,
-              mimeType: processed.mimeType,
-              alt: input.alt,
-              caption: input.caption,
-              width: processed.width,
-              height: processed.height,
-              bytes: processed.bytes,
-              checksum: processed.checksum,
-              attachTo: input.attachTo,
-            });
+            const result = await storeImage(
+              storeInput(prepared, {
+                alt: input.alt,
+                caption: input.caption,
+                attachTo: input.attachTo,
+              }),
+            );
 
             return {
               ...result,
@@ -1786,9 +1799,9 @@ export function registerTools(server: McpServer): void {
                     'again. The address is the same one as before.'
                   : `Stored. ${result.width}×${result.height}, ` +
                     `${Math.round(result.bytes / 1024)} kB.`,
-                ...(processed.resized
+                ...(prepared.resized
                   ? [
-                      'It was made smaller to fit 2000 pixels on its longest edge.',
+                      'It was made smaller to fit 2400 pixels on its longest edge.',
                     ]
                   : []),
                 result.attachedTo
@@ -1798,6 +1811,110 @@ export function registerTools(server: McpServer): void {
                     'log_experiment.',
                 `To take it down: delete_record { kind: "image", id: "${result.id}" }.`,
               ].join(' '),
+            };
+          },
+        ),
+    );
+
+    /**
+     * Issues #56 and #58: the way a photograph gets in from a chat.
+     *
+     * `upload_image` needs the bytes in the tool call, and the model writes
+     * the tool call — so a photograph is millions of tokens, and the attempt
+     * fills the context window before it fails. This tool moves no bytes.
+     * It checks the record, writes a one-hour, one-picture link, and returns
+     * it. The person opens it on the phone that took the picture; the
+     * browser sends the original file straight to the blob store; the
+     * server shrinks it and puts it on the record. See `image_uploads` in
+     * `src/db/schema.ts`.
+     *
+     * Registered under the same condition as `upload_image`, because it
+     * needs the same blob store.
+     */
+    server.registerTool(
+      'request_image_upload',
+      {
+        title: 'Get a link to upload a photograph',
+        description:
+          'Get a link the person opens to upload a picture from their own ' +
+          'device, at full size. Use this for every photograph the person ' +
+          'has — one they sent you in the chat, or one on their phone. You ' +
+          'cannot send a photograph yourself: upload_image takes base64 ' +
+          'that you write one character at a time, and a photograph is ' +
+          'millions of characters. This tool sends no bytes. It gives you a ' +
+          'link of about a hundred characters.\n\n' +
+          'What to do:\n' +
+          '1. Call this tool with `attachTo`. Add `alt` if you have seen the ' +
+          'picture.\n' +
+          '2. Give the person the `link`. Tell them to open it on the ' +
+          'device that has the photograph and pick it.\n' +
+          '3. When they say it is done, call the read tool of that record ' +
+          '(get_recipe, get_ingredient, get_experiment or list_categories) ' +
+          'to see the picture.\n\n' +
+          'If YOU hold the file on disk and can run a shell, send it to ' +
+          '`putUrl` instead: an HTTP PUT with the file as the body, its type ' +
+          'in Content-Type, and `?alt=` when you gave no alt here. The body ' +
+          'limit there is 4.5 MB, so shrink a larger file to 2400 pixels on ' +
+          'its longest edge first. That loses nothing: 2400 is the largest ' +
+          'copy the store keeps.\n\n' +
+          '`attachTo` is required and names one record, as on upload_image. ' +
+          'It is checked now: a record that is not there, is deleted, or has ' +
+          'no such step is refused here, not after the person uploads.\n\n' +
+          'One link takes one picture, and it lasts one hour. For several ' +
+          "pictures — a run's gallery, say — ask for several links.\n\n" +
+          'The page asks the person for the alt text when you give none, ' +
+          'and shows yours for them to correct when you do.\n\n' +
+          'The picture is resized to at most 2400 pixels on its longest ' +
+          'edge and stored as WebP, with smaller copies for small screens. ' +
+          'The limit on the file is 25 MB.\n\n' +
+          'The same rules as upload_image hold for what the picture does: a ' +
+          'hero image makes no version; a step picture is a correction to ' +
+          'the version people read now.',
+        inputSchema: requestImageUploadShape,
+      },
+      async (args, extra) =>
+        runTool(
+          extra as AuthCtx,
+          'request_image_upload',
+          // Identifying primitives only, as for upload_image. The alt and
+          // the caption are free text; the token is a credential and is
+          // never in the arguments at all.
+          {
+            recipeSlug: args.attachTo?.recipeSlug,
+            stepPosition: args.attachTo?.stepPosition,
+            ingredientSlug: args.attachTo?.ingredientSlug,
+            experimentSlug: args.attachTo?.experimentSlug,
+            gallery: args.attachTo?.gallery,
+            tagSlug: args.attachTo?.tagSlug,
+            categoryType: args.attachTo?.categoryType,
+          },
+          async (principal) => {
+            requireWrite(principal);
+            const input = requestImageUploadSchema.parse(args);
+            const created = await createImageUpload({
+              userId: principal.userId,
+              clientId: principal.clientId,
+              alt: input.alt,
+              caption: input.caption,
+              attachTo: input.attachTo,
+            });
+            const origin = getPublicOriginFromHeaders(
+              (extra as AuthCtx).requestInfo?.headers,
+            );
+            const link = `${origin}/upload/${created.token}`;
+            return {
+              link,
+              // The same link for a caller with a shell and a file on disk.
+              // See `src/app/api/uploads/[token]/route.ts`.
+              putUrl: `${origin}/api/uploads/${created.token}`,
+              target: created.target,
+              expiresAt: created.expiresAt.toISOString(),
+              message:
+                `Give the person this link: ${link} — it puts one picture ` +
+                `on ${created.target}. They open it on the device that has ` +
+                'the photograph and pick the file. It lasts ' +
+                `${UPLOAD_LINK_MINUTES} minutes and takes one picture. When ` +
+                'they say it is done, read the record to see it.',
             };
           },
         ),

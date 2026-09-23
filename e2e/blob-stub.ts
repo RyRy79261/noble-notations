@@ -20,7 +20,15 @@
  *
  *   PUT  /?pathname=<pathname>   the body is the object; answers JSON with
  *                                the url, the pathname and the content type
+ *   GET  /?url=<pathname or url> `head`: the object's metadata, or 404
  *   POST /delete                 { urls: [...] }
+ *
+ * The upload page's browser PUTs here too, from the app's origin, so every
+ * answer carries CORS headers and a preflight is answered — as the real
+ * store does. That PUT carries a CLIENT token, which the stub reads for one
+ * thing: the pathname it was signed for. A browser that writes anywhere
+ * else is refused, as the real store refuses it, so a test can tell a page
+ * that stays inside its link from one that does not.
  *
  * The control half, all prefixed `__` so they can never collide:
  *
@@ -42,6 +50,30 @@ interface StoredObject {
   pathname: string;
   contentType: string;
   body: Buffer;
+  uploadedAt: string;
+}
+
+const CORS = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-methods': 'GET, PUT, POST, DELETE, OPTIONS',
+  'access-control-allow-headers': '*',
+  'access-control-expose-headers': '*',
+};
+
+/** The `pathname` a client token was signed for, or null for any other token. */
+function clientTokenPathname(authorization: string | undefined): string | null {
+  const token = authorization?.replace(/^Bearer\s+/i, '') ?? '';
+  if (!token.startsWith('vercel_blob_client_')) return null;
+  try {
+    const encoded = token.split('_')[4] ?? '';
+    const payload = Buffer.from(encoded, 'base64').toString().split('.')[1];
+    const decoded = JSON.parse(
+      Buffer.from(payload ?? '', 'base64').toString(),
+    ) as { pathname?: string };
+    return decoded.pathname ?? null;
+  } catch {
+    return null;
+  }
 }
 
 const objects = new Map<string, StoredObject>();
@@ -58,6 +90,7 @@ function readBody(req: IncomingMessage): Promise<Buffer> {
 function json(res: ServerResponse, status: number, payload: unknown): void {
   const text = JSON.stringify(payload);
   res.writeHead(status, {
+    ...CORS,
     'content-type': 'application/json',
     'content-length': Buffer.byteLength(text),
   });
@@ -71,6 +104,11 @@ const origin = `http://127.0.0.1:${port}`;
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', origin);
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, CORS).end();
+    return;
+  }
 
   if (url.pathname === '/__health') {
     json(res, 200, { ok: true, objects: objects.size });
@@ -103,6 +141,17 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    const signedFor = clientTokenPathname(req.headers.authorization);
+    if (signedFor !== null && signedFor !== pathname) {
+      json(res, 403, {
+        error: {
+          code: 'forbidden',
+          message: `the client token was signed for ${signedFor}`,
+        },
+      });
+      return;
+    }
+
     // The real store appends a random suffix unless told not to, and
     // `putImage` relies on that: it is the only thing making a deleted
     // picture's address unguessable. The stub does the same so a test sees
@@ -123,7 +172,12 @@ const server = createServer(async (req, res) => {
       (req.headers['content-type'] as string | undefined) ??
       'application/octet-stream';
 
-    objects.set(stored, { pathname: stored, contentType, body });
+    objects.set(stored, {
+      pathname: stored,
+      contentType,
+      body,
+      uploadedAt: new Date().toISOString(),
+    });
 
     const publicUrl = `${origin}/blob/${stored}`;
     json(res, 200, {
@@ -133,6 +187,37 @@ const server = createServer(async (req, res) => {
       contentType,
       contentDisposition: `inline; filename="${stored}"`,
       etag: randomBytes(8).toString('hex'),
+    });
+    return;
+  }
+
+  // `head`. The SDK sends a GET to the root with the pathname, or a full
+  // url, in `url`.
+  if (
+    req.method === 'GET' &&
+    url.pathname === '/' &&
+    url.searchParams.has('url')
+  ) {
+    const asked = url.searchParams.get('url')!;
+    const key = asked.startsWith(`${origin}/blob/`)
+      ? asked.slice(`${origin}/blob/`.length).split('?')[0]!
+      : asked;
+    const object = objects.get(key);
+    if (!object) {
+      json(res, 404, { error: { code: 'not_found', message: 'not found' } });
+      return;
+    }
+    const publicUrl = `${origin}/blob/${object.pathname}`;
+    json(res, 200, {
+      url: publicUrl,
+      downloadUrl: `${publicUrl}?download=1`,
+      pathname: object.pathname,
+      size: object.body.length,
+      contentType: object.contentType,
+      contentDisposition: `inline; filename="${object.pathname}"`,
+      cacheControl: 'public, max-age=31536000',
+      uploadedAt: object.uploadedAt,
+      etag: 'stub',
     });
     return;
   }
@@ -163,6 +248,7 @@ const server = createServer(async (req, res) => {
       return;
     }
     res.writeHead(200, {
+      ...CORS,
       'content-type': object.contentType,
       'content-length': object.body.length,
       'cache-control': 'public, max-age=31536000, immutable',

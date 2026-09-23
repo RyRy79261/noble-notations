@@ -534,6 +534,11 @@ const CALLS: Record<string, Record<string, unknown>> = {
     alt: 'A scope sweep, one pixel and no meaning.',
     attachTo: { recipeSlug: GHOST },
   },
+  // Refused for its scope before the target is probed, so the ghost slug is
+  // never looked up and no link is minted.
+  request_image_upload: {
+    attachTo: { recipeSlug: GHOST },
+  },
 };
 
 const WRITE_TOOLS = [
@@ -554,6 +559,7 @@ const WRITE_TOOLS = [
   'delete_record',
   'restore_record',
   'upload_image',
+  'request_image_upload',
 ];
 
 /** English for a count, because the guide writes the number in words. */

@@ -73,6 +73,7 @@ import {
   recipesLive,
   taxonomyTermsLive,
 } from '@/db/schema';
+import type { ImageRendition } from '@/db/schema';
 // `recipe_revisions` unfiltered, for the two experiment reads and nothing
 // else. The alias is the warning; `./live` says why it exists.
 import { recipeRevisionsAll } from '@/lib/queries/live';
@@ -3019,6 +3020,8 @@ export interface ImageView {
   width: number;
   height: number;
   bytes: number;
+  /** Smaller copies for `?w=`. Empty for a picture stored before them. */
+  renditions: ImageRendition[];
 }
 
 /**
@@ -3056,6 +3059,7 @@ export async function getImage(id: string): Promise<ImageView | null> {
       width: imagesLive.width,
       height: imagesLive.height,
       bytes: imagesLive.bytes,
+      renditions: imagesLive.renditions,
     })
     .from(imagesLive)
     .where(eq(imagesLive.id, id))

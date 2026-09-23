@@ -53,9 +53,9 @@ import { issueReportingConfigured } from '@/lib/github/config';
  * about `report_issue`: teaching a tool the registry does not carry sends an
  * agent to a tool-not-found error.
  *
- * It also moves a COUNT, which `report_issue` does not: `upload_image` is a
- * write tool, so the sentence naming how many write tools there are is
- * sixteen or seventeen depending on this. `e2e/auth-guide.spec.ts` measures
+ * It also moves a COUNT, which `report_issue` does not: `upload_image` and
+ * `request_image_upload` are write tools, so the sentence naming how many
+ * write tools there are is sixteen or eighteen depending on this. `e2e/auth-guide.spec.ts` measures
  * that against the live registry and fails on a mismatch, which is how the
  * number was caught being wrong before.
  */
@@ -117,10 +117,11 @@ English as a first language. Call get_started for the full rule.
 `.trim();
 
 const INSTRUCTIONS_IMAGES = `
-You can put a picture in this store. Call upload_image. Send the bytes
-base64 encoded and write the alt text. The tool gives back an address. Every
-image field takes that address. Give attachTo to put the picture on a record
-in the same call.
+You can put a picture in this store. For a photograph that the person has,
+call request_image_upload with attachTo. It gives you a link. Give the link
+to the person. They open it and pick the file. Do not send a photograph as
+base64: you write each character, and a photograph is millions of them. For
+a picture on the public web, call upload_image with sourceUrl.
 `.trim();
 
 const INSTRUCTIONS_REPORTING = `
@@ -173,7 +174,7 @@ export function serverInstructions(
  * matters and the one that has caught this sentence being wrong before.
  */
 function writeToolCountWord(uploadConfigured: boolean): string {
-  return uploadConfigured ? 'seventeen' : 'sixteen';
+  return uploadConfigured ? 'eighteen' : 'sixteen';
 }
 
 function scopesParagraph(
@@ -611,11 +612,11 @@ const GUIDE = {
 
   /**
    * The count was "six" and the registry held seven, because
-   * `backfill_revision` was added and this line was not. It is seventeen now
+   * `backfill_revision` was added and this line was not. It is eighteen now
    * — nine, plus `reattach_note`, the three corrections, the delete, the
-   * restore, `create_variant` and `upload_image` — and the number is worth
-   * keeping true: an agent that reads "six" and counts seventeen has no way
-   * to tell which nine it must not trust.
+   * restore, `create_variant`, `upload_image` and `request_image_upload` —
+   * and the number is worth keeping true: an agent that reads "six" and
+   * counts eighteen has no way to tell which nine it must not trust.
    *
    * `list_deleted` is a READ and is counted as one. It reports rows the site
    * does not show, which is why that looks wrong at first glance — but the
@@ -624,14 +625,15 @@ const GUIDE = {
    *
    * SIX OTHER PLACES STATE A COUNT and must move together: `scopesParagraph`
    * above, four docs in `src/app/connect/page.tsx` and the total in
-   * `docs/mcp-connector.md`. The registry holds thirty tools: twelve read,
-   * seventeen write, and `report_issue` in neither scope.
+   * `docs/mcp-connector.md`. The registry holds thirty-one tools: twelve
+   * read, eighteen write, and `report_issue` in neither scope.
    *
-   * TWO OF THOSE ARE CONDITIONAL, so the count is a range and not a number.
+   * THREE OF THOSE ARE CONDITIONAL, so the count is a range and not a number.
    * `report_issue` needs `GITHUB_ISSUE_TOKEN` and is in neither scope, so it
-   * moves the total and no scope count. `upload_image` needs
-   * `BLOB_READ_WRITE_TOKEN` and IS a write tool, so it moves both — which is
-   * why the sentence below is built rather than written out.
+   * moves the total and no scope count. `upload_image` and
+   * `request_image_upload` need `BLOB_READ_WRITE_TOKEN` and ARE write tools,
+   * so they move both — which is why the sentence below is built rather
+   * than written out.
    */
   scopes: scopesParagraph(true, true),
 
@@ -734,9 +736,22 @@ const GUIDE = {
  * were never added. This says what to call instead.
  */
 const IMAGES_WITH_UPLOAD =
-  'You can put a picture in this store. Call upload_image. Send the bytes ' +
-  'base64 encoded in data, say what they are in mimeType, and write the alt ' +
-  'text. The tool gives back an address. Every image field in this store ' +
+  'You can put a picture in this store. There are three ways. Choose by ' +
+  'where the picture is.\n\n' +
+  'A photograph that the person has: call request_image_upload with ' +
+  'attachTo. It gives you a link. Give the link to the person. They open ' +
+  'it on the device that has the photograph and pick the file. The file ' +
+  'goes to the store at full size. When they say it is done, read the ' +
+  'record to see the picture. One link takes one picture and lasts one ' +
+  'hour.\n\n' +
+  'Do not send a photograph as base64. You write each character of a tool ' +
+  'call yourself, and a photograph is millions of characters. It fills ' +
+  'your context and then fails.\n\n' +
+  'A picture on the public web: call upload_image with sourceUrl, an https ' +
+  'address. The server fetches it.\n\n' +
+  'A small picture that you made: call upload_image with the bytes base64 ' +
+  'encoded in data, and say what they are in mimeType.\n\n' +
+  'upload_image gives back an address. Every image field in this store ' +
   'takes that address.\n\n' +
   'Always write the alt text. Say what the picture shows, for a reader who ' +
   'cannot see it. Write "Sliced biltong, dark red with a white fat seam", ' +
@@ -757,9 +772,9 @@ const IMAGES_WITH_UPLOAD =
   'changes what every reader of that version sees. This is allowed. A ' +
   'picture is not a change to the food. Be sure the picture is of that ' +
   'version.\n\n' +
-  'The tool makes the picture smaller and stores it as WebP. The longest ' +
-  'edge becomes 2000 pixels. A photograph from a phone is fine as it is. ' +
-  'The limit is 15 MB after decoding.\n\n' +
+  'The store makes the picture smaller and keeps it as WebP. The longest ' +
+  'edge becomes 2400 pixels at most. It also makes smaller copies for ' +
+  'small screens. The limit on a file is 25 MB.\n\n' +
   'The same picture sent twice gives the same address back. Nothing is ' +
   'stored a second time.\n\n' +
   'To take a picture down, call delete_record with kind "image" and the id. ' +

@@ -81,6 +81,7 @@ import { Revision } from '@/components/f/revision';
 import { Section360 } from '@/components/f/section-label';
 import { Measure, Stat } from '@/components/f/stat';
 import type { NoteView, RecipeView, StepView } from '@/lib/queries/read';
+import { RECORD_IMAGE_SIZES, storedImageSrcSet } from '@/lib/images/widths';
 import { cardSummary, revisionOrdinal } from '@/lib/site';
 import { cn } from '@/lib/utils';
 
@@ -350,6 +351,12 @@ function Step({
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={step.imageUrl}
+              srcSet={storedImageSrcSet(step.imageUrl)}
+              sizes={
+                storedImageSrcSet(step.imageUrl)
+                  ? RECORD_IMAGE_SIZES
+                  : undefined
+              }
               alt={step.imageAlt ?? ''}
               loading="lazy"
               decoding="async"
@@ -686,6 +693,12 @@ export function RecipeDetail({
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={recipe.heroImageUrl}
+                srcSet={storedImageSrcSet(recipe.heroImageUrl)}
+                sizes={
+                  storedImageSrcSet(recipe.heroImageUrl)
+                    ? RECORD_IMAGE_SIZES
+                    : undefined
+                }
                 alt={recipe.heroImageAlt ?? ''}
                 loading="lazy"
                 decoding="async"

@@ -43,7 +43,7 @@ export const metadata: Metadata = {
  * THE TOOL LISTS ARE THE REAL ONES. The design draws four read tools and
  * three write tools with invented names — `search_entries`, `add_state`.
  * This list is the one a person reads before approving write access, so it
- * names every tool the scope grants and not a sample: twelve, seventeen and
+ * names every tool the scope grants and not a sample: twelve, eighteen and
  * the one that is in neither scope, from `src/lib/mcp/tools.ts`.
  * `docs/mcp-connector.md` §Tools and that file are the other two places the
  * set is written down; all three move together, and `TOOLS` in
@@ -318,10 +318,11 @@ const READ_TOOLS: Tool[] = [
 ];
 
 /**
- * The seventeen the write scope grants. Approving it grants all of them.
+ * The eighteen the write scope grants. Approving it grants all of them.
  *
- * ONE OF THEM IS CONDITIONAL, and this page lists it anyway. `upload_image`
- * is registered only where `BLOB_READ_WRITE_TOKEN` is set, which is
+ * TWO OF THEM ARE CONDITIONAL, and this page lists them anyway.
+ * `upload_image` and `request_image_upload` are registered only where
+ * `BLOB_READ_WRITE_TOKEN` is set, which is
  * Production and Preview; a developer's machine has neither the token nor
  * this screen's audience. `report_issue` below is listed on the same terms
  * and for the same reason: this list is what a person reads before granting
@@ -392,12 +393,16 @@ const WRITE_TOOLS: Tool[] = [
   },
   {
     name: 'upload_image',
-    text: 'A photograph, sent as bytes and stored. It answers with the address every image field takes.',
+    text: 'A picture from a web address, or a small one sent as bytes. It answers with the address every image field takes.',
+  },
+  {
+    name: 'request_image_upload',
+    text: 'A one-hour link for one photograph, for one record. You open it and pick the file; the agent never holds it.',
   },
 ];
 
 /**
- * The thirtieth tool, and the only one in neither scope.
+ * The thirty-first tool, and the only one in neither scope.
  *
  * It is listed on its own because neither of the two lists above is true of
  * it: it needs no scope, and its effect lands outside this system. Reading
@@ -423,7 +428,7 @@ const REPORT_TOOLS: Tool[] = [
  * ingredient name is 14px Geist, the description is Geist where the alias is
  * serif italic, the scope is a 9px tracked label where the count is 12px
  * mono — so reusing it would mean three new props on a shared component for
- * one screen. A list is also the truer shape: this is twelve or seventeen
+ * one screen. A list is also the truer shape: this is twelve or eighteen
  * things of one kind, not a record with four fields, and a screen reader
  * announces the count.
  *

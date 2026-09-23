@@ -24,6 +24,7 @@ import 'server-only';
  * this is never called an archive.
  */
 import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { TransactionRollbackError } from 'drizzle-orm/errors';
 import { withTransaction, type TransactionClient } from '@/db/client';
 import {
   experimentImages,
@@ -46,6 +47,7 @@ import {
   recipes,
   taxonomyTerms,
 } from '@/db/schema';
+import type { ImageRendition } from '@/db/schema';
 import { slugify, uniqueSlug } from '@/lib/domain/slug';
 import {
   formatIngredientLine,
@@ -3194,6 +3196,8 @@ export interface StoreImageInput {
   height: number;
   bytes: number;
   checksum: string;
+  /** The smaller copies, already in the blob store. */
+  renditions?: ImageRendition[];
   attachTo?: AttachToInput;
 }
 
@@ -3238,88 +3242,135 @@ export interface StoreImageResult {
 export async function storeImage(
   input: StoreImageInput,
 ): Promise<StoreImageResult> {
-  return withTransaction(async (tx) => {
-    const existing = await tx
-      .select({
+  return withTransaction((tx) => storeImageTx(tx, input));
+}
+
+/**
+ * `storeImage` inside a transaction the caller already holds. The upload
+ * link needs this: spending the link and storing the picture are one
+ * commit, so a link cannot be marked used for a picture that did not land,
+ * and a picture cannot land twice through one link.
+ */
+export async function storeImageTx(
+  tx: Tx,
+  input: StoreImageInput,
+): Promise<StoreImageResult> {
+  const existing = await tx
+    .select({
+      id: images.id,
+      width: images.width,
+      height: images.height,
+      bytes: images.bytes,
+      mimeType: images.mimeType,
+      deletedAt: images.deletedAt,
+      renditions: images.renditions,
+    })
+    .from(images)
+    .where(eq(images.checksum, input.checksum))
+    .limit(1);
+
+  let row: {
+    id: string;
+    width: number;
+    height: number;
+    bytes: number;
+    mimeType: string;
+  };
+  const deduplicated = existing.length > 0;
+
+  if (existing[0]) {
+    await tx
+      .update(images)
+      .set({
+        alt: input.alt,
+        ...(input.caption !== undefined
+          ? { caption: input.caption ?? null }
+          : {}),
+        ...(existing[0].deletedAt ? LIVE : {}),
+        // A picture stored before `renditions` existed has none. Sending
+        // it again is the one moment the copies can be filled in, and the
+        // bytes are the same, so the copies are too.
+        ...(existing[0].renditions.length === 0 &&
+        (input.renditions?.length ?? 0) > 0
+          ? { renditions: input.renditions }
+          : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(images.id, existing[0].id));
+    row = existing[0];
+  } else {
+    const inserted = await tx
+      .insert(images)
+      .values({
+        blobUrl: input.blobUrl,
+        blobPathname: input.blobPathname,
+        mimeType: input.mimeType,
+        alt: input.alt,
+        caption: input.caption ?? null,
+        width: input.width,
+        height: input.height,
+        bytes: input.bytes,
+        checksum: input.checksum,
+        renditions: input.renditions ?? [],
+      })
+      .returning({
         id: images.id,
         width: images.width,
         height: images.height,
         bytes: images.bytes,
         mimeType: images.mimeType,
-        deletedAt: images.deletedAt,
-      })
-      .from(images)
-      .where(eq(images.checksum, input.checksum))
-      .limit(1);
+      });
+    row = inserted[0]!;
+  }
 
-    let row: {
-      id: string;
-      width: number;
-      height: number;
-      bytes: number;
-      mimeType: string;
-    };
-    const deduplicated = existing.length > 0;
+  const url = `/images/${row.id}`;
+  const attachedTo = input.attachTo
+    ? await attachImage(
+        tx,
+        url,
+        input.alt,
+        input.caption ?? null,
+        input.attachTo,
+      )
+    : null;
 
-    if (existing[0]) {
-      await tx
-        .update(images)
-        .set({
-          alt: input.alt,
-          ...(input.caption !== undefined
-            ? { caption: input.caption ?? null }
-            : {}),
-          ...(existing[0].deletedAt ? LIVE : {}),
-          updatedAt: new Date(),
-        })
-        .where(eq(images.id, existing[0].id));
-      row = existing[0];
-    } else {
-      const inserted = await tx
-        .insert(images)
-        .values({
-          blobUrl: input.blobUrl,
-          blobPathname: input.blobPathname,
-          mimeType: input.mimeType,
-          alt: input.alt,
-          caption: input.caption ?? null,
-          width: input.width,
-          height: input.height,
-          bytes: input.bytes,
-          checksum: input.checksum,
-        })
-        .returning({
-          id: images.id,
-          width: images.width,
-          height: images.height,
-          bytes: images.bytes,
-          mimeType: images.mimeType,
-        });
-      row = inserted[0]!;
-    }
+  return {
+    id: row.id,
+    url,
+    width: row.width,
+    height: row.height,
+    bytes: row.bytes,
+    mimeType: row.mimeType,
+    deduplicated,
+    attachedTo,
+  };
+}
 
-    const url = `/images/${row.id}`;
-    const attachedTo = input.attachTo
-      ? await attachImage(
-          tx,
-          url,
-          input.alt,
-          input.caption ?? null,
-          input.attachTo,
-        )
-      : null;
-
-    return {
-      id: row.id,
-      url,
-      width: row.width,
-      height: row.height,
-      bytes: row.bytes,
-      mimeType: row.mimeType,
-      deduplicated,
-      attachedTo,
-    };
-  });
+/**
+ * Answer "could a picture go here?" by trying, and undoing the try.
+ *
+ * An upload link names its record when it is made and stores a picture
+ * minutes later. A link for a record that is not there, or is deleted, or a
+ * step past the last one, would send a person to upload a photograph and
+ * then refuse it. So the link runs `attachImage` itself, now, inside a
+ * savepoint, and rolls the savepoint back. The refusals are the real ones,
+ * word for word, because the code is the real code. Returns the target in
+ * the site's words.
+ */
+export async function probeAttachTarget(
+  tx: Tx,
+  attachTo: AttachToInput,
+): Promise<string> {
+  let target = '';
+  try {
+    await tx.transaction(async (sp) => {
+      target = await attachImage(sp, '/images/probe', 'probe', null, attachTo);
+      sp.rollback();
+    });
+  } catch (err) {
+    if (!(err instanceof TransactionRollbackError)) throw err;
+  }
+  return target;
 }
 
 /**

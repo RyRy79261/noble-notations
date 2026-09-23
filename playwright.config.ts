@@ -137,8 +137,18 @@ export default defineConfig({
         // a credential, and the base URL beside it is what guarantees the
         // suite never reaches the real store: with it pointed at the stub,
         // a token that did work would still write nowhere.
-        BLOB_READ_WRITE_TOKEN: 'stub-token-not-a-real-credential',
+        //
+        // It is SHAPED like a real one — `vercel_blob_rw_<store>_<secret>` —
+        // because the upload link signs client tokens with it, and the SDK
+        // reads the store id out of the third segment before it signs.
+        BLOB_READ_WRITE_TOKEN:
+          'vercel_blob_rw_stubstore_notarealcredentialnotarealcredential',
         VERCEL_BLOB_API_URL: `http://127.0.0.1:${BLOB_PORT}`,
+        // The same address for the BROWSER. The upload page writes the file
+        // to the store itself, and the SDK in the client bundle reads this
+        // one, inlined at build time. `next.config.ts` reads it too, to put
+        // the stub in the page's `connect-src`.
+        NEXT_PUBLIC_VERCEL_BLOB_API_URL: `http://127.0.0.1:${BLOB_PORT}`,
       },
     },
   ],
