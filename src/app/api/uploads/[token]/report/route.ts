@@ -20,7 +20,7 @@ import { findImageUpload } from '@/lib/queries/uploads';
 export const dynamic = 'force-dynamic';
 
 const bodySchema = z.object({
-  stage: z.enum(['token', 'send', 'complete']),
+  stage: z.enum(['shrink', 'send', 'complete']),
   message: z.string().max(1000),
   fileBytes: z.number().int().nonnegative().nullable().optional(),
   fileType: z.string().max(100).nullable().optional(),
