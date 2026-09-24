@@ -546,10 +546,12 @@ and fails. `request_image_upload` returns a one-hour, one-picture link; the
 person opens it and picks the file; the page PUTs it to this site's own
 `/api/uploads/<token>`, redrawing it at 2400 pixels first only when it is
 over 4 MB (a Vercel function refuses a body over 4.5 MB); the server shrinks
-it and puts it on the record the link named. **The page does not write to
-the blob store from the browser.** That was the first design, and from a
-phone in production the cross-origin request never landed; a same-origin
-request has no CORS or `connect-src` to get wrong. `upload_image` keeps
+it and puts it on the record the link named. **On Android the file input's
+`accept` carries one made-up non-image type, `application/x-noble-upload`,
+and that is load-bearing.** With only image types, Chrome on Android 13+
+opens the system Photo Picker, whose proxy file can report a size that does
+not match its bytes; every phone upload failed that way, at pick time. See
+the header of `src/app/upload/[token]/upload-form.tsx`. `upload_image` keeps
 `sourceUrl`, fetched by the server behind an SSRF guard, and `data`, which is
 for a small picture the agent made. `docs/mcp-connector.md` § _Getting a
 photograph in_ has the design.

@@ -6,7 +6,8 @@ import { cn } from '@/lib/utils';
 import { buttonClasses, FOCUS_RING } from '@/components/f/button';
 import {
   FileReadError,
-  shrinkForSending,
+  prepareForSending,
+  readPickedFile,
 } from '@/lib/images/shrink-in-browser';
 
 /**
@@ -27,13 +28,29 @@ import {
  * another origin answers to a preflight. A request to this page's own
  * origin has no preflight, no CORS and no `connect-src` to get wrong.
  *
- * **THE PHOTO IS READ INTO MEMORY BEFORE IT IS SENT.** Moving to this
- * origin did not fix the phone: the next try failed with "Failed to fetch"
- * again and no PUT reached the server, while the page's small JSON report
- * to the same origin arrived. So the request died on the phone, and the
- * body was the difference — Chrome on Android refuses to stream a picked
- * gallery file whose size or date it no longer trusts. See
- * `shrink-in-browser.ts`.
+ * **WHY EVERY PHONE UPLOAD FAILED, AND THE FIX.** All four attempts from
+ * Chrome on Android failed for one reason, and the upload code was not
+ * it. The `accept` list named only image types, so Chrome opened the
+ * Android system Photo Picker instead of its normal chooser. The picker
+ * gives Chrome a proxy file whose size comes from a database, not from
+ * the bytes. For that photo the two did not match, and every read failed
+ * from the moment it was picked: no preview, "Failed to fetch" with no
+ * request sent, then NotReadableError. (The ERR_UPLOAD_FILE_CHANGED
+ * explanation in #62 and #63 was wrong: nothing on those paths checks the
+ * modified time.)
+ *
+ * So on Android the `accept` list carries one made-up type that is not an
+ * image, `application/x-noble-upload`. Chrome's picker check
+ * (`isSupportedPhotoPickerTypes`) then fails, and Chrome opens its normal
+ * chooser: the Files app, filtered to images, with Photos and Drive in its
+ * menu. It returns the real file. The made-up type is deliberately not
+ * `application/octet-stream`, which would remove the image filter. The
+ * server checks the bytes, not this list.
+ *
+ * The photo is also READ THE MOMENT IT IS PICKED, and the preview and the
+ * upload both use those bytes. A file the phone will not release fails at
+ * once, with a second chooser that takes any file, instead of after the
+ * person has written the description.
  *
  * The body limit is handled here instead: a photo over 4 MB is redrawn in
  * the browser at 2400 pixels on its longest edge, the size of the largest
@@ -41,10 +58,10 @@ import {
  * 4 MB — most phone photos — is sent exactly as taken. See
  * `shrink-in-browser.ts`.
  *
- * `accept` lists the four types the store reads and NOT `image/*`. That is
- * what makes an iPhone hand over a JPEG: Safari converts a HEIC photograph
- * when the page does not say it takes HEIC, and the server cannot decode
- * HEIC.
+ * On an iPhone `accept` lists exactly the four types the store reads and
+ * NOT `image/*`. That is what makes Safari hand over a JPEG: it converts a
+ * HEIC photograph when the page does not say it takes HEIC, and the server
+ * cannot decode HEIC.
  *
  * **A FAILURE IS SHOWN, AND REPORTED.** A watchdog aborts a request that
  * never answers. The person sees the error and a "Try again" button — the
@@ -52,7 +69,21 @@ import {
  * `/api/uploads/<token>/report`, so a failure is in the runtime logs rather
  * than only on somebody's phone.
  */
-const ACCEPT = 'image/jpeg,image/png,image/webp,image/avif';
+const ACCEPT_IMAGES = 'image/jpeg,image/png,image/webp,image/avif';
+const ACCEPT_ANDROID = `${ACCEPT_IMAGES},application/x-noble-upload`;
+
+function acceptFor(userAgent: string): string {
+  return /Android/i.test(userAgent) ? ACCEPT_ANDROID : ACCEPT_IMAGES;
+}
+
+/** The type the picked bytes are sent as. */
+function typeOf(file: File): string {
+  return ['image/jpeg', 'image/png', 'image/webp', 'image/avif'].includes(
+    file.type,
+  )
+    ? file.type
+    : '';
+}
 
 /**
  * How long the PUT may take before the page gives up. A 4 MB body over a
@@ -109,26 +140,44 @@ export function UploadForm({
   maxBytes: number;
 }) {
   const fileId = useId();
+  const anyFileId = useId();
   const altId = useId();
+  const [accept, setAccept] = useState(ACCEPT_IMAGES);
   const [file, setFile] = useState<File | null>(null);
+  const [bytes, setBytes] = useState<ArrayBuffer | null>(null);
+  const [reading, setReading] = useState(false);
+  const [pickError, setPickError] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [alt, setAlt] = useState(initialAlt);
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' });
 
+  // Set after mount, so the server and the first client render agree. The
+  // label cannot open the picker before hydration anyway.
   useEffect(() => {
-    if (!file) return;
-    const url = URL.createObjectURL(file);
+    setAccept(acceptFor(navigator.userAgent));
+  }, []);
+
+  useEffect(() => {
+    if (!bytes || !file) return;
+    const url = URL.createObjectURL(
+      new Blob([bytes], { type: typeOf(file) || 'image/jpeg' }),
+    );
     setPreview(url);
     return () => URL.revokeObjectURL(url);
-  }, [file]);
+  }, [bytes, file]);
 
   const busy = phase.kind === 'sending';
   const elapsed = useElapsed(busy ? phase.startedAt : null);
   const tooBig = file ? file.size > maxBytes : false;
   const missingAlt = alt.trim().length === 0;
-  const ready = Boolean(file) && !tooBig && !missingAlt && !busy;
+  const ready = Boolean(bytes) && !pickError && !tooBig && !missingAlt && !busy;
 
-  async function report(stage: string, message: string) {
+  async function report(
+    stage: string,
+    message: string,
+    extra: Record<string, unknown> = {},
+    about: File | null = file,
+  ) {
     try {
       await fetch(`/api/uploads/${token}/report`, {
         method: 'POST',
@@ -136,8 +185,11 @@ export function UploadForm({
         body: JSON.stringify({
           stage,
           message: message.slice(0, 1000),
-          fileBytes: file?.size ?? null,
-          fileType: file?.type ?? null,
+          fileBytes: about?.size ?? null,
+          fileType: about?.type ?? null,
+          fileName: about?.name.slice(0, 200) ?? null,
+          accept,
+          ...extra,
         }),
       });
     } catch {
@@ -145,17 +197,46 @@ export function UploadForm({
     }
   }
 
+  async function pick(
+    event: React.ChangeEvent<HTMLInputElement>,
+    via: 'picker' | 'any-file',
+  ) {
+    const picked = event.target.files?.[0] ?? null;
+    // Picking the same photo again must fire `change` again.
+    event.currentTarget.value = '';
+    setPhase({ kind: 'idle' });
+    setPreview(null);
+    setBytes(null);
+    setPickError(null);
+    setFile(picked);
+    if (!picked) return;
+    setReading(true);
+    try {
+      setBytes(await readPickedFile(picked));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setPickError(message);
+      void report(
+        'pick',
+        message,
+        err instanceof FileReadError
+          ? { via, errorName: err.errorName, offset: err.offset }
+          : { via },
+        picked,
+      );
+    } finally {
+      setReading(false);
+    }
+  }
+
   async function send() {
-    if (!file || !ready) return;
-    let stage = 'read';
+    if (!file || !bytes || !ready) return;
+    let stage = 'shrink';
     const abort = new AbortController();
     const watchdog = setTimeout(() => abort.abort(), SEND_TIMEOUT_MS);
     try {
       setPhase({ kind: 'sending', startedAt: Date.now() });
-      const { body, type } = await shrinkForSending(file).catch((err) => {
-        if (!(err instanceof FileReadError)) stage = 'shrink';
-        throw err;
-      });
+      const { body, type } = await prepareForSending(bytes, typeOf(file));
 
       stage = 'send';
       const query = new URLSearchParams({ alt: alt.trim() });
@@ -237,13 +318,21 @@ export function UploadForm({
         id={fileId}
         name="file"
         type="file"
-        accept={ACCEPT}
+        accept={accept}
         disabled={busy}
         className="sr-only"
-        onChange={(event) => {
-          setPhase({ kind: 'idle' });
-          setFile(event.target.files?.[0] ?? null);
-        }}
+        onChange={(event) => void pick(event, 'picker')}
+      />
+      {/* The way out when the phone will not release a file: no accept at
+          all, so any chooser and any file. The server reads the bytes and
+          refuses what is not a picture, in words. */}
+      <input
+        id={anyFileId}
+        name="any-file"
+        type="file"
+        disabled={busy}
+        className="sr-only"
+        onChange={(event) => void pick(event, 'any-file')}
       />
 
       {!file ? (
@@ -275,7 +364,40 @@ export function UploadForm({
               alt=""
               data-upload-preview=""
               className="h-auto max-h-96 w-full object-contain"
+              onError={() => {
+                const message =
+                  'This browser cannot show that file. Choose a JPEG, PNG, WebP or AVIF photo.';
+                setPickError(message);
+                void report('preview', message);
+              }}
             />
+          ) : null}
+          {reading ? (
+            <p
+              role="status"
+              className="m-0 text-12 leading-150 font-mono text-ink-3"
+            >
+              Reading the photo…
+            </p>
+          ) : null}
+          {pickError ? (
+            <div
+              role="alert"
+              data-upload-pick-error=""
+              className="flex w-full flex-col items-start gap-2 bg-warn-wash px-4 py-3"
+            >
+              <p className="m-0 text-12 leading-150 text-ink-2">{pickError}</p>
+              <label
+                htmlFor={anyFileId}
+                data-upload-pick-any=""
+                className={cn(
+                  'cursor-pointer text-12 leading-150 text-ink underline',
+                  FOCUS_RING,
+                )}
+              >
+                Choose it from Files instead
+              </label>
+            </div>
           ) : null}
           <div className="flex w-full flex-row items-baseline justify-between gap-3">
             <span className="min-w-0 truncate text-12 leading-150 font-mono text-ink-3">

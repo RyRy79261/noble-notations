@@ -132,7 +132,7 @@ test('a person opens the link, picks a photograph, and it becomes the hero image
   await expect(page.getByText('Choose a photo')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Upload' })).toHaveCount(0);
 
-  const upload = page.locator('input[type="file"]');
+  const upload = page.locator('input[name="file"]');
   await upload.setInputFiles({
     name: 'photo.jpg',
     mimeType: 'image/jpeg',
@@ -140,6 +140,13 @@ test('a person opens the link, picks a photograph, and it becomes the hero image
   });
   // No alt text was given with the link, so the page asks for it and the
   // button waits for it.
+  // The preview is drawn from the bytes the page read, so a photo the page
+  // could not read shows no preview — the symptom every phone upload had.
+  const previewImg = page.locator('[data-upload-preview]');
+  await expect(previewImg).toBeVisible();
+  expect(
+    await previewImg.evaluate((img) => (img as HTMLImageElement).naturalWidth),
+  ).toBe(4000);
   const button = page.getByRole('button', { name: 'Upload' });
   await expect(button).toBeDisabled();
   await expect(
@@ -204,9 +211,10 @@ test('a person opens the link, picks a photograph, and it becomes the hero image
   ).toBeVisible();
 });
 
-test('a photo the phone will not let the page read says so, and is reported as a read failure', async ({
+test('a photo the phone will not let the page read fails the moment it is picked, and choosing it from Files instead uploads it', async ({
   page,
 }) => {
+  test.setTimeout(60_000);
   const mcp = rw();
   const slug = await makeRecipe(mcp, 'upload-link-unreadable');
   const link = await mcp.call<LinkResult>('request_image_upload', {
@@ -214,27 +222,98 @@ test('a photo the phone will not let the page read says so, and is reported as a
     alt: 'Grilled pork neck, sliced, with a dark dipping sauce.',
   });
 
-  // What an Android gallery item that has gone away looks like to the page:
-  // the File exists, and reading it fails.
+  // What the Android Photo Picker's proxy file looked like to the page:
+  // the File exists, and every read of it fails. The switch lets the test
+  // put reads back for the second pick.
   await page.addInitScript(() => {
-    File.prototype.arrayBuffer = () =>
-      Promise.reject(new DOMException('gone', 'NotReadableError'));
+    const real = Blob.prototype.arrayBuffer;
+    const w = window as unknown as { __unreadable: boolean };
+    w.__unreadable = true;
+    Blob.prototype.arrayBuffer = function (this: Blob) {
+      return w.__unreadable
+        ? Promise.reject(new DOMException('gone', 'NotReadableError'))
+        : real.call(this);
+    };
   });
   const reported = page.waitForRequest(
     (r) => r.url().endsWith('/report') && r.method() === 'POST',
   );
   await page.goto(link.link);
-  await page.locator('input[type="file"]').setInputFiles({
-    name: 'kor-moo-yang.jpg',
+  const photo = await uniqueJpeg(800, 600);
+  await page.locator('input[name="file"]').setInputFiles({
+    name: '1000207002.jpg',
     mimeType: 'image/jpeg',
-    buffer: await uniqueJpeg(800, 600),
+    buffer: photo,
   });
-  await page.getByRole('button', { name: 'Upload' }).click();
 
-  await expect(page.locator('[data-upload-error]')).toContainText(
+  // At once — before the person writes a word or presses anything.
+  const pickError = page.locator('[data-upload-pick-error]');
+  await expect(pickError).toContainText(
     'did not let the page read the photo (NotReadableError)',
   );
-  expect((await reported).postDataJSON()).toMatchObject({ stage: 'read' });
+  await expect(page.getByRole('button', { name: 'Upload' })).toBeDisabled();
+  expect((await reported).postDataJSON()).toMatchObject({
+    stage: 'pick',
+    via: 'picker',
+    errorName: 'NotReadableError',
+    offset: 0,
+    fileName: '1000207002.jpg',
+  });
+
+  // The way out: a chooser with no accept list at all.
+  await expect(page.locator('[data-upload-pick-any]')).toBeVisible();
+  await page.evaluate(() => {
+    (window as unknown as { __unreadable: boolean }).__unreadable = false;
+  });
+  await page.locator('input[name="any-file"]').setInputFiles({
+    name: 'IMG_2031.jpg',
+    mimeType: 'image/jpeg',
+    buffer: photo,
+  });
+  await expect(pickError).toHaveCount(0);
+  await expect(page.locator('[data-upload-preview]')).toBeVisible();
+  await page.getByRole('button', { name: 'Upload' }).click();
+  await expect(page.locator('[data-upload-done]')).toBeVisible({
+    timeout: 30_000,
+  });
+});
+
+test('on Android the chooser is kept out of the Photo Picker, and on an iPhone Safari still converts HEIC', async ({
+  browser,
+}) => {
+  const mcp = rw();
+  const slug = await makeRecipe(mcp, 'upload-link-accept');
+  const link = await mcp.call<LinkResult>('request_image_upload', {
+    attachTo: { recipeSlug: slug },
+    alt: 'A plate.',
+  });
+  const acceptOn = async (userAgent: string) => {
+    const context = await browser.newContext({ userAgent });
+    const page = await context.newPage();
+    await page.goto(link.link);
+    const input = page.locator('input[name="file"]');
+    // Set after hydration.
+    await expect(input).toHaveAttribute('accept', /image\/jpeg/);
+    await page.waitForLoadState('networkidle');
+    const accept = await input.getAttribute('accept');
+    await context.close();
+    return accept ?? '';
+  };
+
+  // Chrome opens the Photo Picker only when EVERY type starts with image/.
+  const android = await acceptOn(
+    'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Mobile Safari/537.36',
+  );
+  expect(android.split(',')).toContain('application/x-noble-upload');
+  // Not octet-stream: that would drop the image filter from the chooser.
+  expect(android).not.toContain('application/octet-stream');
+
+  // Safari converts HEIC to JPEG only when the list does not take HEIC, and
+  // the list must stay exactly the four types.
+  const iphone = await acceptOn(
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+  );
+  expect(iphone).toBe('image/jpeg,image/png,image/webp,image/avif');
 });
 
 test('a photo over the 4 MB body limit is made smaller in the browser, reaches the server, and is stored at 2400 pixels', async ({
@@ -267,7 +346,7 @@ test('a photo over the 4 MB body limit is made smaller in the browser, reaches t
     (r) => r.method() === 'PUT' && r.url().includes('/api/uploads/'),
   );
   await page.goto(link.link);
-  await page.locator('input[type="file"]').setInputFiles({
+  await page.locator('input[name="file"]').setInputFiles({
     name: 'cilbir.jpg',
     mimeType: 'image/jpeg',
     buffer: photo,
@@ -318,7 +397,7 @@ test('a send that fails says so in seconds, and the same link works on the secon
   );
 
   await page.goto(link.link);
-  await page.locator('input[type="file"]').setInputFiles({
+  await page.locator('input[name="file"]').setInputFiles({
     name: 'nam-jim-jaew.jpg',
     mimeType: 'image/jpeg',
     buffer: await uniqueJpeg(1200, 900),
