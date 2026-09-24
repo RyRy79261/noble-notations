@@ -4,7 +4,10 @@ import { useEffect, useId, useState } from 'react';
 
 import { cn } from '@/lib/utils';
 import { buttonClasses, FOCUS_RING } from '@/components/f/button';
-import { shrinkForSending } from '@/lib/images/shrink-in-browser';
+import {
+  FileReadError,
+  shrinkForSending,
+} from '@/lib/images/shrink-in-browser';
 
 /**
  * The file picker behind an upload link.
@@ -23,6 +26,14 @@ import { shrinkForSending } from '@/lib/images/shrink-in-browser';
  * would not make, and nothing in this repository can prove or fix what
  * another origin answers to a preflight. A request to this page's own
  * origin has no preflight, no CORS and no `connect-src` to get wrong.
+ *
+ * **THE PHOTO IS READ INTO MEMORY BEFORE IT IS SENT.** Moving to this
+ * origin did not fix the phone: the next try failed with "Failed to fetch"
+ * again and no PUT reached the server, while the page's small JSON report
+ * to the same origin arrived. So the request died on the phone, and the
+ * body was the difference — Chrome on Android refuses to stream a picked
+ * gallery file whose size or date it no longer trusts. See
+ * `shrink-in-browser.ts`.
  *
  * The body limit is handled here instead: a photo over 4 MB is redrawn in
  * the browser at 2400 pixels on its longest edge, the size of the largest
@@ -136,12 +147,15 @@ export function UploadForm({
 
   async function send() {
     if (!file || !ready) return;
-    let stage = 'shrink';
+    let stage = 'read';
     const abort = new AbortController();
     const watchdog = setTimeout(() => abort.abort(), SEND_TIMEOUT_MS);
     try {
       setPhase({ kind: 'sending', startedAt: Date.now() });
-      const { body, type } = await shrinkForSending(file);
+      const { body, type } = await shrinkForSending(file).catch((err) => {
+        if (!(err instanceof FileReadError)) stage = 'shrink';
+        throw err;
+      });
 
       stage = 'send';
       const query = new URLSearchParams({ alt: alt.trim() });
