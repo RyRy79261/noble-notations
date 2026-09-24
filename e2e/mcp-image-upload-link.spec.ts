@@ -148,7 +148,18 @@ test('a person opens the link, picks a photograph, and it becomes the hero image
   await page
     .getByLabel('What the picture shows')
     .fill('Grilled chicken, charred skin, on a banana leaf.');
+  const sent = page.waitForRequest(
+    (r) => r.method() === 'PUT' && r.url().includes('/api/uploads/'),
+  );
   await button.click();
+
+  // THE BYTES LEAVE FROM MEMORY, NOT AS A FILE REFERENCE. Chrome on Android
+  // cancels a request that streams a picked gallery file it no longer trusts
+  // (`ERR_UPLOAD_FILE_CHANGED`), and no PUT from a phone ever reached the
+  // server until the page read the file first. A body Playwright can read
+  // back byte for byte is one that was in memory.
+  const put = await sent;
+  expect(put.postDataBuffer()?.equals(photo)).toBe(true);
 
   await expect(page.locator('[data-upload-done]')).toBeVisible({
     timeout: 30_000,
@@ -191,6 +202,39 @@ test('a person opens the link, picks a photograph, and it becomes the hero image
   await expect(
     page.getByRole('heading', { name: 'This link is used' }),
   ).toBeVisible();
+});
+
+test('a photo the phone will not let the page read says so, and is reported as a read failure', async ({
+  page,
+}) => {
+  const mcp = rw();
+  const slug = await makeRecipe(mcp, 'upload-link-unreadable');
+  const link = await mcp.call<LinkResult>('request_image_upload', {
+    attachTo: { recipeSlug: slug },
+    alt: 'Grilled pork neck, sliced, with a dark dipping sauce.',
+  });
+
+  // What an Android gallery item that has gone away looks like to the page:
+  // the File exists, and reading it fails.
+  await page.addInitScript(() => {
+    File.prototype.arrayBuffer = () =>
+      Promise.reject(new DOMException('gone', 'NotReadableError'));
+  });
+  const reported = page.waitForRequest(
+    (r) => r.url().endsWith('/report') && r.method() === 'POST',
+  );
+  await page.goto(link.link);
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'kor-moo-yang.jpg',
+    mimeType: 'image/jpeg',
+    buffer: await uniqueJpeg(800, 600),
+  });
+  await page.getByRole('button', { name: 'Upload' }).click();
+
+  await expect(page.locator('[data-upload-error]')).toContainText(
+    'did not let the page read the photo (NotReadableError)',
+  );
+  expect((await reported).postDataJSON()).toMatchObject({ stage: 'read' });
 });
 
 test('a photo over the 4 MB body limit is made smaller in the browser, reaches the server, and is stored at 2400 pixels', async ({
