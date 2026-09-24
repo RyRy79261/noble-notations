@@ -265,16 +265,20 @@ characters, whatever the size of the photograph.
   one hour, and the first picture to land spends it. Only a connector with
   the write scope can mint one, and it names one record. The page is
   `noindex` and sends no referrer.
-- **The browser writes the original to the blob store directly.** A Vercel
-  function refuses a request body over 4.5 MB, so a form posting to our own
-  route would fail on exactly the photographs the link is for. The page asks
-  `/api/uploads/<token>/token` for a client token scoped to one pathname,
-  the four accepted types and 25 MB; `put` from `@vercel/blob/client` sends
-  the file; `/api/uploads/<token>/complete` then reads it back, processes it
-  exactly as `upload_image` would, stores it, spends the link, and deletes
-  the original. The address it reads comes from the store's `head` answer,
-  never from the browser, and the pathname must sit under the link's own
-  prefix.
+- **The page sends the photo to this site, not to the blob store.** It
+  PUTs the file to `/api/uploads/<token>`, the same route an agent with a
+  shell uses, and the server processes it exactly as `upload_image` would,
+  stores it and spends the link. A Vercel function refuses a request body
+  over 4.5 MB, so a file over 4 MB is first redrawn in the browser at 2400
+  pixels on its longest edge — the size of the largest copy the store keeps
+  — as a JPEG (`src/lib/images/shrink-in-browser.ts`). A file under 4 MB,
+  which is most phone photographs, is sent as taken.
+  The first design sent the original from the browser straight to Vercel
+  Blob with a client token. From a phone in production that cross-origin
+  request failed every time — first a freeze, then "Failed to fetch" in a
+  second — and nothing in this repository can prove what another origin
+  answers to a preflight. `/api/uploads/<token>/token` and `/complete` still
+  exist and are tested, but the page no longer calls them.
 - **Spending the link and storing the picture are one transaction.** The
   row is locked `FOR UPDATE`, so two tabs finishing at once store one
   picture; the second is told the link is used.

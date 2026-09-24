@@ -1,63 +1,59 @@
 'use client';
 
 import { useEffect, useId, useState } from 'react';
-import { put } from '@vercel/blob/client';
 
 import { cn } from '@/lib/utils';
 import { buttonClasses, FOCUS_RING } from '@/components/f/button';
+import { shrinkForSending } from '@/lib/images/shrink-in-browser';
 
 /**
  * The file picker behind an upload link.
  *
- * Three requests, in this order, and the order is the design:
+ * ONE REQUEST, TO THIS SITE:
  *
- *   1. POST /api/uploads/<token>/token      a client token for ONE pathname
- *   2. PUT  <the blob store>                the original file, from here
- *   3. POST /api/uploads/<token>/complete   shrink it and put it on the record
+ *   PUT /api/uploads/<token>?alt=...   the photo; the server shrinks it,
+ *                                      stores it and puts it on the record
  *
- * The file goes to the blob store directly because a Vercel function refuses
- * a body over 4.5 MB, and a phone photograph is often more. Only the server
- * can sign the token, and only the server decides what the stored picture
- * is — the browser moves the bytes and nothing else.
+ * **WHY NOT STRAIGHT TO THE BLOB STORE.** The first version sent the file
+ * from the browser to Vercel Blob's API with a client token, to get past
+ * the 4.5 MB body limit of a Vercel function. From a phone in production
+ * that request never landed: first it froze at "Sending… 0%", then, with
+ * the freeze fixed, the browser refused it outright with "Failed to fetch"
+ * in under a second, twice. That is a cross-origin request the browser
+ * would not make, and nothing in this repository can prove or fix what
+ * another origin answers to a preflight. A request to this page's own
+ * origin has no preflight, no CORS and no `connect-src` to get wrong.
+ *
+ * The body limit is handled here instead: a photo over 4 MB is redrawn in
+ * the browser at 2400 pixels on its longest edge, the size of the largest
+ * copy the store keeps, so nothing a reader sees is lost. A photo under
+ * 4 MB — most phone photos — is sent exactly as taken. See
+ * `shrink-in-browser.ts`.
  *
  * `accept` lists the four types the store reads and NOT `image/*`. That is
  * what makes an iPhone hand over a JPEG: Safari converts a HEIC photograph
  * when the page does not say it takes HEIC, and the server cannot decode
  * HEIC.
  *
- * **NO PROGRESS PERCENTAGE, and that is the fix for the first real upload.**
- * With `onUploadProgress` the SDK sends the file as a STREAMED request body.
- * The first photograph sent from a phone in production sat at "Sending… 0%"
- * and never reached `complete`: the logs show step 1 and nothing after it.
- * A streamed body cannot be sent twice, so once one attempt failed every
- * retry failed the same way, and the SDK retries a network error ten times
- * with backoff — about seventeen minutes of a frozen button. Without
- * `onUploadProgress` the SDK sends the `File` as one ordinary request, which
- * works over any HTTP version and can be retried, and which is the path the
- * e2e suite has always exercised. The page shows what it is doing and how
- * long it has taken instead of a number.
- *
- * **A FAILURE IS SHOWN, AND REPORTED.** `VERCEL_BLOB_RETRIES` is set low in
- * `next.config.ts`, so a request that cannot reach the store fails in
- * seconds, and a watchdog aborts one that simply never answers. Either way
- * the person sees the error and a "Try again" button — the link is not spent
- * until a picture lands — and the error text goes to
- * `/api/uploads/<token>/report`, so the next failure is in the runtime logs
- * rather than only on somebody's phone.
+ * **A FAILURE IS SHOWN, AND REPORTED.** A watchdog aborts a request that
+ * never answers. The person sees the error and a "Try again" button — the
+ * link is not spent until a picture lands — and the error text goes to
+ * `/api/uploads/<token>/report`, so a failure is in the runtime logs rather
+ * than only on somebody's phone.
  */
 const ACCEPT = 'image/jpeg,image/png,image/webp,image/avif';
 
 /**
- * How long the PUT may take before the page gives up. A 25 MB file over a
- * poor 2 Mbit/s mobile connection takes about 100 seconds; three minutes
- * leaves room and still ends a request that is never going to answer.
+ * How long the PUT may take before the page gives up. A 4 MB body over a
+ * poor 1 Mbit/s mobile connection takes about 35 seconds, and the server
+ * then resizes it; three minutes leaves room and still ends a request that
+ * is never going to answer.
  */
 const SEND_TIMEOUT_MS = 3 * 60 * 1000;
 
 type Phase =
   | { kind: 'idle' }
   | { kind: 'sending'; startedAt: number }
-  | { kind: 'processing'; startedAt: number }
   | { kind: 'done'; width: number; height: number; target: string }
   | { kind: 'failed'; message: string };
 
@@ -115,7 +111,7 @@ export function UploadForm({
     return () => URL.revokeObjectURL(url);
   }, [file]);
 
-  const busy = phase.kind === 'sending' || phase.kind === 'processing';
+  const busy = phase.kind === 'sending';
   const elapsed = useElapsed(busy ? phase.startedAt : null);
   const tooBig = file ? file.size > maxBytes : false;
   const missingAlt = alt.trim().length === 0;
@@ -140,53 +136,37 @@ export function UploadForm({
 
   async function send() {
     if (!file || !ready) return;
-    let stage = 'token';
+    let stage = 'shrink';
     const abort = new AbortController();
     const watchdog = setTimeout(() => abort.abort(), SEND_TIMEOUT_MS);
     try {
       setPhase({ kind: 'sending', startedAt: Date.now() });
-
-      const tokenResponse = await fetch(`/api/uploads/${token}/token`, {
-        method: 'POST',
-      });
-      if (!tokenResponse.ok) throw new Error(await readError(tokenResponse));
-      const { clientToken, pathname } = (await tokenResponse.json()) as {
-        clientToken: string;
-        pathname: string;
-      };
+      const { body, type } = await shrinkForSending(file);
 
       stage = 'send';
-      let blob: { pathname: string };
+      const query = new URLSearchParams({ alt: alt.trim() });
+      if (caption) query.set('caption', caption);
+      let response: Response;
       try {
-        blob = await put(pathname, file, {
-          access: 'public',
-          token: clientToken,
-          contentType: file.type || undefined,
-          abortSignal: abort.signal,
+        response = await fetch(`/api/uploads/${token}?${query}`, {
+          method: 'PUT',
+          headers: type ? { 'content-type': type } : {},
+          body,
+          signal: abort.signal,
         });
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         throw new Error(
           abort.signal.aborted
             ? `The photo did not finish sending in ${SEND_TIMEOUT_MS / 60000} minutes. Check the connection and try again.`
-            : `The photo could not be sent to storage: ${detail}`,
+            : `The photo could not be sent: ${detail}`,
           { cause: err },
         );
       }
 
       stage = 'complete';
-      setPhase({ kind: 'processing', startedAt: Date.now() });
-      const done = await fetch(`/api/uploads/${token}/complete`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          pathname: blob.pathname,
-          alt: alt.trim(),
-          caption,
-        }),
-      });
-      if (!done.ok) throw new Error(await readError(done));
-      const result = (await done.json()) as {
+      if (!response.ok) throw new Error(await readError(response));
+      const result = (await response.json()) as {
         width: number;
         height: number;
         attachedTo: string | null;
@@ -342,12 +322,9 @@ export function UploadForm({
           className="flex w-full flex-col items-start gap-1 bg-desk px-4 py-3"
         >
           <p className="m-0 text-15 leading-150 font-serif text-ink">
-            {phase.kind === 'sending'
-              ? `Sending the photo (${megabytes(file?.size ?? 0)})…`
-              : 'Making it smaller and saving it…'}
+            Sending the photo and saving it…
           </p>
           <p className="m-0 text-12 leading-150 font-mono text-ink-3">
-            {phase.kind === 'sending' ? 'Step 1 of 2' : 'Step 2 of 2'} ·{' '}
             {elapsed} s. Keep this page open.
           </p>
         </div>

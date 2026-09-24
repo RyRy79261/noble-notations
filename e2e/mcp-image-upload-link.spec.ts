@@ -12,12 +12,13 @@ import { mcpClient, tokens, type McpClient } from './helpers';
  * `upload_image` took the picture as base64, and the model writes the tool
  * call, so a photograph was millions of tokens: it filled the context and
  * failed. `request_image_upload` returns a link instead, the person opens it
- * and picks the file, and the browser writes the original to the blob store.
+ * and picks the file, and the browser PUTs it to this site's upload route.
  *
  * WHAT THESE TESTS DEFEND:
  *
- * - **The whole path, in a real browser.** The page, the client token, the
- *   direct PUT to the store, the processing and the record. The assertion
+ * - **The whole path, in a real browser.** The page, the same-origin PUT,
+ *   the processing and the record. A photo over the 4 MB body limit is
+ *   made smaller in the browser first. The assertion
  *   that matters is on the record and on what `/images/<id>` serves, not on
  *   a row.
  * - **The target is checked when the link is made**, so a person is never
@@ -30,8 +31,8 @@ import { mcpClient, tokens, type McpClient } from './helpers';
  * - **`sourceUrl` refuses a private address and says why.** A server-side
  *   fetch driven by caller input is a request forgery surface.
  *
- * NOTHING HERE REACHES VERCEL. The browser's PUT goes to `e2e/blob-stub.ts`
- * through `NEXT_PUBLIC_VERCEL_BLOB_API_URL`, inlined at build time.
+ * NOTHING HERE REACHES VERCEL. The server's writes go to `e2e/blob-stub.ts`
+ * through `VERCEL_BLOB_API_URL`.
  */
 
 const BASE = `http://127.0.0.1:${process.env.E2E_PORT ?? 3100}`;
@@ -192,7 +193,63 @@ test('a person opens the link, picks a photograph, and it becomes the hero image
   ).toBeVisible();
 });
 
-test('a send that cannot reach the store fails in seconds, says so, and the same link works on the second try', async ({
+test('a photo over the 4 MB body limit is made smaller in the browser, reaches the server, and is stored at 2400 pixels', async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(90_000);
+  const mcp = rw();
+  const slug = await makeRecipe(mcp, 'upload-link-large');
+  const link = await mcp.call<LinkResult>('request_image_upload', {
+    attachTo: { recipeSlug: slug },
+    alt: 'Two poached eggs on white quark with red chilli butter.',
+  });
+
+  // Noise does not compress, so this is a real phone-photo weight: well
+  // over the 4.5 MB a Vercel function accepts. Sent as it is, the platform
+  // would refuse it before any code ran.
+  const width = 4000;
+  const height = 3000;
+  const noise = Buffer.alloc(width * height * 3);
+  for (let i = 0; i < noise.length; i += 1) {
+    noise[i] = Math.floor(Math.random() * 256);
+  }
+  const photo = await sharp(noise, { raw: { width, height, channels: 3 } })
+    .jpeg({ quality: 95 })
+    .toBuffer();
+  expect(photo.length).toBeGreaterThan(5 * 1024 * 1024);
+
+  const sent = page.waitForRequest(
+    (r) => r.method() === 'PUT' && r.url().includes('/api/uploads/'),
+  );
+  await page.goto(link.link);
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'cilbir.jpg',
+    mimeType: 'image/jpeg',
+    buffer: photo,
+  });
+  await page.getByRole('button', { name: 'Upload' }).click();
+
+  // The request that left the browser is under the limit, and it went to
+  // this site — there is no cross-origin request to be refused.
+  const put = await sent;
+  expect(new URL(put.url()).origin).toBe(BASE);
+  await expect(page.locator('[data-upload-done]')).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(page.locator('[data-upload-done]')).toContainText('2400 × 1800');
+  // Playwright cannot read a Blob body back, but it can measure it.
+  expect((await put.sizes()).requestBodySize).toBeLessThanOrEqual(
+    4 * 1024 * 1024,
+  );
+  expect(await put.headerValue('content-type')).toBe('image/jpeg');
+  const recipe = await mcp.call<RecipeResult>('get_recipe', { slug });
+  expect(recipe.heroImageUrl).toMatch(/^\/images\/[0-9a-f-]{36}$/);
+  const full = await request.get(`${BASE}${recipe.heroImageUrl}`);
+  expect((await sharp(await full.body()).metadata()).width).toBe(2400);
+});
+
+test('a send that fails says so in seconds, and the same link works on the second try', async ({
   page,
 }) => {
   test.setTimeout(60_000);
@@ -203,14 +260,11 @@ test('a send that cannot reach the store fails in seconds, says so, and the same
     alt: 'A bowl of dipping sauce with red onion and toasted rice.',
   });
 
-  // THE FAILURE THE FIRST PHONE UPLOAD MET, reproduced at the network layer:
-  // the browser's PUT to the store never gets an answer it can use. Before
-  // the fix this was a button frozen at "Sending… 0%" for seventeen minutes
-  // of silent retries. Now it has to be an error on the screen and a line
-  // in the server log.
-  const blobPort = Number(process.env.E2E_PORT ?? 3100) + 6;
-  const blobPut = `http://127.0.0.1:${blobPort}/?pathname=*`;
-  await page.route(blobPut, (route) =>
+  // THE FAILURE THE PHONE UPLOADS MET, reproduced at the network layer:
+  // the browser's PUT never gets an answer it can use. It has to be an
+  // error on the screen and a line in the server log, not a frozen button.
+  const sendUrl = `${BASE}/api/uploads/${tokenOf(link.link)}?*`;
+  await page.route(sendUrl, (route) =>
     route.request().method() === 'PUT'
       ? route.abort('failed')
       : route.continue(),
@@ -231,13 +285,13 @@ test('a send that cannot reach the store fails in seconds, says so, and the same
     timeout: 20_000,
   });
   await expect(page.locator('[data-upload-error]')).toContainText(
-    'could not be sent to storage',
+    'could not be sent',
   );
   const report = await reported;
   expect(report.postDataJSON()).toMatchObject({ stage: 'send' });
 
   // The link was not spent by the failure, so the same page tries again.
-  await page.unroute(blobPut);
+  await page.unroute(sendUrl);
   await page.getByRole('button', { name: 'Try again' }).click();
   await expect(page.locator('[data-upload-done]')).toBeVisible({
     timeout: 30_000,
