@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { Analytics } from '@vercel/analytics/next';
 import { Geist, Geist_Mono, Newsreader } from 'next/font/google';
 import { site } from '@/lib/site';
 // theme.css is the only stylesheet, and this is the only file that imports
@@ -242,6 +243,11 @@ export default function RootLayout({
               note above `RootLayout`. */}
           {foot}
         </div>
+
+        {/* Vercel Web Analytics. The script and its beacon are both served
+            from this origin under /_vercel/insights, so the CSP in
+            next.config.ts needs no new host. */}
+        <Analytics />
       </body>
     </html>
   );
