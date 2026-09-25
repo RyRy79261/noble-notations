@@ -543,9 +543,15 @@ one, so an agent holding a photograph could not fill any of them.
 and it is the rule to keep. The model writes every character of a tool call,
 so a photograph sent as base64 is millions of tokens: it fills the context
 and fails. `request_image_upload` returns a one-hour, one-picture link; the
-person opens it and picks the file; the browser writes the original straight
-to the blob store (a Vercel function refuses a body over 4.5 MB); the server
-shrinks it and puts it on the record the link named. `upload_image` keeps
+person opens it and picks the file; the page PUTs it to this site's own
+`/api/uploads/<token>`, redrawing it at 2400 pixels first only when it is
+over 4 MB (a Vercel function refuses a body over 4.5 MB); the server shrinks
+it and puts it on the record the link named. **On Android the file input's
+`accept` carries one made-up non-image type, `application/x-noble-upload`,
+and that is load-bearing.** With only image types, Chrome on Android 13+
+opens the system Photo Picker, whose proxy file can report a size that does
+not match its bytes; every phone upload failed that way, at pick time. See
+the header of `src/app/upload/[token]/upload-form.tsx`. `upload_image` keeps
 `sourceUrl`, fetched by the server behind an SSRF guard, and `data`, which is
 for a small picture the agent made. `docs/mcp-connector.md` § _Getting a
 photograph in_ has the design.
@@ -579,7 +585,7 @@ pixel copies beside it. `/images/<id>?w=` picks between them and the site's
 `<img>` tags name them in `srcset`. Every way in goes through
 `src/lib/images/ingest.ts`, so the three cannot drift. `@vercel/blob` is
 behind `src/lib/images/blob.ts` and nothing else imports the server SDK;
-the upload page imports `@vercel/blob/client` for the browser `put`.
+the upload page imports no Blob SDK at all.
 
 **`upload_image` and `request_image_upload` are registered only when
 `BLOB_READ_WRITE_TOKEN` is set**, the same way `report_issue` depends on

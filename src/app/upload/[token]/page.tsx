@@ -15,7 +15,7 @@ import { UploadForm } from './upload-form';
  *
  * An agent called `request_image_upload`, and the person was handed this
  * address. They open it on the phone that took the photograph, pick the
- * file, and the browser sends the ORIGINAL straight to the blob store. The
+ * file, and the browser sends it to this site's own upload route. The
  * model never sees a byte of it, which is the whole point: a photograph as
  * base64 is millions of tokens, and no chat can send one.
  *
@@ -77,7 +77,7 @@ export default async function UploadPage({
               <Mark>Upload</Mark>
               <PageHero
                 title="Add a picture"
-                lede={`This puts one picture on ${upload.target}. Pick the photograph on this device. It is sent at full size and made smaller on the server.`}
+                lede={`This puts one picture on ${upload.target}. Pick the photograph on this device. A photo over 4 MB is made smaller on this device before it is sent.`}
               />
               <UploadForm
                 token={token}
