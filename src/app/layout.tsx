@@ -81,6 +81,7 @@ import { Announcer } from './announcer';
 import { SiteHeader } from '@/components/f/site-header';
 import { SkipLink } from '@/components/f/skip-link';
 import { HeaderHeight } from '@/components/header-height';
+import { ShakeToReport } from '@/components/shake-to-report';
 
 /**
  * THE PAGE FOOT IS A PARALLEL ROUTE, AND THIS IS WHY.
@@ -244,6 +245,9 @@ export default function RootLayout({
           {foot}
         </div>
 
+        {/* Shake the phone to report a problem. Inert unless the visitor
+            is the signed-in owner; see the component. */}
+        <ShakeToReport />
         {/* Vercel Web Analytics. The script and its beacon are both served
             from this origin under /_vercel/insights, so the CSP in
             next.config.ts needs no new host. */}
