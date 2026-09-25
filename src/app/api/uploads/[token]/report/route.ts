@@ -20,10 +20,15 @@ import { findImageUpload } from '@/lib/queries/uploads';
 export const dynamic = 'force-dynamic';
 
 const bodySchema = z.object({
-  stage: z.enum(['read', 'shrink', 'send', 'complete']),
+  stage: z.enum(['pick', 'preview', 'read', 'shrink', 'send', 'complete']),
   message: z.string().max(1000),
   fileBytes: z.number().int().nonnegative().nullable().optional(),
   fileType: z.string().max(100).nullable().optional(),
+  fileName: z.string().max(200).nullable().optional(),
+  accept: z.string().max(200).nullable().optional(),
+  via: z.enum(['picker', 'any-file']).optional(),
+  errorName: z.string().max(100).optional(),
+  offset: z.number().int().nonnegative().optional(),
 });
 
 export async function POST(

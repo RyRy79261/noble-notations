@@ -273,12 +273,19 @@ characters, whatever the size of the photograph.
   pixels on its longest edge — the size of the largest copy the store keeps
   — as a JPEG (`src/lib/images/shrink-in-browser.ts`). A file under 4 MB,
   which is most phone photographs, is sent as taken.
-  The first design sent the original from the browser straight to Vercel
-  Blob with a client token. From a phone in production that cross-origin
-  request failed every time — first a freeze, then "Failed to fetch" in a
-  second — and nothing in this repository can prove what another origin
-  answers to a preflight. `/api/uploads/<token>/token` and `/complete` still
-  exist and are tested, but the page no longer calls them.
+  `/api/uploads/<token>/token` and `/complete`, from the first design that
+  sent the file from the browser to Vercel Blob, still exist and are tested,
+  but the page no longer calls them.
+- **On Android, `accept` carries `application/x-noble-upload`.** Chrome on
+  Android 13+ opens the system Photo Picker whenever every accepted type
+  starts with `image/`. The picker gives Chrome a proxy file whose size comes
+  from a database; when it does not match the bytes, every read fails —
+  no preview, "Failed to fetch", `NotReadableError`. That is why every phone
+  upload failed, whichever way the page sent the file. One made-up non-image
+  type sends Chrome to its normal chooser (Files, filtered to images, with
+  Photos and Drive) instead. It is not `application/octet-stream`, which
+  would drop the filter. The page also reads the file the moment it is
+  picked, and offers a second chooser with no accept list if that fails.
 - **Spending the link and storing the picture are one transaction.** The
   row is locked `FOR UPDATE`, so two tabs finishing at once store one
   picture; the second is told the link is used.

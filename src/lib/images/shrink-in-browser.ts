@@ -10,23 +10,70 @@ import { MAX_STORED_EDGE } from './widths';
  */
 export const SEND_LIMIT_BYTES = 4 * 1024 * 1024;
 
-/** The whole file as bytes, or an error that names what the phone refused. */
-export class FileReadError extends Error {}
+/** Read in slices this size, so a failure names the offset it failed at. */
+const SLICE_BYTES = 1024 * 1024;
 
-async function readIntoMemory(file: File): Promise<ArrayBuffer> {
-  try {
-    return await file.arrayBuffer();
-  } catch (err) {
-    const name = err instanceof Error ? err.name : 'Error';
-    throw new FileReadError(
-      `This phone did not let the page read the photo (${name}). Choose it again. If that fails, save a copy of the photo to the phone and choose the copy.`,
-      { cause: err },
-    );
+/** A picked file the browser would not read, with where it stopped. */
+export class FileReadError extends Error {
+  constructor(
+    message: string,
+    readonly errorName: string,
+    readonly offset: number,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options);
   }
 }
 
 /**
- * The file as it goes over the wire: the original when it is under the
+ * The whole picked file as bytes, read the moment it is picked.
+ *
+ * **WHY THIS CAN FAIL, AND WHY THE ACCEPT LIST MATTERS.** Chrome on Android
+ * 13 and later opens the system Photo Picker whenever every type in the
+ * input's `accept` starts with `image/` (`SelectFileDialog.java`,
+ * `isSupportedPhotoPickerTypes`). The picker hands Chrome a proxy
+ * (`content://media/picker_get_content/…`, display name `<media id>.jpg`)
+ * whose size comes from the picker's database, not from the bytes. When the
+ * two disagree, every read of that file fails in Chrome's blob reader with
+ * `NotReadableError` — the preview, a `fetch` body and `arrayBuffer()`
+ * alike. That is what happened to every upload from the phone: no preview,
+ * "Failed to fetch", then NotReadableError. `upload-form.tsx` keeps Chrome on
+ * Android out of that picker; this function is what tells the person, at
+ * once, when a file still cannot be read, and reports the offset so the
+ * logs say whether the size was stale (a late slice fails) or the file was
+ * missing (offset 0 fails).
+ */
+export async function readPickedFile(file: File): Promise<ArrayBuffer> {
+  const out = new Uint8Array(file.size);
+  let offset = 0;
+  try {
+    while (offset < file.size) {
+      const chunk = new Uint8Array(
+        await file.slice(offset, offset + SLICE_BYTES).arrayBuffer(),
+      );
+      if (chunk.byteLength === 0) {
+        throw new DOMException(
+          'the read returned no bytes',
+          'NotReadableError',
+        );
+      }
+      out.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+  } catch (err) {
+    const name = err instanceof Error ? err.name : 'Error';
+    throw new FileReadError(
+      `This phone did not let the page read the photo (${name}).`,
+      name,
+      offset,
+      { cause: err },
+    );
+  }
+  return out.buffer;
+}
+
+/**
+ * The bytes as they go over the wire: as picked when they fit under the
  * limit, otherwise a JPEG made in this browser at the largest edge the store
  * keeps.
  *
@@ -36,26 +83,15 @@ async function readIntoMemory(file: File): Promise<ArrayBuffer> {
  * `MAX_STORED_EDGE` on the longest side — the size of the largest copy the
  * store keeps anyway — so nothing the reader will ever see is lost.
  *
- * **THE FILE IS READ INTO MEMORY FIRST, and that is the fix for the phone.**
- * A `File` from the picker on Android is a reference to a gallery item, not
- * bytes. Chrome reads it only when the request streams the body, and if the
- * gallery reports a size or modified time different from the one it gave the
- * picker, Chrome cancels the request before it leaves the phone
- * (`net::ERR_UPLOAD_FILE_CHANGED`). The page sees only "Failed to fetch", the
- * server sees nothing — which is exactly what the production logs showed
- * for a 2.5 MB JPEG, every try, whether the PUT went to Vercel Blob or to
- * this site. An `ArrayBuffer` is not a file reference and cannot change, and
- * a read that fails here fails with a message that says so.
- *
  * `createImageBitmap` applies the EXIF orientation, so a portrait photograph
  * stays upright after the redraw. A transparent PNG is drawn on white,
  * because a JPEG has no alpha.
  */
-export async function shrinkForSending(
-  file: File,
+export async function prepareForSending(
+  bytes: ArrayBuffer,
+  pickedType: string,
 ): Promise<{ body: ArrayBuffer | Blob; type: string; shrunk: boolean }> {
-  const bytes = await readIntoMemory(file);
-  const type = file.type || 'image/jpeg';
+  const type = pickedType || 'image/jpeg';
   if (bytes.byteLength <= SEND_LIMIT_BYTES) {
     return { body: bytes, type, shrunk: false };
   }
