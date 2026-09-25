@@ -12,17 +12,37 @@ import { defineConfig, devices } from '@playwright/test';
  * drops the public schema and rebuilds it. Point it at a scratch database,
  * never at one holding anything you want to keep.
  *
- * The one exception to "no mocks" is GitHub, and it is not a preference.
- * `report_issue` files a real issue in a real public repository, so the
- * suite must never reach api.github.com. `e2e/github-stub.ts` answers
- * instead, and `GITHUB_API_BASE_URL` on the app server is what makes that a
- * property of the network layer rather than of discipline.
+ * The exceptions to "no mocks" are the two tools whose effect lands outside
+ * this system, and neither is a preference. `report_issue` files a real
+ * issue in a real public repository and `upload_image` writes a real object
+ * to a real blob store, so the suite must never reach api.github.com or
+ * blob.vercel-storage.com. `e2e/github-stub.ts` and `e2e/blob-stub.ts`
+ * answer instead, and `GITHUB_API_BASE_URL` and `VERCEL_BLOB_API_URL` on the
+ * app server are what make that a property of the network layer rather than
+ * of discipline.
  */
 const PORT = Number(process.env.E2E_PORT ?? 3100);
 const baseURL = `http://127.0.0.1:${PORT}`;
 
 /** Fixed rather than allocated, so the app server's env can name it. */
 const GITHUB_PORT = Number(process.env.E2E_GITHUB_PORT ?? 3101);
+
+/**
+ * The second stub, for the second tool whose effect leaves this system.
+ * `upload_image` writes to a real blob store that somebody pays for, so the
+ * suite answers the SDK itself — see `e2e/blob-stub.ts`.
+ *
+ * `+ 6`, and the number is not free. This suite already fixes six ports:
+ * 3100 the app, 3101 the GitHub stub, and four that specs start servers on
+ * themselves — `+ 2` for the one with no GitHub token,
+ * `+ 3` for the consent screen, `+ 4` and `+ 5` for the malformed-GitHub
+ * pair. Taking 3102 put this stub under the no-token server, and every test
+ * that spoke to it got a 404 from a blob store. Anything new goes above,
+ * or is allocated the way `e2e/screen-degraded.spec.ts` allocates one.
+ */
+const BLOB_PORT = Number(
+  process.env.E2E_BLOB_PORT ?? Number(process.env.E2E_PORT ?? 3100) + 6,
+);
 
 export default defineConfig({
   testDir: './e2e',
@@ -81,6 +101,14 @@ export default defineConfig({
       stderr: 'pipe',
     },
     {
+      command: `pnpm exec tsx e2e/blob-stub.ts --port ${BLOB_PORT}`,
+      url: `http://127.0.0.1:${BLOB_PORT}/__health`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 30_000,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+    {
       // `pnpm build` migrates first, so the scratch database gets its schema
       // here rather than needing a separate step.
       command: `pnpm build && pnpm start -p ${PORT}`,
@@ -105,6 +133,22 @@ export default defineConfig({
         // writes an absent fact down as absent instead of omitting the row.
         VERCEL_GIT_COMMIT_SHA: '65d93a6e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e',
         VERCEL_GIT_COMMIT_REF: 'e2e-report-issue',
+        // Registering `upload_image` at all needs a token. This one is not
+        // a credential, and the base URL beside it is what guarantees the
+        // suite never reaches the real store: with it pointed at the stub,
+        // a token that did work would still write nowhere.
+        //
+        // It is SHAPED like a real one — `vercel_blob_rw_<store>_<secret>` —
+        // because the upload link signs client tokens with it, and the SDK
+        // reads the store id out of the third segment before it signs.
+        BLOB_READ_WRITE_TOKEN:
+          'vercel_blob_rw_stubstore_notarealcredentialnotarealcredential',
+        VERCEL_BLOB_API_URL: `http://127.0.0.1:${BLOB_PORT}`,
+        // The same address for the BROWSER. The upload page writes the file
+        // to the store itself, and the SDK in the client bundle reads this
+        // one, inlined at build time. `next.config.ts` reads it too, to put
+        // the stub in the page's `connect-src`.
+        NEXT_PUBLIC_VERCEL_BLOB_API_URL: `http://127.0.0.1:${BLOB_PORT}`,
       },
     },
   ],

@@ -50,6 +50,55 @@
       "when": 1788954783465,
       "tag": "0006_note_ordering",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789128058529,
+      "tag": "0007_note_reattachment",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789131057965,
+      "tag": "0008_note_sort_order",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789551888746,
+      "tag": "0009_soft_delete",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789652861792,
+      "tag": "0010_recipe_variants",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1789718401403,
+      "tag": "0011_images",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1789718401404,
+      "tag": "0012_replay_recipe_variants",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790155102727,
+      "tag": "0013_image_uploads",
+      "breakpoints": true
     }
   ]
 }

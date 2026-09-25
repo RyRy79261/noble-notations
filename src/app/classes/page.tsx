@@ -306,7 +306,7 @@ export default async function ClassesPage() {
                 </>
               }
               title="Classification"
-              lede="Ten kinds of tag. Each describes a recipe from one angle only, and a recipe carries as many as it needs. The tags travel with the dish, not with any single revision of it."
+              lede="Ten kinds of tag. Each tag describes a recipe from one angle. A recipe carries as many as it needs."
               ledeClassName="shell:max-w-160"
             />
           </div>

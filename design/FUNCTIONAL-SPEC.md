@@ -237,7 +237,7 @@ To make a dish better, you add a revision. You do not edit the old one.
 | Styles     | `src/app/theme.css`. It is the Tailwind entry point and it holds the DOSSIER token set. There is no other stylesheet.                               |
 | Preflight  | On. It arrives inside the single `@import 'tailwindcss'` in `src/app/theme.css`, which declares `@layer theme, base, components, utilities` itself. |
 | Data       | Postgres through Drizzle. All reads go through `src/lib/queries/read.ts`. There are 7 migrations, `0000` to `0006`.                                 |
-| Rendering  | Server Components by default. 11 client components live in `src/components/`. See §9.3.                                                             |
+| Rendering  | Server Components by default. 12 client components live in `src/components/`. See §9.3.                                                             |
 | Components | 25 files under `src/components/f/`. Each one draws a family of the design. See §9.5.                                                                |
 | Tests      | 165 end-to-end tests in 14 files. `pnpm audit:ui` reports 0 blockers and 0 major faults across 176 page loads. See R-ACC-11.                        |
 | Deployment | Vercel. CI runs format, lint, typecheck, build and end-to-end tests.                                                                                |
@@ -553,8 +553,8 @@ explanation. `design/TOKEN-MAP.md` §11 records every change made to both.
 
 ### 9.3 Interactive components
 
-These 8 components run in the browser. The build added 3 more to
-`src/components/`, so there are 11. §9.3.1 names the 3 and says why each one
+These 8 components run in the browser. The build added 4 more to
+`src/components/`, so there are 12. §9.3.1 names the 4 and says why each one
 had to run in the browser.
 
 | ID   | Component             | File                                                 | Function                                                                                                                             | States                        | Suggested                       |
@@ -601,14 +601,15 @@ had to run in the browser.
 - R-CMP-15: A step chip **MUST** show only an ingredient line that is in
   this revision. Do not invent a chip for a name that does not resolve.
 
-#### 9.3.1 The 3 the build added
+#### 9.3.1 The 4 the build added
 
-| Component     | File                              | Why it runs in the browser                                                                                                                                                |
-| ------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Navigation`  | `src/components/f/nav-drawer.tsx` | The design marks the open destination in the header and the open section in the drawer. A layout cannot read the address of the page below it, so it reads `usePathname`. |
-| `Contents360` | `src/components/f/nav-drawer.tsx` | The 360 drawer. It needs open state, a focus trap and an Escape key. R-NAV-03 requires the drawer.                                                                        |
-| `Sheet`       | `src/components/ui/sheet.tsx`     | The vendored shadcn/ui overlay that carries the drawer.                                                                                                                   |
-| `Tooltip`     | `src/components/ui/tooltip.tsx`   | The vendored shadcn/ui panel that carries the term explanation (R-CMP-03, R-ACC-02).                                                                                      |
+| Component     | File                                | Why it runs in the browser                                                                                                                                                |
+| ------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Navigation`  | `src/components/f/nav-drawer.tsx`   | The design marks the open destination in the header and the open section in the drawer. A layout cannot read the address of the page below it, so it reads `usePathname`. |
+| `Contents360` | `src/components/f/nav-drawer.tsx`   | The 360 drawer. It needs open state, a focus trap and an Escape key. R-NAV-03 requires the drawer.                                                                        |
+| `Sheet`       | `src/components/ui/sheet.tsx`       | The vendored shadcn/ui overlay that carries the drawer.                                                                                                                   |
+| `Tooltip`     | `src/components/ui/tooltip.tsx`     | The vendored shadcn/ui panel that carries the term explanation (R-CMP-03, R-ACC-02).                                                                                      |
+| `ThemeToggle` | `src/components/f/theme-toggle.tsx` | The theme control D-16 added to the page foot. It reads and writes the reader's choice, which only the browser holds.                                                     |
 
 `Navigation` and `Contents360` are in one file, so the client boundary is
 one file. Both still render to HTML on the server.
@@ -724,7 +725,13 @@ The screen has 5 blocks in this order:
 3. **Recently revised.** Six recipe cards and a link to all recipes.
 4. **Browse by classification.** One block for each category type. Each
    block shows up to 14 terms.
-5. **How this works.** Four cards.
+5. ~~**How this works.** Four cards.~~ **Removed — D-14.** The four cards
+   explained the revision model, and the fourth told a reader how to point
+   an agent at the connector. A reader came to cook. The rule is carried by
+   the hero's two sentences, by the reason printed beside every revision on
+   a recipe, and by `/connect` for the person who sets a connector up.
+
+The build adds a sixth block, **Science**, which this section predates.
 
 - R-SCR-01: Block 3 and block 4 **MUST** be absent when they have no
   content.
@@ -1194,8 +1201,12 @@ each empty state. It is not decorative text.
 - R-CON-06: All numbers **MUST** use the monospace face.
 - R-CON-07: The design **MUST** be dark first. The light theme comes from
   `prefers-color-scheme`.
-- R-CON-08: There is no theme control today. To add one is a product
-  decision. Do not assume it.
+- R-CON-08: ~~There is no theme control today. To add one is a product
+  decision. Do not assume it.~~ **Reversed by D-16.** The owner made that
+  product decision. The page foot carries a three-state control — system,
+  light, dark — and the default state is still the system's. R-CON-07 is
+  unchanged: the design is dark first and a reader who does not touch the
+  control gets what `prefers-color-scheme` says.
 - R-CON-09: The dark ground **MUST** stay near neutral. See R-TON-05.
 
 ---
@@ -1236,15 +1247,15 @@ D-02 covers these sets:
 The design and the build answered 5 of these 7 questions. 2 stay open. An
 answered question is struck through and says what answered it.
 
-| ID       | Question                                                                | Answer                                                                                                                                                                                                                                                                                                          |
-| -------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ~~Q-01~~ | ~~Is there a theme control?~~                                           | **Answered by the build. No.** The theme comes from `prefers-color-scheme` and nothing else. shadcn/ui's `@custom-variant dark (&:is(.dark *))` is deliberately absent from `src/app/theme.css`, because nothing ever adds that class. See R-CON-08 and R-BLD-07. To add a control is still a product decision. |
-| ~~Q-02~~ | ~~Is the mobile navigation a drawer or a bottom bar?~~                  | **Answered by the design. A drawer.** See R-NAV-03 and `oP097.png`.                                                                                                                                                                                                                                             |
-| ~~Q-03~~ | ~~Does a recipe card show an image?~~                                   | **Answered by the design. No.** There is no image slot anywhere in the system. `<img>`, `<svg>` and `background-image` each occur 0 times across the 18 exports. `src/components/f/recipe-card.tsx` records the count.                                                                                          |
-| ~~Q-04~~ | ~~Is the revision timeline more prominent?~~                            | **Answered by the design.** It is its own tab, and the design gives it a full section on `F/Revision`.                                                                                                                                                                                                          |
-| Q-05     | Is there a cooking mode?                                                | **Open.** One step at a time. The screen stays awake. The type is large. It is not designed and it is not built. `durationMinutes` is stored for each step, so a timer would read real data.                                                                                                                    |
-| ~~Q-06~~ | ~~How do 8 note kinds differ?~~                                         | **Answered by the design.** 8 kinds ride on 3 severities: note, caution and warning. The severity gives the colour and the word gives the kind. The page does not become a colour chart. See R-CMP-06.                                                                                                          |
-| Q-07     | Do the step chips repeat the ingredient list, or replace it on a phone? | **Open. Both are still on screen.** The design draws 12 step chips at 1280. At 360 it draws the Ingredients panel open, and `METHOD` as a tab label only. It draws no step at that width. It does not answer the question. The build repeats them, as the build before it did.                                  |
+| ID       | Question                                                                | Answer                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| -------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ~~Q-01~~ | ~~Is there a theme control?~~                                           | **Answered twice. No at the build, yes at D-16.** The owner asked for one and the page foot carries it: three states, system by default. The theme still comes from `prefers-color-scheme` for every reader who does not use it. shadcn/ui's `@custom-variant dark (&:is(.dark *))` is still absent from `src/app/theme.css` — the control switches `color-scheme` and each colour is one `light-dark()`, so no component needs a `dark:` prefix. See R-CON-08 and R-BLD-07. |
+| ~~Q-02~~ | ~~Is the mobile navigation a drawer or a bottom bar?~~                  | **Answered by the design. A drawer.** See R-NAV-03 and `oP097.png`.                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ~~Q-03~~ | ~~Does a recipe card show an image?~~                                   | **Answered by the design. No.** There is no image slot anywhere in the system. `<img>`, `<svg>` and `background-image` each occur 0 times across the 18 exports. `src/components/f/recipe-card.tsx` records the count.                                                                                                                                                                                                                                                       |
+| ~~Q-04~~ | ~~Is the revision timeline more prominent?~~                            | **Answered by the design.** It is its own tab, and the design gives it a full section on `F/Revision`.                                                                                                                                                                                                                                                                                                                                                                       |
+| Q-05     | Is there a cooking mode?                                                | **Open.** One step at a time. The screen stays awake. The type is large. It is not designed and it is not built. `durationMinutes` is stored for each step, so a timer would read real data.                                                                                                                                                                                                                                                                                 |
+| ~~Q-06~~ | ~~How do 8 note kinds differ?~~                                         | **Answered by the design.** 8 kinds ride on 3 severities: note, caution and warning. The severity gives the colour and the word gives the kind. The page does not become a colour chart. See R-CMP-06.                                                                                                                                                                                                                                                                       |
+| Q-07     | Do the step chips repeat the ingredient list, or replace it on a phone? | **Open. Both are still on screen.** The design draws 12 step chips at 1280. At 360 it draws the Ingredients panel open, and `METHOD` as a tab label only. It draws no step at that width. It does not answer the question. The build repeats them, as the build before it did.                                                                                                                                                                                               |
 
 ---
 

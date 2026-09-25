@@ -7,30 +7,76 @@ import 'server-only';
  * the site and the connector can never disagree about what a recipe is.
  * Results are plain serialisable objects — numerics are converted out of
  * Postgres' string representation here rather than in twelve call sites.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * NOTHING IN THIS FILE READS A DELETED ROW.
+ * ─────────────────────────────────────────────────────────────────────────
+ *
+ * Seven tables carry a soft delete, and each has a `*_live` view over it in
+ * `src/db/schema.ts` that is `WHERE deleted_at IS NULL` and nothing else.
+ * This file selects from those views. A read that names the base table by
+ * mistake publishes a record somebody deleted, and it fails silently:
+ * nothing throws, the page renders, and the row is back.
+ *
+ * Three things hold that, in decreasing order of strength:
+ *
+ * 1. **`eslint.config.mjs` bans the seven base tables from this file.** A new
+ *    query CANNOT name one, and `pnpm lint` is a CI gate. This was chosen
+ *    over a shared `and(live(t), …)` helper for one reason: a helper can be
+ *    left out of a new query, an import ban cannot.
+ * 2. **The raw SQL below names the views.** There are four sites the lint
+ *    rule cannot see inside — `searchRecipes`, `listIngredients`,
+ *    `getStats`, and the two note-rule fragments. Each one says `_live`.
+ * 3. **`e2e/data-deleted.spec.ts` calls every exported function** against a
+ *    fixture whose deleted records carry a sentinel string, and fails when
+ *    the set of exported functions and the set it calls are not equal. A
+ *    sixteenth read that nobody added to that table fails the suite on the
+ *    day it lands, naming itself.
+ *
+ * TWO DELIBERATE EXCEPTIONS, and both are named where they are used:
+ *
+ * - `listExperiments` and `getExperiment` join `recipeRevisionsAll` — the
+ *   base table — because a batch log outlives the version it cooked. They
+ *   read the number and `revisionWithdrawn` from it, nothing else.
+ * - `listDeleted` is NOT in this file. It lives in `./deleted`, which is the
+ *   one read module allowed to see deleted rows, because listing the bin is
+ *   its whole job. Keeping the ban here absolute is the mechanism; an
+ *   exception inside this file is the hole the next query walks through.
+ *
+ * The child tables — `recipe_ingredients`, `recipe_steps`, `note_sources`,
+ * `experiment_items`, `experiment_observations`, the mass flow and the link
+ * tables — carry no flag and need none. Their lifetime is their parent's,
+ * and every child read below starts from a live parent.
  */
 import { and, asc, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { SQLWrapper } from 'drizzle-orm';
 import { db } from '@/db/client';
 import {
+  experimentImages,
   experimentItems,
   experimentObservations,
-  experiments,
+  experimentsLive,
+  imagesLive,
   ingredientRelations,
-  ingredients,
+  ingredientsLive,
   noteSources,
-  notes,
+  notesLive,
   recipeIngredients,
   recipeLinks,
   recipeMassFlowStages,
   recipeMassFlows,
-  recipeRevisions,
+  recipeRevisionsLive,
   recipeStepIngredients,
   recipeSteps,
   recipeTerms,
-  recipes,
-  taxonomyTerms,
+  recipesLive,
+  taxonomyTermsLive,
 } from '@/db/schema';
+import type { ImageRendition } from '@/db/schema';
+// `recipe_revisions` unfiltered, for the two experiment reads and nothing
+// else. The alias is the warning; `./live` says why it exists.
+import { recipeRevisionsAll } from '@/lib/queries/live';
 import { slugify } from '@/lib/domain/slug';
 import {
   formatAggregate,
@@ -38,10 +84,16 @@ import {
   formatQuantity,
   pluraliseUnit,
   quantityBucket,
+  unresolvedLineName,
+  unresolvedLineNeeds,
   type QuantityBucket,
 } from '@/lib/domain/units';
 import { categoryRank } from '@/lib/site';
-import type { CategoryType, SearchRecipesInput } from '@/lib/domain/schemas';
+import type {
+  CategoryType,
+  SearchNotesInput,
+  SearchRecipesInput,
+} from '@/lib/domain/schemas';
 
 const n = (v: string | null) => (v == null ? null : Number(v));
 
@@ -57,6 +109,16 @@ export interface TermView {
   label: string;
   description: string | null;
   isPrimary?: boolean;
+  /**
+   * Optional, unlike the two on a recipe, and the shape says why: a tag is
+   * read in two places. `getTerm` draws the tag's own PAGE and fills these;
+   * `attachTerms` draws the chips on a recipe card, where a picture has
+   * nowhere to go and reading two more columns per tag per card would be
+   * paid for on every index. Absent means "this read did not ask", which is
+   * a different fact from `null` — "there is no picture".
+   */
+  heroImageUrl?: string | null;
+  heroImageAlt?: string | null;
 }
 
 export interface IngredientLineView {
@@ -108,6 +170,16 @@ export interface NoteView {
    * been given any; a caller draws no row for an empty list.
    */
   conditions: string[];
+  /**
+   * Every record this note hung off before this one, oldest first, as
+   * `recipe:<slug>`, `ingredient:<slug>` or `experiment:<slug>`. Empty on a
+   * note that has never moved, which is nearly all of them. D-13.
+   *
+   * A note written before its natural parent existed can be re-homed with
+   * `reattachNote`, and this is what stops that being a silent rewrite of
+   * where a claim came from.
+   */
+  movedFrom: string[];
   createdAt: string;
   sources: {
     url: string | null;
@@ -134,6 +206,22 @@ export interface MassFlowStageView {
   emphasis: boolean;
 }
 
+/**
+ * The dish a recipe is a variation OF, as a card needs it: enough to say so
+ * and to link there, and nothing more.
+ *
+ * Null on a base dish, which is nearly every recipe — and null too when the
+ * parent has been deleted, because `attachVariantOf` reads the live view. A
+ * card that said "a variation of" and linked at a 404 would be worse than a
+ * card that said nothing.
+ */
+export interface VariantOfView {
+  slug: string;
+  title: string;
+  /** What makes this one different: "With shiitake instead of pork". */
+  note: string | null;
+}
+
 export interface RecipeSummaryView {
   slug: string;
   title: string;
@@ -145,6 +233,35 @@ export interface RecipeSummaryView {
   revisionNumber: number;
   updatedAt: string;
   terms: TermView[];
+  /**
+   * Set on a variation, so a card can say which dish it varies. The owner
+   * asked for this in the same breath as the panel: a base and its three
+   * variations otherwise read as four unrelated near-identical dishes on the
+   * index, and the reader has no way to tell which one is the original.
+   */
+  variantOf: VariantOfView | null;
+}
+
+/**
+ * One recipe in a variation family, flattened into the order it is drawn:
+ * the base dish first, then each branch under the recipe it varies.
+ *
+ * A LIST and not a nested tree, because the panel draws an indent rather
+ * than a nesting, and because `depth` is the only thing the markup needs
+ * from the shape — a `children` array would make every consumer walk it
+ * again to get back to the order it is already in.
+ */
+export interface VariantNodeView {
+  slug: string;
+  title: string;
+  /** What makes it different. Null on the base dish, and where nothing was said. */
+  variantNote: string | null;
+  /** 0 for the base dish, 1 for a variation of it, and so on. */
+  depth: number;
+  /** How many versions this member has of its own. */
+  revisionCount: number;
+  /** True for the one recipe the page is about. */
+  self: boolean;
 }
 
 export interface RecipeView extends RecipeSummaryView {
@@ -201,6 +318,21 @@ export interface RecipeView extends RecipeSummaryView {
     /** True for a version recorded after the fact. */
     backfilled: boolean;
   }[];
+  /**
+   * Every member of this recipe's variation family, base dish first, or an
+   * empty list when this recipe varies nothing and nothing varies it.
+   *
+   * The WHOLE family and not just a parent and its children: the owner's
+   * word for these was siblings, and a panel that showed only one step in
+   * each direction would put a sibling two clicks away and would look
+   * different from every member of the same family. `variantFamily` climbs
+   * to the base dish and comes back down, so any member draws the same tree.
+   *
+   * A family of one is an empty list rather than a list holding this recipe.
+   * A tab with nothing behind it is a dead control (R-SCR-27), and "one
+   * variation: this one" is nothing.
+   */
+  variantFamily: VariantNodeView[];
   links: { kind: string; note: string | null; recipe: RecipeSummaryView }[];
   backlinks: { kind: string; recipe: RecipeSummaryView }[];
   experiments: { slug: string; title: string; startedAt: string | null }[];
@@ -211,16 +343,18 @@ export interface RecipeView extends RecipeSummaryView {
 // ─────────────────────────────────────────────────────────────────────────
 
 const recipeSummaryColumns = {
-  id: recipes.id,
-  slug: recipes.slug,
-  title: recipes.title,
-  subtitle: recipes.subtitle,
-  summary: recipes.summary,
-  kind: recipes.kind,
-  heroImageUrl: recipes.heroImageUrl,
-  heroImageAlt: recipes.heroImageAlt,
-  updatedAt: recipes.updatedAt,
-  revisionNumber: recipeRevisions.revisionNumber,
+  id: recipesLive.id,
+  slug: recipesLive.slug,
+  title: recipesLive.title,
+  subtitle: recipesLive.subtitle,
+  summary: recipesLive.summary,
+  kind: recipesLive.kind,
+  heroImageUrl: recipesLive.heroImageUrl,
+  heroImageAlt: recipesLive.heroImageAlt,
+  updatedAt: recipesLive.updatedAt,
+  revisionNumber: recipeRevisionsLive.revisionNumber,
+  variantOfId: recipesLive.variantOfId,
+  variantNote: recipesLive.variantNote,
 };
 
 /** Attach taxonomy terms to a batch of recipes in one extra query. */
@@ -234,14 +368,14 @@ async function attachTerms<T extends { id: string }>(
     .select({
       recipeId: recipeTerms.recipeId,
       isPrimary: recipeTerms.isPrimary,
-      id: taxonomyTerms.id,
-      facet: taxonomyTerms.facet,
-      slug: taxonomyTerms.slug,
-      label: taxonomyTerms.label,
-      description: taxonomyTerms.description,
+      id: taxonomyTermsLive.id,
+      facet: taxonomyTermsLive.facet,
+      slug: taxonomyTermsLive.slug,
+      label: taxonomyTermsLive.label,
+      description: taxonomyTermsLive.description,
     })
     .from(recipeTerms)
-    .innerJoin(taxonomyTerms, eq(taxonomyTerms.id, recipeTerms.termId))
+    .innerJoin(taxonomyTermsLive, eq(taxonomyTermsLive.id, recipeTerms.termId))
     .where(
       inArray(
         recipeTerms.recipeId,
@@ -256,9 +390,9 @@ async function attachTerms<T extends { id: string }>(
     // makes the two of them together unique, so the four columns are total.
     .orderBy(
       desc(recipeTerms.isPrimary),
-      asc(taxonomyTerms.label),
-      asc(taxonomyTerms.facet),
-      asc(taxonomyTerms.slug),
+      asc(taxonomyTermsLive.label),
+      asc(taxonomyTermsLive.facet),
+      asc(taxonomyTermsLive.slug),
     );
 
   for (const row of termRows) {
@@ -276,6 +410,43 @@ async function attachTerms<T extends { id: string }>(
   return byRecipe;
 }
 
+/**
+ * Resolve the parent of every variation in a batch, in one extra query.
+ *
+ * The same shape as `attachTerms` and for the same reason: a card needs the
+ * parent's title and slug, those live on another row, and a join inside
+ * `recipeSummaryColumns` would mean adding one to all seven queries that
+ * spread it. One keyed lookup afterwards is the pattern this file already
+ * uses.
+ *
+ * `recipesLive`, so a deleted parent resolves to nothing and the card falls
+ * back to saying nothing at all.
+ */
+async function attachVariantOf<T extends { variantOfId: string | null }>(
+  rows: T[],
+): Promise<Map<string, { slug: string; title: string }>> {
+  const byId = new Map<string, { slug: string; title: string }>();
+  const wanted = [
+    ...new Set(
+      rows.map((r) => r.variantOfId).filter((id): id is string => id !== null),
+    ),
+  ];
+  if (wanted.length === 0) return byId;
+
+  const parents = await db
+    .select({
+      id: recipesLive.id,
+      slug: recipesLive.slug,
+      title: recipesLive.title,
+    })
+    .from(recipesLive)
+    .where(inArray(recipesLive.id, wanted));
+  for (const parent of parents) {
+    byId.set(parent.id, { slug: parent.slug, title: parent.title });
+  }
+  return byId;
+}
+
 function toSummary(
   row: {
     id: string;
@@ -288,9 +459,13 @@ function toSummary(
     heroImageAlt: string | null;
     updatedAt: Date;
     revisionNumber: number | null;
+    variantOfId: string | null;
+    variantNote: string | null;
   },
   terms: TermView[],
+  parents: Map<string, { slug: string; title: string }>,
 ): RecipeSummaryView {
+  const parent = row.variantOfId ? parents.get(row.variantOfId) : undefined;
   return {
     slug: row.slug,
     title: row.title,
@@ -302,7 +477,137 @@ function toSummary(
     revisionNumber: row.revisionNumber ?? 1,
     updatedAt: row.updatedAt.toISOString(),
     terms,
+    variantOf: parent
+      ? { slug: parent.slug, title: parent.title, note: row.variantNote }
+      : null,
   };
+}
+
+/**
+ * How deep a family is walked before the query gives up.
+ *
+ * `assertNoVariantCycle` makes a loop unreachable through the write layer,
+ * so this bound is never met by anything the connector wrote. It is here for
+ * what the write layer does not own: a hand-written `UPDATE` against the
+ * database, or a restore of something strange. Without it a loop is not a
+ * wrong panel, it is a recursive CTE that never returns — a page that hangs
+ * rather than a page that is wrong, and on the public site.
+ *
+ * Twenty is far past anything real. A variation of a variation of a
+ * variation is already unusual.
+ */
+const VARIANT_DEPTH_LIMIT = 20;
+
+/**
+ * Every member of one recipe's variation family, base dish first, each
+ * branch under the recipe it varies.
+ *
+ * ── THE TWO WALKS ─────────────────────────────────────────────────────
+ *
+ * `up` climbs from this recipe to the base dish; `down` descends from the
+ * base dish through every branch. Two walks and not one, because the panel
+ * has to look the same from every member — standing on "with shiitake" you
+ * see the base, your sibling "with lamb" and your own branch below, which is
+ * exactly what the owner meant by siblings. One walk downwards from the
+ * addressed recipe would show a different family to each member, and no
+ * member would ever see the dish it came from.
+ *
+ * ── WHAT COUNTS AS A MEMBER ───────────────────────────────────────────
+ *
+ * `visible` is the definition, and it is one rule covering two cases:
+ *
+ *   live, and not a draft — **or** this recipe itself.
+ *
+ * A DELETED recipe is not a member. Its `variant_of_id` is untouched by the
+ * delete and its children keep theirs, so nothing is lost: the family simply
+ * breaks at the gap, the branch below becomes a family of its own, and
+ * `restore_record` joins them back exactly. That is the same answer
+ * `recipe_terms` gives for an edge to a deleted tag.
+ *
+ * A DRAFT is not a member either, and breaks the chain the same way. `draft`
+ * means "hidden from listings", and a panel on a public page is a listing.
+ * The exception for the addressed recipe is what lets a draft variation show
+ * its own family on its own page while it is being written — otherwise the
+ * one screen that needs the family most would be the one screen without it.
+ *
+ * ── THE ORDER ─────────────────────────────────────────────────────────
+ *
+ * `path` accumulates the titles down each branch, so ordering by it is a
+ * pre-order walk with siblings alphabetical — stable across page loads, and
+ * stable when a sibling is added, which an ordering by `created_at` is not.
+ *
+ * NOT EXPORTED, and that is a decision rather than an oversight. It takes a
+ * recipe id where every exported read takes a slug, and `getRecipeBySlug` is
+ * the only caller — so exporting it would add an entry to
+ * `e2e/deleted-census.ts`'s table that could only be reached by looking an
+ * id up first. The census still covers it: the family rides on the kept
+ * recipe's result, and the fixture puts a DELETED member in the family so
+ * the scan has something to find.
+ */
+async function variantFamily(recipeId: string): Promise<VariantNodeView[]> {
+  const rows = await db.execute<{
+    slug: string;
+    title: string;
+    variant_note: string | null;
+    depth: number;
+    revision_count: number;
+    is_self: boolean;
+  }>(sql`
+    WITH RECURSIVE visible AS (
+      SELECT id, variant_of_id, slug, title, variant_note
+        FROM recipes_live
+        WHERE status <> 'draft' OR id = ${recipeId}
+    ),
+    up AS (
+      SELECT id, variant_of_id FROM visible WHERE id = ${recipeId}
+      UNION
+      SELECT v.id, v.variant_of_id
+        FROM visible v
+        JOIN up ON v.id = up.variant_of_id
+    ),
+    root AS (
+      SELECT up.id
+        FROM up
+        WHERE NOT EXISTS (
+          SELECT 1 FROM visible p WHERE p.id = up.variant_of_id
+        )
+        LIMIT 1
+    ),
+    down AS (
+      SELECT v.id, 0 AS depth, ARRAY[v.title] AS path
+        FROM visible v
+        JOIN root ON root.id = v.id
+      UNION ALL
+      SELECT c.id, d.depth + 1, d.path || c.title
+        FROM visible c
+        JOIN down d ON c.variant_of_id = d.id
+        WHERE d.depth < ${VARIANT_DEPTH_LIMIT}
+    )
+    SELECT v.slug,
+           v.title,
+           v.variant_note,
+           d.depth,
+           (SELECT count(*)::int
+              FROM recipe_revisions_live rr
+              WHERE rr.recipe_id = v.id) AS revision_count,
+           (v.id = ${recipeId}) AS is_self
+      FROM down d
+      JOIN visible v ON v.id = d.id
+      ORDER BY d.path
+  `);
+
+  // A family of one is this recipe alone, and that is not a family. The
+  // panel is not drawn and the tab is not offered (R-SCR-27).
+  if (rows.rows.length < 2) return [];
+
+  return rows.rows.map((row) => ({
+    slug: row.slug,
+    title: row.title,
+    variantNote: row.variant_note,
+    depth: Number(row.depth),
+    revisionCount: Number(row.revision_count),
+    self: Boolean(row.is_self),
+  }));
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -316,25 +621,28 @@ export async function listRecipes(options?: {
 }): Promise<RecipeSummaryView[]> {
   const rows = await db
     .select(recipeSummaryColumns)
-    .from(recipes)
+    .from(recipesLive)
     .leftJoin(
-      recipeRevisions,
-      eq(recipeRevisions.id, recipes.currentRevisionId),
+      recipeRevisionsLive,
+      eq(recipeRevisionsLive.id, recipesLive.currentRevisionId),
     )
     .where(
       options?.kind
         ? and(
-            eq(recipes.status, 'active'),
-            eq(recipes.kind, options.kind as 'recipe'),
+            eq(recipesLive.status, 'active'),
+            eq(recipesLive.kind, options.kind as 'recipe'),
           )
-        : eq(recipes.status, 'active'),
+        : eq(recipesLive.status, 'active'),
     )
-    .orderBy(desc(recipes.updatedAt))
+    .orderBy(desc(recipesLive.updatedAt))
     .limit(options?.limit ?? 200)
     .offset(options?.offset ?? 0);
 
-  const terms = await attachTerms(rows);
-  return rows.map((r) => toSummary(r, terms.get(r.id) ?? []));
+  const [terms, parents] = await Promise.all([
+    attachTerms(rows),
+    attachVariantOf(rows),
+  ]);
+  return rows.map((r) => toSummary(r, terms.get(r.id) ?? [], parents));
 }
 
 export interface SearchResult extends RecipeSummaryView {
@@ -369,7 +677,7 @@ export async function searchRecipes(
       const slug = slugify(label);
       conditions.push(sql`EXISTS (
         SELECT 1 FROM recipe_terms rt
-          JOIN taxonomy_terms t ON t.id = rt.term_id
+          JOIN taxonomy_terms_live t ON t.id = rt.term_id
          WHERE rt.recipe_id = r.id
            AND t.facet = ${facet}
            AND (t.slug = ${slug} OR lower(t.label) = ${label.toLowerCase()})
@@ -381,7 +689,7 @@ export async function searchRecipes(
     const slug = slugify(name);
     return sql`EXISTS (
       SELECT 1 FROM recipe_ingredients ri
-        LEFT JOIN ingredients i ON i.id = ri.ingredient_id
+        LEFT JOIN ingredients_live i ON i.id = ri.ingredient_id
        WHERE ri.revision_id = r.current_revision_id
          AND (
            i.slug = ${slug}
@@ -423,16 +731,19 @@ export async function searchRecipes(
     hero_image_alt: string | null;
     updated_at: Date;
     revision_number: number | null;
+    variant_of_id: string | null;
+    variant_note: string | null;
     rank: number;
     total: number;
   }>(sql`
     SELECT r.id, r.slug, r.title, r.subtitle, r.summary, r.kind,
            r.hero_image_url, r.hero_image_alt, r.updated_at,
+           r.variant_of_id, r.variant_note,
            rev.revision_number,
            ${rank} AS rank,
            COUNT(*) OVER () AS total
-      FROM recipes r
-      LEFT JOIN recipe_revisions rev ON rev.id = r.current_revision_id
+      FROM recipes_live r
+      LEFT JOIN recipe_revisions_live rev ON rev.id = r.current_revision_id
      WHERE ${where}
      ORDER BY ${ordering}
      LIMIT ${input.limit ?? 20}
@@ -450,11 +761,17 @@ export async function searchRecipes(
     hero_image_alt: string | null;
     updated_at: string | Date;
     revision_number: number | null;
+    variant_of_id: string | null;
+    variant_note: string | null;
     rank: number | string;
     total: number | string;
   }[];
 
-  const terms = await attachTerms(list);
+  const withParent = list.map((r) => ({ ...r, variantOfId: r.variant_of_id }));
+  const [terms, parents] = await Promise.all([
+    attachTerms(list),
+    attachVariantOf(withParent),
+  ]);
   return {
     total: list.length > 0 ? Number(list[0]!.total) : 0,
     results: list.map((r) => ({
@@ -470,8 +787,11 @@ export async function searchRecipes(
           heroImageAlt: r.hero_image_alt,
           updatedAt: new Date(r.updated_at),
           revisionNumber: r.revision_number,
+          variantOfId: r.variant_of_id,
+          variantNote: r.variant_note,
         },
         terms.get(r.id) ?? [],
+        parents,
       ),
       rank: Number(r.rank),
     })),
@@ -573,28 +893,77 @@ function formatMassFlowSummary(
   return summary;
 }
 
+/**
+ * The citations under a set of notes, grouped by note.
+ *
+ * WHY THIS IS A FUNCTION AND NOT THREE COPIES. It was one copy and two
+ * hardcoded `sources: []` — `getIngredient` and `getExperiment` each
+ * declared that notes on an ingredient and notes on a run carry no
+ * citations. They do: `writeNotes` stores `sources` for any kind, the
+ * schema *requires* one on a `research` note, and `NoteBlock` renders them
+ * on every screen that draws a note. So a sourced research note written
+ * through `log_experiment` — which is the documented way to record one —
+ * came back from `get_experiment` with its provenance silently dropped,
+ * and the run page drew the claim with nothing under it.
+ *
+ * The ORDER BY is the reason this must not be re-inlined a fourth time.
+ * This read had none at all once, so citations reshuffled between two
+ * loads of one seed and `pnpm export` produced a different `- Source:`
+ * block each time. Same three columns as every other ordered read here.
+ */
+async function noteSourcesByNote(
+  noteIds: string[],
+): Promise<Map<string, NoteView['sources']>> {
+  const byNote = new Map<string, NoteView['sources']>();
+  if (noteIds.length === 0) return byNote;
+
+  const rows = await db
+    .select()
+    .from(noteSources)
+    .where(inArray(noteSources.noteId, noteIds))
+    .orderBy(
+      asc(noteSources.createdAt),
+      asc(noteSources.position),
+      asc(noteSources.id),
+    );
+
+  for (const row of rows) {
+    const list = byNote.get(row.noteId) ?? [];
+    list.push({
+      url: row.url,
+      title: row.title,
+      citation: row.citation,
+      accessedAt: row.accessedAt,
+    });
+    byNote.set(row.noteId, list);
+  }
+  return byNote;
+}
+
 export async function getRecipeBySlug(
   slug: string,
   revisionNumber?: number,
 ): Promise<RecipeView | null> {
   const found = await db
     .select({
-      id: recipes.id,
-      slug: recipes.slug,
-      title: recipes.title,
-      subtitle: recipes.subtitle,
-      summary: recipes.summary,
-      kind: recipes.kind,
-      status: recipes.status,
-      heroImageUrl: recipes.heroImageUrl,
-      heroImageAlt: recipes.heroImageAlt,
-      originNote: recipes.originNote,
-      currentRevisionId: recipes.currentRevisionId,
-      createdAt: recipes.createdAt,
-      updatedAt: recipes.updatedAt,
+      id: recipesLive.id,
+      slug: recipesLive.slug,
+      title: recipesLive.title,
+      subtitle: recipesLive.subtitle,
+      summary: recipesLive.summary,
+      kind: recipesLive.kind,
+      status: recipesLive.status,
+      heroImageUrl: recipesLive.heroImageUrl,
+      heroImageAlt: recipesLive.heroImageAlt,
+      originNote: recipesLive.originNote,
+      currentRevisionId: recipesLive.currentRevisionId,
+      variantOfId: recipesLive.variantOfId,
+      variantNote: recipesLive.variantNote,
+      createdAt: recipesLive.createdAt,
+      updatedAt: recipesLive.updatedAt,
     })
-    .from(recipes)
-    .where(eq(recipes.slug, slug))
+    .from(recipesLive)
+    .where(eq(recipesLive.slug, slug))
     .limit(1);
 
   const recipe = found[0];
@@ -606,13 +975,13 @@ export async function getRecipeBySlug(
   // The revision number breaks ties and keeps the order stable.
   const revisionRows = await db
     .select()
-    .from(recipeRevisions)
-    .where(eq(recipeRevisions.recipeId, recipe.id))
+    .from(recipeRevisionsLive)
+    .where(eq(recipeRevisionsLive.recipeId, recipe.id))
     .orderBy(
       desc(
-        sql`COALESCE(${recipeRevisions.occurredAt}, ${recipeRevisions.createdAt})`,
+        sql`COALESCE(${recipeRevisionsLive.occurredAt}, ${recipeRevisionsLive.createdAt})`,
       ),
-      desc(recipeRevisions.revisionNumber),
+      desc(recipeRevisionsLive.revisionNumber),
     );
 
   const revision =
@@ -636,14 +1005,14 @@ export async function getRecipeBySlug(
           optional: recipeIngredients.optional,
           note: recipeIngredients.note,
           rawText: recipeIngredients.rawText,
-          ingredientSlug: ingredients.slug,
-          ingredientName: ingredients.name,
-          ingredientCategory: ingredients.category,
+          ingredientSlug: ingredientsLive.slug,
+          ingredientName: ingredientsLive.name,
+          ingredientCategory: ingredientsLive.category,
         })
         .from(recipeIngredients)
         .leftJoin(
-          ingredients,
-          eq(ingredients.id, recipeIngredients.ingredientId),
+          ingredientsLive,
+          eq(ingredientsLive.id, recipeIngredients.ingredientId),
         )
         .where(eq(recipeIngredients.revisionId, revision.id))
         .orderBy(asc(recipeIngredients.position)),
@@ -660,36 +1029,48 @@ export async function getRecipeBySlug(
           imageUrl: recipeSteps.imageUrl,
           imageAlt: recipeSteps.imageAlt,
           note: recipeSteps.note,
-          techniqueSlug: taxonomyTerms.slug,
-          techniqueLabel: taxonomyTerms.label,
+          techniqueSlug: taxonomyTermsLive.slug,
+          techniqueLabel: taxonomyTermsLive.label,
         })
         .from(recipeSteps)
         .leftJoin(
-          taxonomyTerms,
-          eq(taxonomyTerms.id, recipeSteps.techniqueTermId),
+          taxonomyTermsLive,
+          eq(taxonomyTermsLive.id, recipeSteps.techniqueTermId),
         )
         .where(eq(recipeSteps.revisionId, revision.id))
         .orderBy(asc(recipeSteps.position)),
       // Notes on the recipe itself and on the revision being displayed.
       db
         .select({
-          id: notes.id,
-          kind: notes.kind,
-          title: notes.title,
-          body: notes.body,
-          conditions: notes.conditions,
-          createdAt: notes.createdAt,
+          id: notesLive.id,
+          kind: notesLive.kind,
+          title: notesLive.title,
+          body: notesLive.body,
+          conditions: notesLive.conditions,
+          previousSubjects: notesLive.previousSubjects,
+          createdAt: notesLive.createdAt,
         })
-        .from(notes)
+        .from(notesLive)
         .where(
-          sql`${notes.recipeId} = ${recipe.id} OR ${notes.revisionId} = ${revision.id}`,
+          sql`${notesLive.recipeId} = ${recipe.id} OR ${notesLive.revisionId} = ${revision.id}`,
         )
-        // THE NOTE ORDER. `created_at` first, `position` second, `id` last —
+        // THE NOTE ORDER. `sort_at` first, `position` second, `id` last —
         // the same three columns in the same order in all five reads that
-        // return notes, so a note holds one place in one list wherever it is
-        // drawn.
+        // return the notes of ONE SUBJECT, so a note holds one place in one
+        // list wherever it is drawn.
         //
-        // `created_at` defaults to `now()`, which Postgres holds fixed for a
+        // `searchNotes` is the deliberate exception, and the only one. It
+        // crosses subjects to answer "what is here", which is the question
+        // `listRecipes` and `listExperiments` answer newest first. It keeps
+        // these same two columns as its tiebreaks, for the reason below.
+        //
+        // `sort_at` was `created_at` until a note could move between
+        // subjects (D-13). A moved note keeps the date it was written and
+        // arrives at its new subject today, and those are two different
+        // facts; `created_at` holds the first and this holds the second.
+        // Backfilled equal, so nothing stored reordered.
+        //
+        // `sort_at` defaults to `now()`, which Postgres holds fixed for a
         // transaction, so every note written by one call carries the SAME
         // timestamp. It sequences the *groups* exactly — one transaction
         // only ever writes notes against one subject, and this query reads
@@ -699,7 +1080,11 @@ export async function getRecipeBySlug(
         // `writeNotes`. Before it, the tiebreak was `asc(notes.id)`, a random
         // uuid, so the Wellington's four mechanisms were renumbered on every
         // ingest. `id` stays on the end so the sort is total.
-        .orderBy(asc(notes.createdAt), asc(notes.position), asc(notes.id)),
+        .orderBy(
+          asc(notesLive.sortAt),
+          asc(notesLive.position),
+          asc(notesLive.id),
+        ),
       // One flow at most — `uq_mass_flow_revision` — so the head repeats on
       // every stage row and a left join costs one statement instead of two.
       db
@@ -740,7 +1125,7 @@ export async function getRecipeBySlug(
         .select({
           stepId: recipeStepIngredients.stepId,
           recipeIngredientId: recipeStepIngredients.recipeIngredientId,
-          name: sql<string>`COALESCE(${ingredients.name}, ${recipeIngredients.rawText})`,
+          name: sql<string>`COALESCE(${ingredientsLive.name}, ${recipeIngredients.rawText})`,
         })
         .from(recipeStepIngredients)
         .innerJoin(
@@ -748,8 +1133,8 @@ export async function getRecipeBySlug(
           eq(recipeIngredients.id, recipeStepIngredients.recipeIngredientId),
         )
         .leftJoin(
-          ingredients,
-          eq(ingredients.id, recipeIngredients.ingredientId),
+          ingredientsLive,
+          eq(ingredientsLive.id, recipeIngredients.ingredientId),
         )
         .where(
           inArray(
@@ -769,38 +1154,7 @@ export async function getRecipeBySlug(
     usesByStep.set(row.stepId, list);
   }
 
-  const sourceRows = noteRows.length
-    ? await db
-        .select()
-        .from(noteSources)
-        .where(
-          inArray(
-            noteSources.noteId,
-            noteRows.map((x) => x.id),
-          ),
-        )
-        // This read had no ORDER BY at all, so the citations under a note
-        // came back in whatever order the scan produced — visible on the
-        // recipe page and, worse, in `pnpm export`, where a `- Source:`
-        // block reshuffled between two loads of the same seed. Same three
-        // columns as everywhere else; the grouping below preserves them.
-        .orderBy(
-          asc(noteSources.createdAt),
-          asc(noteSources.position),
-          asc(noteSources.id),
-        )
-    : [];
-  const sourcesByNote = new Map<string, NoteView['sources']>();
-  for (const row of sourceRows) {
-    const list = sourcesByNote.get(row.noteId) ?? [];
-    list.push({
-      url: row.url,
-      title: row.title,
-      citation: row.citation,
-      accessedAt: row.accessedAt,
-    });
-    sourcesByNote.set(row.noteId, list);
-  }
+  const sourcesByNote = await noteSourcesByNote(noteRows.map((x) => x.id));
 
   const [linkRows, backlinkRows, experimentRows] = await Promise.all([
     db
@@ -810,33 +1164,39 @@ export async function getRecipeBySlug(
         ...recipeSummaryColumns,
       })
       .from(recipeLinks)
-      .innerJoin(recipes, eq(recipes.id, recipeLinks.toRecipeId))
+      .innerJoin(recipesLive, eq(recipesLive.id, recipeLinks.toRecipeId))
       .leftJoin(
-        recipeRevisions,
-        eq(recipeRevisions.id, recipes.currentRevisionId),
+        recipeRevisionsLive,
+        eq(recipeRevisionsLive.id, recipesLive.currentRevisionId),
       )
       .where(eq(recipeLinks.fromRecipeId, recipe.id)),
     db
       .select({ linkKind: recipeLinks.kind, ...recipeSummaryColumns })
       .from(recipeLinks)
-      .innerJoin(recipes, eq(recipes.id, recipeLinks.fromRecipeId))
+      .innerJoin(recipesLive, eq(recipesLive.id, recipeLinks.fromRecipeId))
       .leftJoin(
-        recipeRevisions,
-        eq(recipeRevisions.id, recipes.currentRevisionId),
+        recipeRevisionsLive,
+        eq(recipeRevisionsLive.id, recipesLive.currentRevisionId),
       )
       .where(eq(recipeLinks.toRecipeId, recipe.id)),
     db
       .select({
-        slug: experiments.slug,
-        title: experiments.title,
-        startedAt: experiments.startedAt,
+        slug: experimentsLive.slug,
+        title: experimentsLive.title,
+        startedAt: experimentsLive.startedAt,
       })
-      .from(experiments)
-      .where(eq(experiments.recipeId, recipe.id))
-      .orderBy(desc(experiments.startedAt)),
+      .from(experimentsLive)
+      .where(eq(experimentsLive.recipeId, recipe.id))
+      .orderBy(desc(experimentsLive.startedAt)),
   ]);
 
-  const linkedTerms = await attachTerms([...linkRows, ...backlinkRows]);
+  const [linkedTerms, linkedParents, family] = await Promise.all([
+    attachTerms([...linkRows, ...backlinkRows]),
+    // The recipe itself rides along, so its own parent is resolved in the
+    // same query as its links' parents rather than in one more of its own.
+    attachVariantOf([recipe, ...linkRows, ...backlinkRows]),
+    variantFamily(recipe.id),
+  ]);
 
   return {
     id: recipe.id,
@@ -919,6 +1279,7 @@ export async function getRecipeBySlug(
       title: row.title,
       body: row.body,
       conditions: row.conditions,
+      movedFrom: row.previousSubjects,
       createdAt: row.createdAt.toISOString(),
       sources: sourcesByNote.get(row.id) ?? [],
     })),
@@ -928,16 +1289,37 @@ export async function getRecipeBySlug(
       source: r.source,
       createdAt: r.createdAt.toISOString(),
       occurredAt: r.occurredAt ? r.occurredAt.toISOString() : null,
-      backfilled: r.occurredAt !== null,
+      /**
+       * R-SCR-08's badge reads "Recorded later — written down <date>", so it
+       * may only be set when the version existed BEFORE the row was written.
+       *
+       * `occurred_at IS NOT NULL` used to be the same statement, because
+       * `backfillRevision` was its only writer and it refuses a date that is
+       * not older than everything stored. `update_revision` writes the
+       * column too, and its `occurredAt` is unconstrained, so a correction
+       * could put a date on or after `created_at` and make the page assert
+       * that a version was recorded later than a day it had already been
+       * recorded on. The relation the badge claims is asked for directly.
+       */
+      backfilled: r.occurredAt !== null && r.occurredAt < r.createdAt,
     })),
+    variantOf:
+      recipe.variantOfId && linkedParents.has(recipe.variantOfId)
+        ? {
+            slug: linkedParents.get(recipe.variantOfId)!.slug,
+            title: linkedParents.get(recipe.variantOfId)!.title,
+            note: recipe.variantNote,
+          }
+        : null,
+    variantFamily: family,
     links: linkRows.map((row) => ({
       kind: row.linkKind,
       note: row.linkNote,
-      recipe: toSummary(row, linkedTerms.get(row.id) ?? []),
+      recipe: toSummary(row, linkedTerms.get(row.id) ?? [], linkedParents),
     })),
     backlinks: backlinkRows.map((row) => ({
       kind: row.linkKind,
-      recipe: toSummary(row, linkedTerms.get(row.id) ?? []),
+      recipe: toSummary(row, linkedTerms.get(row.id) ?? [], linkedParents),
     })),
     experiments: experimentRows,
   };
@@ -973,16 +1355,16 @@ export async function getRecipeIdentity(slug: string): Promise<{
 } | null> {
   const rows = await db
     .select({
-      slug: recipes.slug,
-      title: recipes.title,
-      revisionNumber: recipeRevisions.revisionNumber,
+      slug: recipesLive.slug,
+      title: recipesLive.title,
+      revisionNumber: recipeRevisionsLive.revisionNumber,
     })
-    .from(recipes)
+    .from(recipesLive)
     .leftJoin(
-      recipeRevisions,
-      eq(recipeRevisions.id, recipes.currentRevisionId),
+      recipeRevisionsLive,
+      eq(recipeRevisionsLive.id, recipesLive.currentRevisionId),
     )
-    .where(eq(recipes.slug, slug))
+    .where(eq(recipesLive.slug, slug))
     .limit(1);
 
   const row = rows[0];
@@ -996,13 +1378,13 @@ export async function getRecipeIdentity(slug: string): Promise<{
 
 export async function listRecipeSlugs(): Promise<string[]> {
   const rows = await db
-    .select({ slug: recipes.slug })
-    .from(recipes)
-    .where(eq(recipes.status, 'active'))
+    .select({ slug: recipesLive.slug })
+    .from(recipesLive)
+    .where(eq(recipesLive.status, 'active'))
     // `pnpm export` walks this list and writes content/generated/README.md
     // from it in order. With no ORDER BY the index reshuffled between two
     // loads of one seed even when every recipe in it was identical.
-    .orderBy(asc(recipes.slug));
+    .orderBy(asc(recipesLive.slug));
   return rows.map((r) => r.slug);
 }
 
@@ -1030,35 +1412,39 @@ export async function listCategories(
 ): Promise<TermWithCount[]> {
   // A term has at most one parent, so this join adds no rows and the
   // COUNT below still counts recipes.
-  const parentTerm = alias(taxonomyTerms, 'parent_term');
+  // `alias()` takes a view as well as a table — `PgTable | PgViewBase` — so
+  // the parent join filters too. A tag whose parent was deleted then reads
+  // as `parent: null`, which is the right degradation: the tag is still
+  // there and no longer claims to sit under something nobody can open.
+  const parentTerm = alias(taxonomyTermsLive, 'parent_term');
 
   const rows = await db
     .select({
-      id: taxonomyTerms.id,
-      facet: taxonomyTerms.facet,
-      slug: taxonomyTerms.slug,
-      label: taxonomyTerms.label,
-      description: taxonomyTerms.description,
+      id: taxonomyTermsLive.id,
+      facet: taxonomyTermsLive.facet,
+      slug: taxonomyTermsLive.slug,
+      label: taxonomyTermsLive.label,
+      description: taxonomyTermsLive.description,
       parentSlug: parentTerm.slug,
       parentLabel: parentTerm.label,
       recipeCount: sql<number>`COUNT(${recipeTerms.recipeId})`,
     })
-    .from(taxonomyTerms)
-    .leftJoin(parentTerm, eq(parentTerm.id, taxonomyTerms.parentId))
-    .leftJoin(recipeTerms, eq(recipeTerms.termId, taxonomyTerms.id))
-    .where(facet ? eq(taxonomyTerms.facet, facet) : sql`true`)
+    .from(taxonomyTermsLive)
+    .leftJoin(parentTerm, eq(parentTerm.id, taxonomyTermsLive.parentId))
+    .leftJoin(recipeTerms, eq(recipeTerms.termId, taxonomyTermsLive.id))
+    .where(facet ? eq(taxonomyTermsLive.facet, facet) : sql`true`)
     .groupBy(
-      taxonomyTerms.id,
-      taxonomyTerms.facet,
-      taxonomyTerms.slug,
-      taxonomyTerms.label,
-      taxonomyTerms.description,
+      taxonomyTermsLive.id,
+      taxonomyTermsLive.facet,
+      taxonomyTermsLive.slug,
+      taxonomyTermsLive.label,
+      taxonomyTermsLive.description,
       parentTerm.slug,
       parentTerm.label,
     )
     .orderBy(
       desc(sql`COUNT(${recipeTerms.recipeId})`),
-      asc(taxonomyTerms.label),
+      asc(taxonomyTermsLive.label),
     );
 
   return rows.map((r) => ({
@@ -1088,8 +1474,10 @@ export async function getTerm(
 } | null> {
   const found = await db
     .select()
-    .from(taxonomyTerms)
-    .where(and(eq(taxonomyTerms.facet, facet), eq(taxonomyTerms.slug, slug)))
+    .from(taxonomyTermsLive)
+    .where(
+      and(eq(taxonomyTermsLive.facet, facet), eq(taxonomyTermsLive.slug, slug)),
+    )
     .limit(1);
   const term = found[0];
   if (!term) return null;
@@ -1097,15 +1485,20 @@ export async function getTerm(
   const rows = await db
     .select(recipeSummaryColumns)
     .from(recipeTerms)
-    .innerJoin(recipes, eq(recipes.id, recipeTerms.recipeId))
+    .innerJoin(recipesLive, eq(recipesLive.id, recipeTerms.recipeId))
     .leftJoin(
-      recipeRevisions,
-      eq(recipeRevisions.id, recipes.currentRevisionId),
+      recipeRevisionsLive,
+      eq(recipeRevisionsLive.id, recipesLive.currentRevisionId),
     )
-    .where(and(eq(recipeTerms.termId, term.id), eq(recipes.status, 'active')))
-    .orderBy(desc(recipes.updatedAt));
+    .where(
+      and(eq(recipeTerms.termId, term.id), eq(recipesLive.status, 'active')),
+    )
+    .orderBy(desc(recipesLive.updatedAt));
 
-  const terms = await attachTerms(rows);
+  const [terms, parents] = await Promise.all([
+    attachTerms(rows),
+    attachVariantOf(rows),
+  ]);
 
   const toTermView = (row: {
     id: string;
@@ -1113,33 +1506,37 @@ export async function getTerm(
     slug: string;
     label: string;
     description: string | null;
+    heroImageUrl: string | null;
+    heroImageAlt: string | null;
   }): TermView => ({
     id: row.id,
     categoryType: row.facet as CategoryType,
     slug: row.slug,
     label: row.label,
     description: row.description,
+    heroImageUrl: row.heroImageUrl,
+    heroImageAlt: row.heroImageAlt,
   });
 
   const parentRows = term.parentId
     ? await db
         .select()
-        .from(taxonomyTerms)
-        .where(eq(taxonomyTerms.id, term.parentId))
+        .from(taxonomyTermsLive)
+        .where(eq(taxonomyTermsLive.id, term.parentId))
         .limit(1)
     : [];
 
   const childRows = await db
     .select()
-    .from(taxonomyTerms)
-    .where(eq(taxonomyTerms.parentId, term.id))
-    .orderBy(taxonomyTerms.label);
+    .from(taxonomyTermsLive)
+    .where(eq(taxonomyTermsLive.parentId, term.id))
+    .orderBy(taxonomyTermsLive.label);
 
   return {
     term: toTermView(term),
     parent: parentRows[0] ? toTermView(parentRows[0]) : null,
     children: childRows.map(toTermView),
-    recipes: rows.map((r) => toSummary(r, terms.get(r.id) ?? [])),
+    recipes: rows.map((r) => toSummary(r, terms.get(r.id) ?? [], parents)),
   };
 }
 
@@ -1156,43 +1553,55 @@ export interface IngredientWithUsage {
   densityGPerMl: number | null;
   defaultUnit: string | null;
   aliases: string[];
+  /**
+   * A picture of the raw ingredient. Required on this view rather than
+   * optional, unlike `TermView`: both readers of it — the index and the
+   * detail page — can use one, and the index is where telling two chillies
+   * apart actually matters.
+   */
+  heroImageUrl: string | null;
+  heroImageAlt: string | null;
   recipeCount: number;
 }
 
 export async function listIngredients(): Promise<IngredientWithUsage[]> {
   const rows = await db
     .select({
-      slug: ingredients.slug,
-      name: ingredients.name,
-      plural: ingredients.plural,
-      category: ingredients.category,
-      description: ingredients.description,
-      densityGPerMl: ingredients.densityGPerMl,
-      defaultUnit: ingredients.defaultUnit,
-      aliases: ingredients.aliases,
+      slug: ingredientsLive.slug,
+      name: ingredientsLive.name,
+      plural: ingredientsLive.plural,
+      category: ingredientsLive.category,
+      description: ingredientsLive.description,
+      densityGPerMl: ingredientsLive.densityGPerMl,
+      defaultUnit: ingredientsLive.defaultUnit,
+      aliases: ingredientsLive.aliases,
+      heroImageUrl: ingredientsLive.heroImageUrl,
+      heroImageAlt: ingredientsLive.heroImageAlt,
       recipeCount: sql<number>`COUNT(DISTINCT r.id)`,
     })
-    .from(ingredients)
+    .from(ingredientsLive)
     .leftJoin(
       sql`recipe_ingredients ri`,
-      sql`ri.ingredient_id = ${ingredients.id}`,
+      sql`ri.ingredient_id = ${ingredientsLive.id}`,
     )
     .leftJoin(
-      sql`recipes r`,
+      sql`recipes_live r`,
       sql`r.current_revision_id = ri.revision_id AND r.status = 'active'`,
     )
     .groupBy(
-      ingredients.id,
-      ingredients.slug,
-      ingredients.name,
-      ingredients.plural,
-      ingredients.category,
-      ingredients.description,
-      ingredients.densityGPerMl,
-      ingredients.defaultUnit,
-      ingredients.aliases,
+      ingredientsLive.id,
+      ingredientsLive.slug,
+      ingredientsLive.name,
+      ingredientsLive.plural,
+      ingredientsLive.category,
+      ingredientsLive.description,
+      ingredientsLive.densityGPerMl,
+      ingredientsLive.defaultUnit,
+      ingredientsLive.aliases,
+      ingredientsLive.heroImageUrl,
+      ingredientsLive.heroImageAlt,
     )
-    .orderBy(desc(sql`COUNT(DISTINCT r.id)`), asc(ingredients.name));
+    .orderBy(desc(sql`COUNT(DISTINCT r.id)`), asc(ingredientsLive.name));
 
   return rows.map((r) => ({
     ...r,
@@ -1209,8 +1618,8 @@ export async function getIngredient(slug: string): Promise<{
 } | null> {
   const found = await db
     .select()
-    .from(ingredients)
-    .where(eq(ingredients.slug, slug))
+    .from(ingredientsLive)
+    .where(eq(ingredientsLive.slug, slug))
     .limit(1);
   const row = found[0];
   if (!row) return null;
@@ -1220,42 +1629,40 @@ export async function getIngredient(slug: string): Promise<{
       .select(recipeSummaryColumns)
       .from(recipeIngredients)
       .innerJoin(
-        recipes,
-        eq(recipes.currentRevisionId, recipeIngredients.revisionId),
+        recipesLive,
+        eq(recipesLive.currentRevisionId, recipeIngredients.revisionId),
       )
       .leftJoin(
-        recipeRevisions,
-        eq(recipeRevisions.id, recipes.currentRevisionId),
+        recipeRevisionsLive,
+        eq(recipeRevisionsLive.id, recipesLive.currentRevisionId),
       )
       .where(
         and(
           eq(recipeIngredients.ingredientId, row.id),
-          eq(recipes.status, 'active'),
+          eq(recipesLive.status, 'active'),
         ),
       )
-      .groupBy(
-        recipes.id,
-        recipes.slug,
-        recipes.title,
-        recipes.subtitle,
-        recipes.summary,
-        recipes.kind,
-        recipes.heroImageUrl,
-        recipes.heroImageAlt,
-        recipes.updatedAt,
-        recipeRevisions.revisionNumber,
-      )
-      .orderBy(desc(recipes.updatedAt)),
+      /*
+       * Every selected column, derived rather than listed. `recipes_live` is
+       * a VIEW, so Postgres cannot apply its functional-dependency shortcut
+       * and `GROUP BY r.id` is not enough — every column of the select list
+       * has to be named. Listed by hand this broke the moment
+       * `recipeSummaryColumns` grew `variant_of_id`: the page threw, and it
+       * threw in a query no type checker reads. Spreading the same object
+       * the select takes makes the two impossible to disagree.
+       */
+      .groupBy(...Object.values(recipeSummaryColumns))
+      .orderBy(desc(recipesLive.updatedAt)),
     db
       .select({
-        slug: ingredients.slug,
-        name: ingredients.name,
+        slug: ingredientsLive.slug,
+        name: ingredientsLive.name,
         note: ingredientRelations.note,
       })
       .from(ingredientRelations)
       .innerJoin(
-        ingredients,
-        eq(ingredients.id, ingredientRelations.toIngredientId),
+        ingredientsLive,
+        eq(ingredientsLive.id, ingredientRelations.toIngredientId),
       )
       .where(
         and(
@@ -1265,21 +1672,30 @@ export async function getIngredient(slug: string): Promise<{
       ),
     db
       .select({
-        id: notes.id,
-        kind: notes.kind,
-        title: notes.title,
-        body: notes.body,
-        conditions: notes.conditions,
-        createdAt: notes.createdAt,
+        id: notesLive.id,
+        kind: notesLive.kind,
+        title: notesLive.title,
+        body: notesLive.body,
+        conditions: notesLive.conditions,
+        previousSubjects: notesLive.previousSubjects,
+        createdAt: notesLive.createdAt,
       })
-      .from(notes)
-      .where(eq(notes.ingredientId, row.id))
+      .from(notesLive)
+      .where(eq(notesLive.ingredientId, row.id))
       // The note order — see `getRecipeBySlug`. `created_at` alone left
       // several notes written against one ingredient in planner order.
-      .orderBy(asc(notes.createdAt), asc(notes.position), asc(notes.id)),
+      .orderBy(
+        asc(notesLive.sortAt),
+        asc(notesLive.position),
+        asc(notesLive.id),
+      ),
   ]);
 
-  const terms = await attachTerms(usedIn);
+  const [terms, parents, sourcesByNote] = await Promise.all([
+    attachTerms(usedIn),
+    attachVariantOf(usedIn),
+    noteSourcesByNote(noteRows.map((x) => x.id)),
+  ]);
 
   return {
     ingredient: {
@@ -1291,9 +1707,11 @@ export async function getIngredient(slug: string): Promise<{
       densityGPerMl: n(row.densityGPerMl),
       defaultUnit: row.defaultUnit,
       aliases: row.aliases,
+      heroImageUrl: row.heroImageUrl,
+      heroImageAlt: row.heroImageAlt,
       recipeCount: usedIn.length,
     },
-    recipes: usedIn.map((r) => toSummary(r, terms.get(r.id) ?? [])),
+    recipes: usedIn.map((r) => toSummary(r, terms.get(r.id) ?? [], parents)),
     substitutes: subs,
     notes: noteRows.map((x) => ({
       id: x.id,
@@ -1301,8 +1719,9 @@ export async function getIngredient(slug: string): Promise<{
       title: x.title,
       body: x.body,
       conditions: x.conditions,
+      movedFrom: x.previousSubjects,
       createdAt: x.createdAt.toISOString(),
-      sources: [],
+      sources: sourcesByNote.get(x.id) ?? [],
     })),
   };
 }
@@ -1321,7 +1740,36 @@ export interface ExperimentView {
   outcome: string | null;
   costTotal: number | null;
   currency: string | null;
+  /** The revision this run was cooking, when the run named one. */
+  revisionNumber: number | null;
+  /**
+   * True when that revision has since been deleted — §4.3.
+   *
+   * The run is not deleted with it and must not read as though it cooked
+   * nothing. The number stays, and the reader is told the version is gone.
+   * A hard delete would have fired `experiments.revision_id`'s
+   * `ON DELETE SET NULL` and left the run saying "no version recorded",
+   * which is a false statement about a run that recorded one.
+   */
+  revisionWithdrawn: boolean;
   recipe: { slug: string; title: string } | null;
+  /** The one picture that stands for the run. */
+  heroImageUrl: string | null;
+  heroImageAlt: string | null;
+  /**
+   * The rest of the run's pictures, in reading order.
+   *
+   * A run is the only record here that takes a LIST, and the reason is what
+   * a run is: the account of what was actually seen. One run produces
+   * several pictures — the meat going in, the box on day three, the slice on
+   * day nine — and a single hero would throw away the two that carry the
+   * argument.
+   */
+  images: {
+    url: string;
+    alt: string | null;
+    caption: string | null;
+  }[];
   items: { label: string; note: string | null }[];
   observations: {
     item: string | null;
@@ -1347,16 +1795,21 @@ export interface ExperimentSummary {
   title: string;
   summary: string | null;
   startedAt: string | null;
-  /** `experiments.cost_total`, and the currency it was recorded in. */
+  /** `experimentsLive.cost_total`, and the currency it was recorded in. */
   costTotal: number | null;
   currency: string | null;
   /** The revision this run was cooking, when the run named one. */
   revisionNumber: number | null;
+  /** True when that revision has since been deleted — §4.3, `ExperimentView`. */
+  revisionWithdrawn: boolean;
   /** What went in, summed, in the unit it was recorded in. */
   raw: { value: number; unit: string } | null;
   /** What came out. `null` when the run never weighed anything out. */
   finished: { value: number; unit: string } | null;
   recipe: { slug: string; title: string } | null;
+  /** The run's hero image, for the card. Its gallery is on the page only. */
+  heroImageUrl: string | null;
+  heroImageAlt: string | null;
 }
 
 /**
@@ -1377,27 +1830,39 @@ export async function listExperiments(options?: {
 }): Promise<ExperimentSummary[]> {
   const rows = await db
     .select({
-      id: experiments.id,
-      slug: experiments.slug,
-      title: experiments.title,
-      summary: experiments.summary,
-      startedAt: experiments.startedAt,
-      costTotal: experiments.costTotal,
-      currency: experiments.currency,
-      revisionNumber: recipeRevisions.revisionNumber,
-      recipeSlug: recipes.slug,
-      recipeTitle: recipes.title,
+      id: experimentsLive.id,
+      slug: experimentsLive.slug,
+      title: experimentsLive.title,
+      summary: experimentsLive.summary,
+      startedAt: experimentsLive.startedAt,
+      costTotal: experimentsLive.costTotal,
+      currency: experimentsLive.currency,
+      heroImageUrl: experimentsLive.heroImageUrl,
+      heroImageAlt: experimentsLive.heroImageAlt,
+      revisionNumber: recipeRevisionsAll.revisionNumber,
+      // THE ONE JOIN IN THIS FILE THAT READS A DELETED ROW ON PURPOSE.
+      // See `recipeRevisionsAll` in `./live` and §4.3: a run outlives the
+      // version it cooked, so the number stays readable and the run says
+      // the version was withdrawn.
+      revisionWithdrawn: sql<boolean>`${recipeRevisionsAll.deletedAt} IS NOT NULL`,
+      recipeSlug: recipesLive.slug,
+      recipeTitle: recipesLive.title,
     })
-    .from(experiments)
-    .leftJoin(recipes, eq(recipes.id, experiments.recipeId))
-    .leftJoin(recipeRevisions, eq(recipeRevisions.id, experiments.revisionId))
+    .from(experimentsLive)
+    .leftJoin(recipesLive, eq(recipesLive.id, experimentsLive.recipeId))
+    .leftJoin(
+      recipeRevisionsAll,
+      eq(recipeRevisionsAll.id, experimentsLive.revisionId),
+    )
     .where(
-      options?.recipeSlug ? eq(recipes.slug, options.recipeSlug) : undefined,
+      options?.recipeSlug
+        ? eq(recipesLive.slug, options.recipeSlug)
+        : undefined,
     )
     // Newest first. The slug breaks the tie, because two runs started on
     // the same day are otherwise ordered by whatever the planner returns
     // and the grid reshuffles between renders.
-    .orderBy(desc(experiments.startedAt), asc(experiments.slug));
+    .orderBy(desc(experimentsLive.startedAt), asc(experimentsLive.slug));
 
   const weights = await experimentWeights(rows.map((r) => r.id));
 
@@ -1409,9 +1874,12 @@ export async function listExperiments(options?: {
     costTotal: n(r.costTotal),
     currency: r.currency,
     revisionNumber: r.revisionNumber ?? null,
+    revisionWithdrawn: r.revisionWithdrawn ?? false,
     raw: weights.get(r.id)?.raw ?? null,
     finished: weights.get(r.id)?.finished ?? null,
     recipe: r.recipeSlug ? { slug: r.recipeSlug, title: r.recipeTitle! } : null,
+    heroImageUrl: r.heroImageUrl,
+    heroImageAlt: r.heroImageAlt,
   }));
 }
 
@@ -1530,28 +1998,37 @@ export async function getExperiment(
 ): Promise<ExperimentView | null> {
   const found = await db
     .select({
-      id: experiments.id,
-      slug: experiments.slug,
-      title: experiments.title,
-      summary: experiments.summary,
-      startedAt: experiments.startedAt,
-      completedAt: experiments.completedAt,
-      scaleFactor: experiments.scaleFactor,
-      outcome: experiments.outcome,
-      costTotal: experiments.costTotal,
-      currency: experiments.currency,
-      recipeSlug: recipes.slug,
-      recipeTitle: recipes.title,
+      id: experimentsLive.id,
+      slug: experimentsLive.slug,
+      title: experimentsLive.title,
+      summary: experimentsLive.summary,
+      startedAt: experimentsLive.startedAt,
+      completedAt: experimentsLive.completedAt,
+      scaleFactor: experimentsLive.scaleFactor,
+      outcome: experimentsLive.outcome,
+      costTotal: experimentsLive.costTotal,
+      currency: experimentsLive.currency,
+      heroImageUrl: experimentsLive.heroImageUrl,
+      heroImageAlt: experimentsLive.heroImageAlt,
+      // The second of the two deliberate exceptions — see `listExperiments`.
+      revisionNumber: recipeRevisionsAll.revisionNumber,
+      revisionWithdrawn: sql<boolean>`${recipeRevisionsAll.deletedAt} IS NOT NULL`,
+      recipeSlug: recipesLive.slug,
+      recipeTitle: recipesLive.title,
     })
-    .from(experiments)
-    .leftJoin(recipes, eq(recipes.id, experiments.recipeId))
-    .where(eq(experiments.slug, slug))
+    .from(experimentsLive)
+    .leftJoin(recipesLive, eq(recipesLive.id, experimentsLive.recipeId))
+    .leftJoin(
+      recipeRevisionsAll,
+      eq(recipeRevisionsAll.id, experimentsLive.revisionId),
+    )
+    .where(eq(experimentsLive.slug, slug))
     .limit(1);
 
   const row = found[0];
   if (!row) return null;
 
-  const [itemRows, observationRows, noteRows] = await Promise.all([
+  const [itemRows, observationRows, noteRows, imageRows] = await Promise.all([
     db
       .select({ label: experimentItems.label, note: experimentItems.note })
       .from(experimentItems)
@@ -1578,20 +2055,39 @@ export async function getExperiment(
       ),
     db
       .select({
-        id: notes.id,
-        kind: notes.kind,
-        title: notes.title,
-        body: notes.body,
-        conditions: notes.conditions,
-        createdAt: notes.createdAt,
+        id: notesLive.id,
+        kind: notesLive.kind,
+        title: notesLive.title,
+        body: notesLive.body,
+        conditions: notesLive.conditions,
+        previousSubjects: notesLive.previousSubjects,
+        createdAt: notesLive.createdAt,
       })
-      .from(notes)
-      .where(eq(notes.experimentId, row.id))
+      .from(notesLive)
+      .where(eq(notesLive.experimentId, row.id))
       // The note order — see `getRecipeBySlug`. `logExperiment` writes every
       // note on a run in one transaction, so this list was the one most
       // exposed to the tie: batch 2 carries three.
-      .orderBy(asc(notes.createdAt), asc(notes.position), asc(notes.id)),
+      .orderBy(
+        asc(notesLive.sortAt),
+        asc(notesLive.position),
+        asc(notesLive.id),
+      ),
+    // A child table, so it carries no delete flag of its own and needs none
+    // — its lifetime is the run's, and this read already started from a live
+    // one. `position` is the order `upload_image` appends in.
+    db
+      .select({
+        url: experimentImages.imageUrl,
+        alt: experimentImages.imageAlt,
+        caption: experimentImages.caption,
+      })
+      .from(experimentImages)
+      .where(eq(experimentImages.experimentId, row.id))
+      .orderBy(asc(experimentImages.position)),
   ]);
+
+  const sourcesByNote = await noteSourcesByNote(noteRows.map((x) => x.id));
 
   return {
     slug: row.slug,
@@ -1603,9 +2099,14 @@ export async function getExperiment(
     outcome: row.outcome,
     costTotal: n(row.costTotal),
     currency: row.currency,
+    revisionNumber: row.revisionNumber ?? null,
+    revisionWithdrawn: row.revisionWithdrawn ?? false,
     recipe: row.recipeSlug
       ? { slug: row.recipeSlug, title: row.recipeTitle! }
       : null,
+    heroImageUrl: row.heroImageUrl,
+    heroImageAlt: row.heroImageAlt,
+    images: imageRows,
     items: itemRows,
     observations: observationRows.map((o) => ({ ...o, value: n(o.value) })),
     notes: noteRows.map((x) => ({
@@ -1614,9 +2115,351 @@ export async function getExperiment(
       title: x.title,
       body: x.body,
       conditions: x.conditions,
+      movedFrom: x.previousSubjects,
       createdAt: x.createdAt.toISOString(),
-      sources: [],
+      sources: sourcesByNote.get(x.id) ?? [],
     })),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Searching the halves that are not recipes
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface ExperimentSearchResult {
+  slug: string;
+  title: string;
+  summary: string | null;
+  outcome: string | null;
+  startedAt: string | null;
+  recipe: { slug: string; title: string } | null;
+  rank: number;
+}
+
+/**
+ * Runs, by free text.
+ *
+ * WHY THERE IS NO GENERATED COLUMN HERE, and why that is not laziness. The
+ * obvious build is a `tsvector` column on `experiments`, `GENERATED ALWAYS
+ * AS … STORED`, weighting the slug with the `'simple'` configuration so it
+ * is kept as typed. That is wrong, and it fails silently on the exact case
+ * issue #18 reports. `websearch_to_tsquery('english', …)` STEMS its input:
+ * `mixed-bone-demi-glace-batch-1` becomes a phrase query containing `mix`,
+ * not `mixed`. A `'simple'` vector holds `mixed`, so the two never meet and
+ * the slug that prompted the report would still return nothing. Checked on
+ * the Postgres this runs against: `'simple'` is false, `'english'` is true.
+ * Both sides must stem or neither may.
+ *
+ * So the matching is the same two-part clause `searchNotes` uses: a tsquery
+ * half that stems and ranks, and an ILIKE half that catches the literal
+ * substring a slug or a part-word would otherwise miss. It needs no column,
+ * no trigger and no migration, and the ILIKE half is what makes an exact
+ * slug pasted out of an MCP response find its record. When these tables are
+ * big enough that a sequential scan hurts, the answer is one hand-authored
+ * expression-index migration — drizzle-kit cannot emit those, which is why
+ * `0001_search_indexes.sql` was hand-written too.
+ */
+export async function searchExperiments(input: {
+  query?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{ results: ExperimentSearchResult[]; total: number }> {
+  const conditions = [sql`TRUE`];
+  const q = input.query?.trim();
+
+  if (q) {
+    conditions.push(sql`(
+      to_tsvector('english',
+        coalesce(e.title, '') || ' ' ||
+        coalesce(e.summary, '') || ' ' ||
+        coalesce(e.outcome, ''))
+        @@ websearch_to_tsquery('english', ${q})
+      OR e.slug ILIKE ${'%' + q + '%'}
+      OR e.title ILIKE ${'%' + q + '%'}
+      OR e.summary ILIKE ${'%' + q + '%'}
+      OR e.outcome ILIKE ${'%' + q + '%'}
+    )`);
+  }
+
+  const where = sql.join(conditions, sql` AND `);
+  const rank = q
+    ? sql`ts_rank_cd(
+        to_tsvector('english',
+          coalesce(e.title, '') || ' ' ||
+          coalesce(e.summary, '') || ' ' ||
+          coalesce(e.outcome, '')),
+        websearch_to_tsquery('english', ${q})
+      )`
+    : sql`0::float4`;
+  /* Newest first, the order `listExperiments` uses, for the same reason. */
+  const ordering = q
+    ? sql`${rank} DESC, e.started_at DESC NULLS LAST, e.slug ASC`
+    : sql`e.started_at DESC NULLS LAST, e.slug ASC`;
+
+  /* Raw SQL, so the ESLint import ban cannot see this query: the view
+     names are what keeps a deleted run out of it. `experiments_live` for
+     the run itself, and `recipes_live` on the join so a run whose recipe
+     went reads as having none rather than naming a deleted dish. */
+  const result = await db.execute<Record<string, unknown>>(sql`
+    SELECT e.slug, e.title, e.summary, e.outcome, e.started_at,
+           r.slug AS recipe_slug, r.title AS recipe_title,
+           ${rank} AS rank,
+           COUNT(*) OVER () AS total
+      FROM experiments_live e
+      LEFT JOIN recipes_live r ON r.id = e.recipe_id
+     WHERE ${where}
+     ORDER BY ${ordering}
+     LIMIT ${input.limit ?? 20}
+    OFFSET ${input.offset ?? 0}
+  `);
+
+  const rows = result.rows as unknown as Record<string, unknown>[];
+  return {
+    total: rows.length > 0 ? Number(rows[0]!.total) : 0,
+    results: rows.map((row) => ({
+      slug: String(row.slug),
+      title: String(row.title),
+      summary: row.summary == null ? null : String(row.summary),
+      outcome: row.outcome == null ? null : String(row.outcome),
+      startedAt: row.started_at == null ? null : String(row.started_at),
+      recipe: row.recipe_slug
+        ? { slug: String(row.recipe_slug), title: String(row.recipe_title) }
+        : null,
+      rank: Number(row.rank ?? 0),
+    })),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Notes, as a set
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * How much of a body a result carries.
+ *
+ * Long enough to tell two notes apart and to judge whether one already says
+ * what you were about to write; short enough that the default page of
+ * twenty is a few kilobytes rather than a few tens. `bodyLength` and
+ * `truncated` come back with it, so a caller knows when to fetch the whole
+ * note from its parent record.
+ */
+const NOTE_EXCERPT_CHARS = 240;
+
+export interface NoteSearchResult {
+  id: string;
+  kind: string;
+  title: string | null;
+  excerpt: string;
+  truncated: boolean;
+  bodyLength: number;
+  conditions: string[];
+  sourceCount: number;
+  createdAt: string;
+  attachedTo: {
+    type: 'recipe' | 'revision' | 'step' | 'ingredient' | 'experiment';
+    slug: string | null;
+    title: string | null;
+    revisionNumber: number | null;
+  };
+  rank: number;
+}
+
+/**
+ * Every note, searchable, whatever it hangs off.
+ *
+ * WHY THIS EXISTS. Every other record type could be enumerated —
+ * `list_ingredients`, `list_categories`, `list_experiments`,
+ * `search_recipes` — and notes could not. The only way to reach one was to
+ * call `get_recipe`, `get_ingredient` or `get_experiment` on whatever it
+ * happened to be attached to, so you had to know where a note was in order
+ * to find it. At the sizes this store already holds that is seventy-odd
+ * calls to answer "what do I know about collagen", which no agent will
+ * spend speculatively. The store accumulated judgement faster than it could
+ * retrieve it, and notes were the one record type with no duplicate check.
+ *
+ * NEITHER `noteBelongsToRecipe` NOR `noteRecipeId` MAY BE REUSED HERE, and
+ * this is the trap to avoid. Both resolve a revision note only through
+ * `recipes.current_revision_id`, so both silently drop every note on a
+ * superseded revision. That is correct for `/science`, which draws the
+ * recipe as it stands. It is wrong here: `reviseRecipe` and
+ * `backfillRevision` attach their notes to a REVISION, so on any recipe
+ * that has been revised once, the rule those two encode hides exactly the
+ * notes an agent is looking for. The eight joins below resolve a note to
+ * its recipe through ANY revision.
+ *
+ * NO STATUS FILTER, unlike `searchRecipes`, which opens with
+ * `r.status = 'active'`. `getStats` counts notes with no such predicate,
+ * and the suite pins `counts.notes` to this function's `total`. A status
+ * filter here would break that agreement the first time a recipe is
+ * archived, and it would hide a note whose lesson outlives its dish.
+ *
+ * THE ORDER RUNS OPPOSITE TO EVERY OTHER NOTE READ, deliberately. The five
+ * reads that return the notes of ONE subject order `created_at, position,
+ * id` ascending, because there a note holds a place in a list a reader goes
+ * through in order. This read crosses subjects and answers "what is here",
+ * which is the question `listRecipes` and `listExperiments` answer newest
+ * first. `position` and `id` stay as tiebreaks so that paging is stable —
+ * `created_at` is fixed for a whole transaction, so a call that wrote four
+ * notes gives all four the same timestamp.
+ */
+export async function searchNotes(
+  input: SearchNotesInput,
+): Promise<{ results: NoteSearchResult[]; total: number }> {
+  const conditions = [sql`TRUE`];
+
+  const q = input.query?.trim();
+  if (q) {
+    /* No tsvector on `notes`. A generated column and a GIN index are the
+       answer when this table is large enough to need one; at the sizes
+       here every join is on a primary key and the planner reads the table
+       either way. The tsquery half ranks and stems, the ILIKE half catches
+       the substring a slug or a part-word would miss. */
+    conditions.push(sql`(
+      to_tsvector('english', coalesce(n.title, '') || ' ' || n.body)
+        @@ websearch_to_tsquery('english', ${q})
+      OR n.title ILIKE ${'%' + q + '%'}
+      OR n.body ILIKE ${'%' + q + '%'}
+    )`);
+  }
+  if (input.kind) {
+    conditions.push(sql`n.kind = ${input.kind}`);
+  }
+  if (input.recipeSlug) {
+    /* Through any revision, not only the current one — see the note above.
+       A run of the recipe is NOT included: a note on a batch is about that
+       batch, and `experimentSlug` asks for those. */
+    conditions.push(
+      sql`COALESCE(rec.slug, rvr.slug, srv.slug) = ${input.recipeSlug}`,
+    );
+  }
+  if (input.ingredientSlug) {
+    conditions.push(sql`ing.slug = ${input.ingredientSlug}`);
+  }
+  if (input.experimentSlug) {
+    conditions.push(sql`exp.slug = ${input.experimentSlug}`);
+  }
+
+  const where = sql.join(conditions, sql` AND `);
+
+  /* A bare integer in ORDER BY is an ordinal position in Postgres, so the
+     no-query case drops the rank term rather than ordering by a constant.
+     The EXPRESSION is interpolated into ORDER BY, never the output alias:
+     `rank` is also a window-function name, and the house pattern in
+     `searchRecipes` sidesteps the question entirely. */
+  const rank = q
+    ? sql`ts_rank_cd(
+        to_tsvector('english', coalesce(n.title, '') || ' ' || n.body),
+        websearch_to_tsquery('english', ${q})
+      )`
+    : sql`0::float4`;
+  const ordering = q
+    ? sql`${rank} DESC, n.created_at DESC, n.position ASC, n.id ASC`
+    : sql`n.created_at DESC, n.position ASC, n.id ASC`;
+
+  /* Every table in this query is a `_live` view for the same reason
+     `searchExperiments` uses them: the import ban in `eslint.config.mjs`
+     reads imports and cannot see inside a template literal, so the filter
+     here is the view name. The child tables — `recipe_steps` and
+     `note_sources` — carry no flag of their own and reach the caller
+     through a live parent. */
+  const result = await db.execute<Record<string, unknown>>(sql`
+    SELECT n.id, n.kind, n.title, n.body, n.conditions, n.created_at,
+           n.recipe_id, n.revision_id, n.step_id, n.ingredient_id,
+           n.experiment_id,
+           rec.slug  AS recipe_slug,       rec.title  AS recipe_title,
+           rvr.slug  AS revision_recipe_slug,
+           rvr.title AS revision_recipe_title,
+           rv.revision_number AS revision_number,
+           srv.slug  AS step_recipe_slug,
+           srv.title AS step_recipe_title,
+           sr.revision_number AS step_revision_number,
+           ing.slug  AS ingredient_slug,   ing.name   AS ingredient_name,
+           exp.slug  AS experiment_slug,   exp.title  AS experiment_title,
+           (SELECT COUNT(*) FROM note_sources ns WHERE ns.note_id = n.id)
+             AS source_count,
+           ${rank} AS rank,
+           COUNT(*) OVER () AS total
+      FROM notes_live n
+      LEFT JOIN recipes_live rec ON rec.id = n.recipe_id
+      LEFT JOIN recipe_revisions_live rv ON rv.id = n.revision_id
+      LEFT JOIN recipes_live rvr ON rvr.id = rv.recipe_id
+      LEFT JOIN recipe_steps st ON st.id = n.step_id
+      LEFT JOIN recipe_revisions_live sr ON sr.id = st.revision_id
+      LEFT JOIN recipes_live srv ON srv.id = sr.recipe_id
+      LEFT JOIN ingredients_live ing ON ing.id = n.ingredient_id
+      LEFT JOIN experiments_live exp ON exp.id = n.experiment_id
+     WHERE ${where}
+     ORDER BY ${ordering}
+     LIMIT ${input.limit}
+    OFFSET ${input.offset}
+  `);
+
+  const rows = result.rows as unknown as Record<string, unknown>[];
+  const str = (value: unknown): string | null =>
+    value == null ? null : String(value);
+  const num = (value: unknown): number | null =>
+    value == null ? null : Number(value);
+
+  return {
+    total: rows.length > 0 ? Number(rows[0]!.total) : 0,
+    results: rows.map((row) => {
+      const body = String(row.body ?? '');
+      const attachedTo: NoteSearchResult['attachedTo'] = row.recipe_id
+        ? {
+            type: 'recipe',
+            slug: str(row.recipe_slug),
+            title: str(row.recipe_title),
+            revisionNumber: null,
+          }
+        : row.revision_id
+          ? {
+              type: 'revision',
+              slug: str(row.revision_recipe_slug),
+              title: str(row.revision_recipe_title),
+              revisionNumber: num(row.revision_number),
+            }
+          : row.step_id
+            ? {
+                type: 'step',
+                slug: str(row.step_recipe_slug),
+                title: str(row.step_recipe_title),
+                revisionNumber: num(row.step_revision_number),
+              }
+            : row.ingredient_id
+              ? {
+                  type: 'ingredient',
+                  slug: str(row.ingredient_slug),
+                  /* `ingredients` has no `title`; its name is the title. */
+                  title: str(row.ingredient_name),
+                  revisionNumber: null,
+                }
+              : {
+                  type: 'experiment',
+                  slug: str(row.experiment_slug),
+                  title: str(row.experiment_title),
+                  revisionNumber: null,
+                };
+
+      return {
+        id: String(row.id),
+        kind: String(row.kind),
+        title: str(row.title),
+        excerpt: body.slice(0, NOTE_EXCERPT_CHARS),
+        truncated: body.length > NOTE_EXCERPT_CHARS,
+        bodyLength: body.length,
+        conditions: (row.conditions as string[] | null) ?? [],
+        /* The only signal that an ingredient or a run note carries a
+           citation at all. */
+        sourceCount: Number(row.source_count ?? 0),
+        /* ISO, whichever driver answered. node-postgres parses a
+           timestamptz into a Date; Neon's serverless driver can hand back
+           the raw Postgres text. Returning whichever arrived would make
+           this field's format depend on where the app is deployed. */
+        createdAt: new Date(row.created_at as string | Date).toISOString(),
+        attachedTo,
+        rank: Number(row.rank ?? 0),
+      };
+    }),
   };
 }
 
@@ -1658,15 +2501,15 @@ export async function getExperiment(
  * instead.
  */
 const noteRecipeId = sql<string | null>`COALESCE(
-  ${notes.recipeId},
-  (SELECT r.id FROM recipes r
-     JOIN recipe_revisions rev ON rev.id = r.current_revision_id
-    WHERE rev.id = ${notes.revisionId}),
-  (SELECT r.id FROM recipes r
+  ${notesLive.recipeId},
+  (SELECT r.id FROM recipes_live r
+     JOIN recipe_revisions_live rev ON rev.id = r.current_revision_id
+    WHERE rev.id = ${notesLive.revisionId}),
+  (SELECT r.id FROM recipes_live r
      JOIN recipe_steps st ON st.revision_id = r.current_revision_id
-    WHERE st.id = ${notes.stepId}),
-  (SELECT ex.recipe_id FROM experiments ex
-    WHERE ex.id = ${notes.experimentId})
+    WHERE st.id = ${notesLive.stepId}),
+  (SELECT ex.recipe_id FROM experiments_live ex
+    WHERE ex.id = ${notesLive.experimentId})
 )`;
 
 /**
@@ -1684,15 +2527,15 @@ const noteRecipeId = sql<string | null>`COALESCE(
  */
 function noteBelongsToRecipe(recipeId: SQLWrapper | string) {
   return sql`(
-    ${notes.recipeId} = ${recipeId}
-    OR ${notes.revisionId} = (
-      SELECT r.current_revision_id FROM recipes r WHERE r.id = ${recipeId})
-    OR ${notes.stepId} IN (
+    ${notesLive.recipeId} = ${recipeId}
+    OR ${notesLive.revisionId} = (
+      SELECT r.current_revision_id FROM recipes_live r WHERE r.id = ${recipeId})
+    OR ${notesLive.stepId} IN (
       SELECT st.id FROM recipe_steps st
-        JOIN recipes r ON r.current_revision_id = st.revision_id
+        JOIN recipes_live r ON r.current_revision_id = st.revision_id
        WHERE r.id = ${recipeId})
-    OR ${notes.experimentId} IN (
-      SELECT ex.id FROM experiments ex WHERE ex.recipe_id = ${recipeId})
+    OR ${notesLive.experimentId} IN (
+      SELECT ex.id FROM experiments_live ex WHERE ex.recipe_id = ${recipeId})
   )`;
 }
 
@@ -1809,20 +2652,20 @@ export async function listScienceIndex(): Promise<ScienceIndexView> {
   const [noteRows, studyRows] = await Promise.all([
     db
       .select({
-        id: notes.id,
-        kind: notes.kind,
-        title: notes.title,
-        body: notes.body,
-        conditions: notes.conditions,
-        recipeSlug: recipes.slug,
-        recipeTitle: recipes.title,
+        id: notesLive.id,
+        kind: notesLive.kind,
+        title: notesLive.title,
+        body: notesLive.body,
+        conditions: notesLive.conditions,
+        recipeSlug: recipesLive.slug,
+        recipeTitle: recipesLive.title,
       })
-      .from(notes)
-      .innerJoin(recipes, eq(recipes.id, noteRecipeId))
+      .from(notesLive)
+      .innerJoin(recipesLive, eq(recipesLive.id, noteRecipeId))
       .where(
         and(
-          inArray(notes.kind, ['science', 'research']),
-          eq(recipes.status, 'active'),
+          inArray(notesLive.kind, ['science', 'research']),
+          eq(recipesLive.status, 'active'),
         ),
       )
       // Recipe first, then the note order — see `getRecipeBySlug`. The
@@ -1831,35 +2674,35 @@ export async function listScienceIndex(): Promise<ScienceIndexView> {
       // this order and a badge that reads M3 on one and M1 on the next names
       // two different things to a reader.
       .orderBy(
-        asc(recipes.title),
-        asc(notes.createdAt),
-        asc(notes.position),
-        asc(notes.id),
+        asc(recipesLive.title),
+        asc(notesLive.sortAt),
+        asc(notesLive.position),
+        asc(notesLive.id),
       ),
     db
       .select({
-        slug: recipes.slug,
-        title: recipes.title,
-        summary: recipes.summary,
-        kind: recipes.kind,
+        slug: recipesLive.slug,
+        title: recipesLive.title,
+        summary: recipesLive.summary,
+        kind: recipesLive.kind,
       })
-      .from(recipes)
+      .from(recipesLive)
       .where(
         and(
-          eq(recipes.status, 'active'),
+          eq(recipesLive.status, 'active'),
           or(
-            eq(recipes.kind, 'research'),
+            eq(recipesLive.kind, 'research'),
             // A preparation with a mechanism on it is a study too — the
             // demi-glace case the design draws. Listing only the research
             // recipes left `/science/demi-glace` answering with no card
             // anywhere that reaches it.
-            sql`EXISTS (SELECT 1 FROM ${notes}
-                  WHERE ${notes.kind} = 'science'
-                    AND ${noteBelongsToRecipe(recipes.id)})`,
+            sql`EXISTS (SELECT 1 FROM ${notesLive}
+                  WHERE ${notesLive.kind} = 'science'
+                    AND ${noteBelongsToRecipe(recipesLive.id)})`,
           ),
         ),
       )
-      .orderBy(asc(recipes.title)),
+      .orderBy(asc(recipesLive.title)),
   ]);
 
   const mechanisms: MechanismView[] = [];
@@ -1927,15 +2770,15 @@ export async function getScienceStudy(
 ): Promise<ScienceStudyView | null> {
   const found = await db
     .select({
-      id: recipes.id,
-      slug: recipes.slug,
-      title: recipes.title,
-      subtitle: recipes.subtitle,
-      summary: recipes.summary,
-      kind: recipes.kind,
+      id: recipesLive.id,
+      slug: recipesLive.slug,
+      title: recipesLive.title,
+      subtitle: recipesLive.subtitle,
+      summary: recipesLive.summary,
+      kind: recipesLive.kind,
     })
-    .from(recipes)
-    .where(eq(recipes.slug, recipeSlug))
+    .from(recipesLive)
+    .where(eq(recipesLive.slug, recipeSlug))
     .limit(1);
 
   const recipe = found[0];
@@ -1946,20 +2789,20 @@ export async function getScienceStudy(
   // required to carry sources where a science note is not.
   const noteRows = await db
     .select({
-      id: notes.id,
-      kind: notes.kind,
-      title: notes.title,
-      body: notes.body,
-      conditions: notes.conditions,
-      experimentId: notes.experimentId,
+      id: notesLive.id,
+      kind: notesLive.kind,
+      title: notesLive.title,
+      body: notesLive.body,
+      conditions: notesLive.conditions,
+      experimentId: notesLive.experimentId,
     })
-    .from(notes)
+    .from(notesLive)
     .where(noteBelongsToRecipe(recipe.id))
     // The note order — see `getRecipeBySlug`. This read spans four subjects
     // (the recipe, its current revision, its steps and its runs), which is
     // why `created_at` leads: it is what puts the groups in the order they
     // were written, and `position` orders inside each one.
-    .orderBy(asc(notes.createdAt), asc(notes.position), asc(notes.id));
+    .orderBy(asc(notesLive.sortAt), asc(notesLive.position), asc(notesLive.id));
 
   const mechanisms: MechanismView[] = noteRows
     .filter((row) => row.kind === 'science')
@@ -1985,7 +2828,7 @@ export async function getScienceStudy(
   // Wellington's one source hangs off a `warning`.
   const citedNotes = noteRows.filter((row) => row.experimentId === null);
 
-  const [sourceRows, appliedInRows] = await Promise.all([
+  const [sourceRows, appliedInRows, variantRows] = await Promise.all([
     citedNotes.length
       ? db
           .select({
@@ -2014,39 +2857,38 @@ export async function getScienceStudy(
           )
       : [],
     // "Applied in" is the recipes that lean on this study, and which edge
-    // says so depends on the kind. An *incoming* `references`,
-    // `derived_from` or `variant_of` means the other recipe was built on
-    // this one. An *outgoing* `component_of` means the same thing the other
-    // way round — "demi-glace is a component of the Wellington" is written
-    // from demi-glace, and it is the Wellington that applies demi-glace.
-    // Reading every incoming edge, as the first draft did, printed that one
+    // says so depends on the kind. An *incoming* `references` or
+    // `derived_from` means the other recipe was built on this one. An
+    // *outgoing* `component_of` means the same thing the other way round —
+    // "demi-glace is a component of the Wellington" is written from
+    // demi-glace, and it is the Wellington that applies demi-glace. Reading
+    // every incoming edge, as the first draft did, printed that one
     // backwards. `pairs_with` is an association in neither direction and is
-    // not an application, so it is left out.
+    // not an application, so it is left out. This is D-05's table, and it
+    // lost a row when `variant_of` left this table for a column of its own:
+    // a variation is still an application of the study it varies, and the
+    // query below it picks those up.
     db
       .select(recipeSummaryColumns)
       .from(recipeLinks)
       .innerJoin(
-        recipes,
+        recipesLive,
         or(
           and(
-            eq(recipes.id, recipeLinks.fromRecipeId),
+            eq(recipesLive.id, recipeLinks.fromRecipeId),
             eq(recipeLinks.toRecipeId, recipe.id),
-            inArray(recipeLinks.kind, [
-              'references',
-              'derived_from',
-              'variant_of',
-            ]),
+            inArray(recipeLinks.kind, ['references', 'derived_from']),
           ),
           and(
-            eq(recipes.id, recipeLinks.toRecipeId),
+            eq(recipesLive.id, recipeLinks.toRecipeId),
             eq(recipeLinks.fromRecipeId, recipe.id),
             eq(recipeLinks.kind, 'component_of'),
           ),
         ),
       )
       .leftJoin(
-        recipeRevisions,
-        eq(recipeRevisions.id, recipes.currentRevisionId),
+        recipeRevisionsLive,
+        eq(recipeRevisionsLive.id, recipesLive.currentRevisionId),
       )
       .where(
         or(
@@ -2054,7 +2896,21 @@ export async function getScienceStudy(
           eq(recipeLinks.fromRecipeId, recipe.id),
         ),
       )
-      .orderBy(asc(recipes.title)),
+      .orderBy(asc(recipesLive.title)),
+    // The variations of this study, which D-05's incoming `variant_of` row
+    // used to cover. A query of its own rather than a fourth arm of the `or`
+    // above, because that one reads `FROM recipe_links` — a variation that
+    // holds no link row at all would never reach the join, and a variation
+    // usually holds none.
+    db
+      .select(recipeSummaryColumns)
+      .from(recipesLive)
+      .leftJoin(
+        recipeRevisionsLive,
+        eq(recipeRevisionsLive.id, recipesLive.currentRevisionId),
+      )
+      .where(eq(recipesLive.variantOfId, recipe.id))
+      .orderBy(asc(recipesLive.title)),
   ]);
 
   // Note order first, then the order the sources were written in. Sort is
@@ -2086,10 +2942,15 @@ export async function getScienceStudy(
   // joined by more than one edge and the same recipe arrive twice. It would
   // read as a duplicate card, a duplicate React key and an inflated count.
   const appliedIn = [
-    ...new Map(appliedInRows.map((row) => [row.id, row])).values(),
-  ];
+    ...new Map(
+      [...appliedInRows, ...variantRows].map((row) => [row.id, row]),
+    ).values(),
+  ].sort((a, b) => a.title.localeCompare(b.title));
 
-  const appliedTerms = await attachTerms(appliedIn);
+  const [appliedTerms, appliedParents] = await Promise.all([
+    attachTerms(appliedIn),
+    attachVariantOf(appliedIn),
+  ]);
 
   return {
     slug: recipe.slug,
@@ -2100,7 +2961,7 @@ export async function getScienceStudy(
     mechanisms,
     citations,
     appliedIn: appliedIn.map((row) =>
-      toSummary(row, appliedTerms.get(row.id) ?? []),
+      toSummary(row, appliedTerms.get(row.id) ?? [], appliedParents),
     ),
   };
 }
@@ -2126,12 +2987,12 @@ export async function getStats(): Promise<{
     experiments: string;
   }>(sql`
     SELECT
-      (SELECT COUNT(*) FROM recipes WHERE status = 'active') AS recipes,
-      (SELECT COUNT(*) FROM recipe_revisions)                AS revisions,
-      (SELECT COUNT(*) FROM ingredients)                     AS ingredients,
-      (SELECT COUNT(*) FROM taxonomy_terms)                  AS terms,
-      (SELECT COUNT(*) FROM notes)                           AS notes,
-      (SELECT COUNT(*) FROM experiments)                     AS experiments
+      (SELECT COUNT(*) FROM recipes_live WHERE status = 'active') AS recipes,
+      (SELECT COUNT(*) FROM recipe_revisions_live)                AS revisions,
+      (SELECT COUNT(*) FROM ingredients_live)                     AS ingredients,
+      (SELECT COUNT(*) FROM taxonomy_terms_live)                  AS terms,
+      (SELECT COUNT(*) FROM notes_live)                           AS notes,
+      (SELECT COUNT(*) FROM experiments_live)                     AS experiments
   `);
 
   const row = statsResult.rows[0];
@@ -2143,6 +3004,68 @@ export async function getStats(): Promise<{
     notes: Number(row?.notes ?? 0),
     experiments: Number(row?.experiments ?? 0),
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Images
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface ImageView {
+  id: string;
+  /** Where the bytes are. Only `/images/[id]` uses it, to redirect. */
+  blobUrl: string;
+  mimeType: string;
+  alt: string;
+  caption: string | null;
+  width: number;
+  height: number;
+  bytes: number;
+  /** Smaller copies for `?w=`. Empty for a picture stored before them. */
+  renditions: ImageRendition[];
+}
+
+/**
+ * One stored picture, or null when there is no live row with that id.
+ *
+ * The only caller is the route handler at `/images/[id]`, and the `_live`
+ * view is the whole mechanism: a deleted image row makes that address 404,
+ * which makes every recipe, ingredient, tag, run and stored step that names
+ * it stop showing a picture at once — without a single one of those rows
+ * being rewritten. `src/db/schema.ts` § `images` is the argument for it.
+ *
+ * The id is not validated as a uuid here. It arrives from a URL segment, so
+ * anything can be in it; Postgres refuses a malformed uuid on the comparison
+ * and the handler turns that into the same 404 it would have given anyway.
+ */
+export async function getImage(id: string): Promise<ImageView | null> {
+  // A uuid comparison against a value that is not one raises `22P02` rather
+  // than matching nothing, and a 500 on a mistyped address is worse than a
+  // 404 on one. The shape check is cheap and keeps the failure honest.
+  if (
+    !/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
+      id,
+    )
+  ) {
+    return null;
+  }
+
+  const found = await db
+    .select({
+      id: imagesLive.id,
+      blobUrl: imagesLive.blobUrl,
+      mimeType: imagesLive.mimeType,
+      alt: imagesLive.alt,
+      caption: imagesLive.caption,
+      width: imagesLive.width,
+      height: imagesLive.height,
+      bytes: imagesLive.bytes,
+      renditions: imagesLive.renditions,
+    })
+    .from(imagesLive)
+    .where(eq(imagesLive.id, id))
+    .limit(1);
+
+  return found[0] ?? null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -2198,12 +3121,12 @@ export async function buildShoppingList(
 
   const recipeRows = await db
     .select({
-      slug: recipes.slug,
-      title: recipes.title,
-      revisionId: recipes.currentRevisionId,
+      slug: recipesLive.slug,
+      title: recipesLive.title,
+      revisionId: recipesLive.currentRevisionId,
     })
-    .from(recipes)
-    .where(inArray(recipes.slug, wanted));
+    .from(recipesLive)
+    .where(inArray(recipesLive.slug, wanted));
 
   const found = recipeRows.filter((r) => r.revisionId !== null);
   const missing = wanted.filter(
@@ -2227,16 +3150,23 @@ export async function buildShoppingList(
     .select({
       revisionId: recipeIngredients.revisionId,
       quantity: recipeIngredients.quantity,
+      // Read only so `unresolvedLineNeeds` can ask whether the stored
+      // `raw_text` already states a RANGE. The totals below sum `quantity`
+      // alone, as they always have.
+      quantityMax: recipeIngredients.quantityMax,
       unit: recipeIngredients.unit,
       optional: recipeIngredients.optional,
       rawText: recipeIngredients.rawText,
       preparation: recipeIngredients.preparation,
-      ingredientSlug: ingredients.slug,
-      ingredientName: ingredients.name,
-      ingredientCategory: ingredients.category,
+      ingredientSlug: ingredientsLive.slug,
+      ingredientName: ingredientsLive.name,
+      ingredientCategory: ingredientsLive.category,
     })
     .from(recipeIngredients)
-    .leftJoin(ingredients, eq(ingredients.id, recipeIngredients.ingredientId))
+    .leftJoin(
+      ingredientsLive,
+      eq(ingredientsLive.id, recipeIngredients.ingredientId),
+    )
     .where(
       inArray(
         recipeIngredients.revisionId,
@@ -2272,8 +3202,29 @@ export async function buildShoppingList(
     if (!source) continue;
 
     // Unresolved lines still belong on the list — they are things to buy —
-    // so they key on their own text rather than being dropped.
-    const name = line.ingredientName ?? line.rawText;
+    // so they key on their own text rather than being dropped. On the NAME
+    // the text has first had the measure it states taken off it: this list
+    // prints the amount in a column of its own, and a row reading `50 kg`
+    // beside `50–60 kg Crayfish, live` states the measure twice and gets it
+    // wrong the second time, because the amount is a sum across every recipe
+    // asked for and the raw text is one recipe's line. `unresolvedLineName`
+    // carries the reasoning; the line as each recipe wrote it survives
+    // verbatim in `from` below.
+    //
+    // `wording` is the other half and they are not the same string: the NAME
+    // is what to buy, the WORDING is what one recipe asked for, and `from`
+    // below prints the second verbatim. Taking the measure off that one too
+    // would lose the only place this row still says how much THIS recipe
+    // wanted.
+    const wording = line.ingredientName ?? line.rawText;
+    const name =
+      line.ingredientName ??
+      unresolvedLineName({
+        rawText: line.rawText,
+        quantity: line.quantity == null ? null : Number(line.quantity),
+        quantityMax: line.quantityMax == null ? null : Number(line.quantityMax),
+        unit: line.unit,
+      });
     const key = line.ingredientSlug ?? `raw:${name.trim().toLowerCase()}`;
 
     let entry = byIngredient.get(key);
@@ -2320,15 +3271,41 @@ export async function buildShoppingList(
       }
     }
 
+    // WHAT THIS RECIPE ASKED FOR, in its own words.
+    //
+    // The amount is restated only when the name came from the canonical
+    // ingredient. `raw_text` IS the line as it was written, amount and all,
+    // so prepending the measure to it reads `10 pod 10 pod Star anise`. The
+    // archive has no unresolved line, which is why that was never seen; soft
+    // delete makes the state reachable, because deleting an ingredient
+    // leaves every line that named it on its revision and the line degrades
+    // to its own text. `recipeToMarkdown` carries the same note.
+    //
+    // WHICH of the three the text already carries is asked of the text, not
+    // inferred from whether the ingredient resolved. A caller-supplied
+    // `rawText` is routinely the name alone, and dropping the measure there
+    // made this line disagree with the total above it, which still counts
+    // the amount. `unresolvedLineNeeds` carries the reasoning.
+    const needs = line.ingredientName
+      ? { measure: true, preparation: true, optional: true }
+      : unresolvedLineNeeds({
+          rawText: line.rawText,
+          quantity,
+          quantityMax:
+            line.quantityMax == null ? null : Number(line.quantityMax),
+          unit: line.unit,
+          preparation: line.preparation,
+          optional: line.optional,
+        });
     entry.from.push({
       slug: source.slug,
       title: source.title,
       text: formatIngredientLine({
-        quantity,
-        unit: line.unit,
-        name,
-        preparation: line.preparation,
-        optional: line.optional,
+        quantity: needs.measure ? quantity : null,
+        unit: needs.measure ? line.unit : null,
+        name: wording,
+        preparation: needs.preparation ? line.preparation : null,
+        optional: needs.optional && line.optional,
       }),
     });
   }

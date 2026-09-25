@@ -80,7 +80,7 @@ export default async function BatchLogsPage() {
           kicker="Index · Every run"
           title="Batch logs"
           ledeClassName="shell:max-w-190"
-          lede="Every run that has been cooked, newest at the foot. A run usually names the recipe it came from, but it does not have to: a trial is often logged before the recipe that describes it exists. Those runs live here and nowhere else."
+          lede="Every run that has been cooked, newest at the foot. A run does not have to name a recipe, and a run that names none is here and nowhere else."
         />
 
         {configured && !failed && logs.length > 0 ? (

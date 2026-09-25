@@ -23,52 +23,101 @@ import {
   addNoteShape,
   createRecipeSchema,
   createRecipeShape,
+  createVariantSchema,
+  createVariantShape,
+  deleteRecordSchema,
+  deleteRecordShape,
   describeMechanismSchema,
   describeMechanismShape,
+  listDeletedSchema,
+  listDeletedShape,
   logExperimentSchema,
   logExperimentShape,
+  reattachNoteSchema,
+  reattachNoteShape,
   reportIssueSchema,
   reportIssueShape,
+  restoreRecordSchema,
+  restoreRecordShape,
   reviseRecipeSchema,
   reviseRecipeShape,
   backfillRevisionSchema,
   backfillRevisionShape,
   buildShoppingListSchema,
   buildShoppingListShape,
+  searchNotesSchema,
+  searchNotesShape,
   searchRecipesSchema,
   searchRecipesShape,
+  updateNoteSchema,
+  updateNoteShape,
+  updateRecipeSchema,
+  updateRecipeShape,
+  updateRevisionSchema,
+  updateRevisionShape,
+  uploadImageSchema,
+  uploadImageShape,
+  requestImageUploadSchema,
+  requestImageUploadShape,
   CATEGORY_TYPES,
   upsertIngredientSchema,
   upsertIngredientShape,
   upsertCategorySchema,
   upsertCategoryShape,
   type CategoryType,
+  type DeletableKind,
 } from '@/lib/domain/schemas';
 import {
   buildShoppingList,
   getExperiment,
   getIngredient,
   getRecipeBySlug,
+  getRecipeIdentity,
   getStats,
   listExperiments,
   listIngredients,
   listCategories,
+  searchNotes,
   searchRecipes,
 } from '@/lib/queries/read';
+/**
+ * The one read module that sees deleted rows, imported by the one tool that
+ * shows them. `src/lib/queries/read.ts` cannot name a base table at all —
+ * `eslint.config.mjs` refuses the import — so the bin lives in its own file
+ * and reaches the registry from there.
+ */
+import { isDeletedRecipe, listDeleted } from '@/lib/queries/deleted';
 import {
   addMassFlow,
   addNote,
   ConflictError,
   createRecipe,
+  createVariant,
+  deleteRecord,
   describeMechanism,
   logExperiment,
   NotFoundError,
+  reattachNote,
+  restoreRecord,
   reviseRecipe,
   backfillRevision,
+  updateNote,
+  updateRecipe,
+  updateRevision,
   upsertIngredient,
   upsertCategory,
+  storeImage,
 } from '@/lib/queries/write';
 import type { WriteResult } from '@/lib/queries/write';
+import { decodeBase64, ImageRejected } from '@/lib/images/process';
+import {
+  BlobNotConfigured,
+  isConfigured as blobConfigured,
+} from '@/lib/images/blob';
+import { prepareImage, storeInput } from '@/lib/images/ingest';
+import { fetchRemoteImage } from '@/lib/images/fetch-remote';
+import { createImageUpload, UPLOAD_LINK_MINUTES } from '@/lib/queries/uploads';
+import { getPublicOriginFromHeaders } from '@/lib/mcp/origin';
 import { issueReportingConfigured, issueToken } from '@/lib/github/config';
 import { createGitHubIssues } from '@/lib/github/client';
 import { ReportFailedError, submitReport } from '@/lib/github/report';
@@ -79,6 +128,11 @@ import { hasScope, WRITE_SCOPE } from '@/lib/mcp/scopes';
 
 interface AuthCtx {
   authInfo?: AuthInfo;
+  /**
+   * The HTTP request the call arrived on. Read by `request_image_upload`
+   * only, to write the link on the host the connector actually reached.
+   */
+  requestInfo?: { headers?: Record<string, string | string[] | undefined> };
 }
 
 interface Principal {
@@ -164,6 +218,38 @@ function followUpMessage(headline: string, result: WriteResult): string {
   return parts.join(' ');
 }
 
+/**
+ * The word a person reads for one of the six deletable kinds.
+ *
+ * The enum says `revision` and `experiment`; every sentence this connector
+ * writes says "version" and "run", because that is the vocabulary of the
+ * guide, the site and the other tool descriptions. Nothing is lost by writing
+ * the readable word in the prose: the structured `kind` sits beside it in the
+ * same result, and `restore_record` takes the enum value from there.
+ */
+const KIND_WORDS: Record<DeletableKind, readonly [string, string]> = {
+  recipe: ['recipe', 'recipes'],
+  revision: ['version', 'versions'],
+  note: ['note', 'notes'],
+  experiment: ['run', 'runs'],
+  ingredient: ['ingredient', 'ingredients'],
+  tag: ['tag', 'tags'],
+  image: ['image', 'images'],
+};
+
+/** "1 version, 3 notes and 2 runs", or null when the list is empty. */
+function countsInWords(
+  entries: { kind: DeletableKind; count: number }[],
+): string | null {
+  const parts = entries.map(({ kind, count }) => {
+    const [one, many] = KIND_WORDS[kind];
+    return `${count} ${count === 1 ? one : many}`;
+  });
+  if (parts.length === 0) return null;
+  if (parts.length === 1) return parts[0]!;
+  return `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)!}`;
+}
+
 function ok(payload: unknown) {
   return {
     content: [
@@ -230,6 +316,14 @@ async function runTool<T>(
       err instanceof ConflictError ||
       err instanceof ScopeError ||
       err instanceof ReportFailedError ||
+      // A picture that is too big, is not a picture, or is a type this
+      // store does not take is a fact the caller can act on — it can send a
+      // smaller one. And a deployment with no blob store configured is a
+      // NORMAL state on a developer's machine and in CI, not a fault: the
+      // message says what to do instead. Both would otherwise read as "An
+      // internal error occurred", which tells an agent nothing.
+      err instanceof ImageRejected ||
+      err instanceof BlobNotConfigured ||
       err instanceof z.ZodError;
     if (err instanceof z.ZodError) {
       return fail(`Invalid input:\n${z.prettifyError(err)}`);
@@ -255,6 +349,18 @@ function warnIssueReportingIsOff(): void {
   );
 }
 
+/** The same notice for `upload_image`, and the same once-per-process rule. */
+let warnedImageUploadIsOff = false;
+
+function warnImageUploadIsOff(): void {
+  if (warnedImageUploadIsOff) return;
+  warnedImageUploadIsOff = true;
+  console.warn(
+    '[mcp] BLOB_READ_WRITE_TOKEN is not set — upload_image and ' +
+      'request_image_upload are not registered.',
+  );
+}
+
 /**
  * The tool name as the audit row may hold it: redacted, then cut.
  *
@@ -268,6 +374,21 @@ function auditToolName(raw: unknown): string | undefined {
   if (typeof raw !== 'string') return undefined;
   return redact(raw).text.slice(0, 64);
 }
+
+/**
+ * The writing rule, appended to every tool that stores text a cook reads.
+ *
+ * It is one constant and not seven copies, because seven copies drift and
+ * the rule is the same rule everywhere. The long version is `howToWrite` in
+ * `src/lib/mcp/guide.ts`; this is the reminder at the point of the call,
+ * for an agent that never read the guide. AGENTS.md § Words and writing
+ * style states it for the humans.
+ */
+const PLAIN_ENGLISH =
+  '\n\nWrite the text in simple technical English (ASD STE): short ' +
+  'sentences, one idea in each, active voice, and the same word for the ' +
+  'same thing. Write a step as an instruction to the cook. A cook reads ' +
+  'this, often while cooking. Call get_started for the full rule.';
 
 export function registerTools(server: McpServer): void {
   // ───────────────────────────────────────────────────────────────────────
@@ -330,7 +451,12 @@ export function registerTools(server: McpServer): void {
         'related recipes, recorded experiments, and the list of every revision ' +
         'with the rationale for each. Read the rationales before revising — ' +
         'they say what has already been tried and rejected. Pass ' +
-        'revisionNumber to read a superseded version.',
+        'revisionNumber to read a superseded version.\n\n' +
+        '`variantFamily` is the variations of this dish: the one it came ' +
+        'from, the ones beside it, and the ones below it, in the order they ' +
+        'are shown. It is empty when this dish has no family. Read it ' +
+        'before adding a variation — the one you are about to write may ' +
+        'already be there.',
       inputSchema: {
         slug: z.string().min(1).max(120),
         revisionNumber: z
@@ -344,8 +470,35 @@ export function registerTools(server: McpServer): void {
     async (args, extra) =>
       runTool(extra as AuthCtx, 'get_recipe', { slug: args.slug }, async () => {
         const recipe = await getRecipeBySlug(args.slug, args.revisionNumber);
-        if (!recipe)
+        if (!recipe) {
+          // A numbered read of a LIVE recipe misses when that one version is
+          // deleted, and `getRecipeBySlug` cannot tell the two apart — it
+          // returns null either way. Saying the recipe does not exist would
+          // be false, and it is the one answer that stops a model looking.
+          if (args.revisionNumber && (await getRecipeIdentity(args.slug))) {
+            throw new NotFoundError(
+              `Recipe "${args.slug}" has no revision ${args.revisionNumber} ` +
+                'that can be read. Call list_deleted to see whether it was ' +
+                'deleted, or get_recipe without revisionNumber for the ' +
+                'current version.',
+            );
+          }
+          // The same answer one level up. A deleted RECIPE also returns null
+          // from `getRecipeBySlug`, and `No recipe with slug "x"` is the one
+          // sentence that stops a model looking — it reads as "this never
+          // existed" for a record that is sitting in the bin with a reason
+          // written on it, one call from coming back. The refusal for a
+          // deleted VERSION has named `list_deleted` since it was written;
+          // these two are the same event at two scales and now say so.
+          if (await isDeletedRecipe(args.slug)) {
+            throw new NotFoundError(
+              `Recipe "${args.slug}" is deleted, so there is nothing to ` +
+                'read. Call list_deleted to see the bin, or restore_record ' +
+                `{ kind: "recipe", slug: "${args.slug}" } to bring it back.`,
+            );
+          }
           throw new NotFoundError(`No recipe with slug "${args.slug}".`);
+        }
         return recipe;
       }),
   );
@@ -426,7 +579,9 @@ export function registerTools(server: McpServer): void {
       description:
         'Recorded runs — an actual batch that was cooked, with its ' +
         'measurements. Distinct from a recipe: the recipe is the intent, an ' +
-        'experiment is what happened when it met reality.',
+        'experiment is what happened when it met reality.\n\n' +
+        'The website calls these batch logs. Every run is listed at ' +
+        '/batch-logs.',
       inputSchema: {},
     },
     async (_args, extra) =>
@@ -443,7 +598,11 @@ export function registerTools(server: McpServer): void {
         'One recorded run with every per-item observation (weights, dates, ' +
         'costs), its outcome, and the recipe revision it was cooking. Use it ' +
         'when a revision needs to be justified by measured results rather ' +
-        'than by taste memory.',
+        'than by taste memory.\n\n' +
+        'The website calls this a batch log. One run is at ' +
+        '/batch-logs/<slug>. A run that names a recipe is also at ' +
+        '/recipes/<recipe>/batch-logs/<slug>. The address /batch-logs/<slug> ' +
+        'always answers.',
       inputSchema: { slug: z.string().min(1).max(120) },
     },
     async (args, extra) =>
@@ -455,6 +614,45 @@ export function registerTools(server: McpServer): void {
           const found = await getExperiment(args.slug);
           if (!found) throw new NotFoundError(`No experiment "${args.slug}".`);
           return found;
+        },
+      ),
+  );
+
+  server.registerTool(
+    'search_notes',
+    {
+      title: 'Search notes',
+      description:
+        'Find what the repository already knows. A note can hang off a ' +
+        'recipe, a version of a recipe, a step, an ingredient or a run, so ' +
+        'reading one record shows you only the notes on that record. This ' +
+        'searches all of them at once.\n\n' +
+        'Call it before add_note. A near-copy of a note that is already ' +
+        'here cannot be told apart from the original later, and nothing ' +
+        'removes either one.\n\n' +
+        'Free text matches the title and the body. Leave `query` out to ' +
+        'list notes, newest first. Use `kind` on its own to read a class of ' +
+        'note across the whole store: every warning, or every science note.' +
+        '\n\n' +
+        'Each result names the record it is attached to, so you can fetch ' +
+        'the whole thing with get_recipe, get_ingredient or get_experiment. ' +
+        '`recipeSlug` covers every version of that recipe, not only the ' +
+        'current one. It does not cover runs of it; ask for those with ' +
+        '`experimentSlug`.\n\n' +
+        'A body is cut to an excerpt. `truncated` says whether it was, and ' +
+        '`bodyLength` says how long the whole body is. `sourceCount` says ' +
+        'how many sources the note cites. The `id` on a result is the one ' +
+        'describe_mechanism asks for.',
+      inputSchema: searchNotesShape,
+    },
+    async (args, extra) =>
+      runTool(
+        extra as AuthCtx,
+        'search_notes',
+        { query: args.query, kind: args.kind },
+        async () => {
+          const input = searchNotesSchema.parse(args);
+          return searchNotes(input);
         },
       ),
   );
@@ -503,6 +701,44 @@ export function registerTools(server: McpServer): void {
       ),
   );
 
+  /**
+   * The bin, and the only read in the registry that reports a row the site
+   * does not show.
+   *
+   * IT IS IN THE READ SCOPE, deliberately. A caller that can delete can
+   * already see what it deleted in the delete's own result; the value of this
+   * tool is to the caller that arrives afterwards and has to find out what is
+   * missing and why. The read scope already grants archived recipes, and
+   * `ALLOWED_EMAILS` means one administrator approves every connector — so
+   * the rows are not hidden from a different audience, they are hidden from
+   * the public site. Putting the bin behind write would mean a read-only
+   * agent could see that a recipe is absent and never learn that it is
+   * recoverable.
+   */
+  server.registerTool(
+    'list_deleted',
+    {
+      title: 'What is in the bin',
+      description:
+        'List the records that are deleted. Each row gives the kind, a name ' +
+        'that you can read, the date, who deleted it, and the reason.\n\n' +
+        'Each row also gives the arguments for restore_record, ready to ' +
+        'send. A row that must wait names the record to restore first.\n\n' +
+        'Give `kind` to see one kind only.',
+      inputSchema: listDeletedShape,
+    },
+    async (args, extra) =>
+      runTool(
+        extra as AuthCtx,
+        'list_deleted',
+        { kind: args.kind },
+        async () => {
+          const input = listDeletedSchema.parse(args);
+          return listDeleted(input);
+        },
+      ),
+  );
+
   // ───────────────────────────────────────────────────────────────────────
   // Write
   // ───────────────────────────────────────────────────────────────────────
@@ -517,6 +753,10 @@ export function registerTools(server: McpServer): void {
         'this repository is that a recipe improves across revisions rather ' +
         'than being re-derived each time. Creating a duplicate loses the ' +
         'history that makes the original useful.\n\n' +
+        'If this dish is a version of a stored one that went a different ' +
+        'way — the same dish with shiitake instead of pork — it is a ' +
+        'variation. Call create_variant. It keeps the two as siblings and ' +
+        'leaves the original exactly as people read it.\n\n' +
         'Everything except the title is optional. Set `kind` to ' +
         '"preparation" for a part another recipe pulls in (a spice ' +
         'dredge, a demi-glace), "process" for a technique with no fixed ' +
@@ -534,7 +774,8 @@ export function registerTools(server: McpServer): void {
         'figure shows what the food weighs at each stage. Most dishes do ' +
         'not need it.\n\n' +
         'Give `conditions` to a science note in `notes`. Conditions are ' +
-        'the values the note holds under, such as a temperature and a time.',
+        'the values the note holds under, such as a temperature and a time.' +
+        PLAIN_ENGLISH,
       inputSchema: createRecipeShape,
     },
     async (args, extra) =>
@@ -556,14 +797,64 @@ export function registerTools(server: McpServer): void {
   );
 
   server.registerTool(
+    'create_variant',
+    {
+      title: 'Create a variation of a recipe',
+      description:
+        'Create a recipe that is a VARIATION of one already stored. Dan dan ' +
+        'noodles with shiitake instead of pork is a variation of dan dan ' +
+        'noodles.\n\n' +
+        'A variation is not a revision. A revision is the same dish made ' +
+        'better, and it becomes the version people read. A variation is the ' +
+        'same dish taken a different way, and it changes nothing about the ' +
+        'dish it came from: that recipe keeps its page, its versions and ' +
+        'its name.\n\n' +
+        'Ask which one you have:\n' +
+        '- The dish got better. Call revise_recipe.\n' +
+        '- The dish went a different way. Call create_variant.\n' +
+        '- The dish is fine and the record is wrong. Call update_recipe.\n\n' +
+        'The new recipe gets its own address, its own versions and its own ' +
+        'batch logs. It can be revised, and it can have variations of its ' +
+        'own. Every variation of one dish is a sibling of the others, and ' +
+        'the recipe page shows the whole family.\n\n' +
+        'Nothing carries over from the recipe it varies. Send the whole ' +
+        'ingredient list and the whole method, the way create_recipe takes ' +
+        'them. Give `variantNote` one line for what makes this one ' +
+        'different: "With shiitake instead of pork".' +
+        PLAIN_ENGLISH,
+      inputSchema: createVariantShape,
+    },
+    async (args, extra) =>
+      runTool(
+        extra as AuthCtx,
+        'create_variant',
+        { slug: args.slug, title: args.title, variantOf: args.variantOf },
+        async (principal) => {
+          requireWrite(principal);
+          const input = createVariantSchema.parse(args);
+          const result = await createVariant(input, 'mcp');
+          return {
+            ...result,
+            url: `/recipes/${result.slug}`,
+            variantOf: input.variantOf,
+            message: followUpMessage(
+              `Created as a variation of "${input.variantOf}". That recipe ` +
+                'is unchanged.',
+              result,
+            ),
+          };
+        },
+      ),
+  );
+
+  server.registerTool(
     'revise_recipe',
     {
       title: 'Revise a recipe',
       description:
         'Append a revision to an existing recipe. This is the tool to reach ' +
-        'for whenever a recipe changes — ingredients and steps are never ' +
-        'edited in place, so a revision costs nothing and preserves what ' +
-        'came before.\n\n' +
+        'for whenever the dish changes. A revision costs nothing and the ' +
+        'version it supersedes stays readable.\n\n' +
         'Omitted fields carry forward from the current revision, so changing ' +
         'one spice ratio means sending `slug`, `rationale` and `ingredients` ' +
         'only. `ingredients`, `steps` and `categories` each replace their ' +
@@ -592,7 +883,24 @@ export function registerTools(server: McpServer): void {
         '`massFlow` does NOT carry forward. Ingredients and steps say what a ' +
         'cook intends, so an unchanged intent stays true. A mass flow says ' +
         'what one batch weighed. Send it again only when you weighed this ' +
-        'version. To give a stored version its figure, call add_mass_flow.',
+        'version. To give a stored version its figure, call add_mass_flow.\n\n' +
+        /*
+         * THE ONE PARAGRAPH THAT DECIDES BETWEEN TWO TOOLS, and it is in both
+         * descriptions in the same words. An agent that reaches for
+         * update_revision when it means this tool overwrites the version a
+         * person cooked from and loses the history this repository exists to
+         * keep. The question is put first because a model picks a tool from
+         * the top of a description far more often than from the bottom of
+         * one, and the answer is a fact about the food rather than about the
+         * database — which is the only thing the caller reliably knows.
+         */
+        'Use this tool when the dish changed. It adds a new version and ' +
+        'moves the recipe to it. The old version stays and people can still ' +
+        'read it.\n\n' +
+        'If the dish did not change, and the record is wrong, call ' +
+        'update_revision. It corrects the stored version. It makes no new ' +
+        'version and it moves no number.' +
+        PLAIN_ENGLISH,
       inputSchema: reviseRecipeShape,
     },
     async (args, extra) =>
@@ -641,7 +949,8 @@ export function registerTools(server: McpServer): void {
         'a version recorded years late is only worth having with its source.\n\n' +
         'Send `massFlow` only if you know what that batch weighed at each ' +
         'stage. Do not copy the figure from a later version. That would ' +
-        'record a measurement that nobody took.',
+        'record a measurement that nobody took.' +
+        PLAIN_ENGLISH,
       inputSchema: backfillRevisionShape,
     },
     async (args, extra) =>
@@ -678,9 +987,13 @@ export function registerTools(server: McpServer): void {
         'barrier, not a flavour layer" is science.\n' +
         '- `research` is what was learned around it afterwards: ' +
         'alternatives, hacks, sourcing, background. "Where to buy crayfish ' +
-        'in Berlin" is research. Give `sources` where you have them. Each ' +
+        'in Berlin" is research. A `research` note must carry at least one ' +
+        'source, because research is the kind that records where something ' +
+        'came from. With nothing to cite it is an `observation` or an ' +
+        '`idea` instead. Each ' +
         'source needs a `url`, a `title` or a `citation`. One of the three ' +
-        'is enough. An `accessedAt` on its own is not a source.\n\n' +
+        'is enough. An `accessedAt` on its own is not a source. The other ' +
+        'kinds may carry sources; none of them has to.\n\n' +
         'The rest: `observation` for what was noticed, `result` for how it ' +
         'turned out, `substitution` for what was swapped and why, `warning` ' +
         'for a trap worth flagging, `idea` for something untried, ' +
@@ -691,7 +1004,8 @@ export function registerTools(server: McpServer): void {
         'when the mechanism holds under set values: a temperature, a time, ' +
         'a depth. Write each condition as a separate value. Do not write ' +
         'them into a sentence. To add conditions to a note that is already ' +
-        'stored, call describe_mechanism.',
+        'stored, call describe_mechanism.' +
+        PLAIN_ENGLISH,
       inputSchema: addNoteShape,
     },
     async (args, extra) =>
@@ -713,20 +1027,39 @@ export function registerTools(server: McpServer): void {
   );
 
   /**
-   * The two tools below reach a record that is already stored. Every other
+   * The three tools below reach a record that is already stored. Every other
    * write tool either makes a new record or appends one, because that is the
-   * whole shape of this repository — so these two need their reason written
-   * down beside them.
+   * whole shape of this repository — so these three need their reason
+   * written down beside them.
    *
-   * Each fills a field that could not exist when the record was written.
-   * D-02 added `notes.conditions` and D-12 added the mass flow tables, and
-   * every recipe and every science note in the archive predates both. No
-   * other path reaches them: `pnpm ingest` skips a recipe that exists, and a
-   * revision whose only change is a diagram has no reason to exist and would
-   * move a number that is in URLs and in the ticked-ingredient keys.
+   * The first two fill a field that could not exist when the record was
+   * written. D-02 added `notes.conditions` and D-12 added the mass flow
+   * tables, and every recipe and every science note in the archive predates
+   * both. No other path reaches them: `pnpm ingest` skips a recipe that
+   * exists, and a revision whose only change is a diagram has no reason to
+   * exist and would move a number that is in URLs and in the
+   * ticked-ingredient keys. Neither is an edit. Both refuse a second write,
+   * so a value goes from absent to present exactly once and can never be
+   * quietly replaced.
    *
-   * Neither is an edit. Both refuse a second write, so a value goes from
-   * absent to present exactly once and can never be quietly replaced.
+   * The third, `reattach_note`, is a different shape and is D-13. It changes
+   * no field a reader reads: the note's kind, title, body, conditions,
+   * sources and date all stay exactly as they were, and only which record
+   * the note hangs off changes. A note's text being fixed does not make its
+   * location fixed — the choice of parent is usually forced by what happens
+   * to exist yet, and a note written against a batch because the recipe did
+   * not exist was stranded there for good. The move is recorded on the note
+   * rather than performed silently.
+   *
+   * NEITHER IS AN EDIT, AND THAT PROMISE IS NOW LOCAL TO THEM. Both still
+   * refuse a second write, so a value goes from absent to present exactly
+   * once and neither of these two tools can quietly replace a measurement —
+   * which is the whole reason they are shaped this way. What changed is that
+   * the repository now has a general correction path: `update_revision`
+   * replaces a stored figure and `update_note` replaces a stored set of
+   * conditions. So the refusals here no longer say "this cannot be changed",
+   * which was true when they were written and would now be a lie in the one
+   * place a model has no way to check. They name the tool that does it.
    */
   server.registerTool(
     'add_mass_flow',
@@ -757,7 +1090,8 @@ export function registerTools(server: McpServer): void {
         'and the last stage do not have to share a unit.\n\n' +
         'A version takes one figure. The tool refuses a second one. The ' +
         'numbers record a batch that a person weighed. To record a ' +
-        'different batch, call revise_recipe and send `massFlow` with it.',
+        'different batch, call revise_recipe and send `massFlow` with it. ' +
+        'To correct a figure that is wrong, call update_revision.',
       inputSchema: addMassFlowShape,
     },
     async (args, extra) =>
@@ -775,7 +1109,8 @@ export function registerTools(server: McpServer): void {
             message:
               `Added the mass flow figure to revision ${result.revisionNumber}. ` +
               'The current revision did not move. A revision takes one ' +
-              'figure, so this one cannot be changed.',
+              'figure, so this tool refuses a second one. To correct this ' +
+              'figure, call update_revision.',
           };
         },
       ),
@@ -798,8 +1133,8 @@ export function registerTools(server: McpServer): void {
         'get_recipe gives the id of each note on a recipe. Use that id ' +
         'here.\n\n' +
         'A note states its conditions once. The tool refuses a second set. ' +
-        'If the conditions are wrong, call add_note with the kind ' +
-        '"correction" and say what is wrong.\n\n' +
+        'To correct them, call update_note. To leave the old claim readable, ' +
+        'call add_note with the kind "correction" and say what is wrong.\n\n' +
         'When you write a new note, send `conditions` to add_note instead. ' +
         'This tool is for a note that was written before.',
       inputSchema: describeMechanismShape,
@@ -819,7 +1154,58 @@ export function registerTools(server: McpServer): void {
             message:
               `The mechanism now states ${count} ` +
               `${count === 1 ? 'condition' : 'conditions'}. ` +
-              'They cannot be changed.',
+              'This tool refuses a second set. To correct them, call ' +
+              'update_note.',
+          };
+        },
+      ),
+  );
+
+  server.registerTool(
+    'reattach_note',
+    {
+      title: 'Move a note to another record',
+      description:
+        'Move a note from the record it is on to a different one. Give the ' +
+        'note id and exactly one of `recipeSlug`, `ingredientSlug` or ' +
+        '`experimentSlug`.\n\n' +
+        'The note does not change. Its kind, its title, its text, its ' +
+        'conditions, its sources and its date all stay as they are. Only ' +
+        'the record it hangs off changes.\n\n' +
+        'Use it when a note went somewhere because its real subject did ' +
+        'not exist yet. A note about a dish often goes on a run, because ' +
+        'the recipe is not written. When you write the recipe, move the ' +
+        'note to it. Do not write the note a second time. Two copies of ' +
+        'one note drift apart and nothing can tell them apart later.\n\n' +
+        'The store keeps each record the note was on before. A reader can ' +
+        'see that the note was written somewhere else first.\n\n' +
+        'A note on one version of a recipe cannot be moved. That note says ' +
+        'something about that version. Write the note again where it ' +
+        'belongs.\n\n' +
+        'get_recipe, get_ingredient and get_experiment give the id of ' +
+        'every note they return. So does search_notes. A moved note takes ' +
+        'the last place in the list of its new record.',
+      inputSchema: reattachNoteShape,
+    },
+    async (args, extra) =>
+      runTool(
+        extra as AuthCtx,
+        'reattach_note',
+        {
+          noteId: args.noteId,
+          recipeSlug: args.recipeSlug,
+          ingredientSlug: args.ingredientSlug,
+          experimentSlug: args.experimentSlug,
+        },
+        async (principal) => {
+          requireWrite(principal);
+          const input = reattachNoteSchema.parse(args);
+          const result = await reattachNote(input);
+          return {
+            ...result,
+            message:
+              `The note moved from ${result.from} to ${result.to}. Its ` +
+              'text did not change. The store keeps where it was before.',
           };
         },
       ),
@@ -860,7 +1246,8 @@ export function registerTools(server: McpServer): void {
         'name here that is not an ingredient makes a new ingredient record. ' +
         'Call list_ingredients first, and use the name that is there.\n\n' +
         '`densityGPerMl` lets you compare a volume in one recipe with grams ' +
-        'in another.',
+        'in another.' +
+        PLAIN_ENGLISH,
       inputSchema: upsertIngredientShape,
     },
     async (args, extra) =>
@@ -913,7 +1300,8 @@ export function registerTools(server: McpServer): void {
         'names is an accident. To keep such a word as the label a reader ' +
         'sees, send your own `slug` beside it.\n\n' +
         'Use this after creating a recipe that introduced new tags, so the ' +
-        'repository does not accumulate bare, unexplained labels.',
+        'repository does not accumulate bare, unexplained labels.' +
+        PLAIN_ENGLISH,
       inputSchema: upsertCategoryShape,
     },
     async (args, extra) =>
@@ -955,7 +1343,11 @@ export function registerTools(server: McpServer): void {
         'that version, so a later call that names the same recipe again does ' +
         'not move the run onto the newest version. Send `revisionNumber` ' +
         'only to correct it, and always with `recipeSlug`. Send ' +
-        '`recipeSlug: null` to unlink the run from every recipe.',
+        '`recipeSlug: null` to unlink the run from every recipe.\n\n' +
+        'After you write the run it is on /batch-logs at once. The website ' +
+        'calls a run a batch log. A run with no `recipeSlug` keeps its own ' +
+        'address at /batch-logs/<slug>.' +
+        PLAIN_ENGLISH,
       inputSchema: logExperimentShape,
     },
     async (args, extra) =>
@@ -970,6 +1362,566 @@ export function registerTools(server: McpServer): void {
         },
       ),
   );
+
+  // ───────────────────────────────────────────────────────────────────────
+  // Correcting a record
+  //
+  // Three tools, not six. `log_experiment`, `upsert_ingredient` and
+  // `upsert_category` are already the update path for their own records —
+  // each one merges the keys the caller sent onto the stored row — so a
+  // second tool for those three would be two tools writing one row under two
+  // different merge rules.
+  //
+  // TYPED, ONE PER RECORD, WHERE DELETE AND RESTORE ARE GENERIC. Delete and
+  // restore take a kind and an address, which is genuinely uniform. An update
+  // carries a body, and a generic `update(kind, id, patch)` would have to
+  // take that body as an opaque object — which throws away
+  // `src/lib/domain/schemas.ts`, where the raw SHAPE is the advertised JSON
+  // Schema and the assembled SCHEMA enforces it, so the signature a model
+  // reads and the contract the server keeps cannot drift.
+  // ───────────────────────────────────────────────────────────────────────
+
+  server.registerTool(
+    'update_recipe',
+    {
+      title: 'Correct a recipe',
+      description:
+        'Correct the record of a recipe. This tool changes the name, the ' +
+        'summary, the tags, the links, the kind and the status. It touches ' +
+        'no version and it makes no version.\n\n' +
+        'Use revise_recipe when the dish changed. Use this tool when the ' +
+        'record is wrong: a typo in the title, a summary that says the ' +
+        'wrong thing, a tag that does not belong.\n\n' +
+        'You cannot change the slug. The slug is the public address of the ' +
+        'recipe.\n\n' +
+        '`categories` and `links` each replace the whole list. Call ' +
+        'get_recipe first. Then send back each one that you want to keep.\n\n' +
+        '`variantOf` says which recipe this one is a variation of. It is ' +
+        'not a list and it is not replaced by accident: leave it out and ' +
+        'nothing changes. Send a slug to move this recipe into that ' +
+        'family. Send null to make it a dish of its own again. Use it to ' +
+        'correct a wrong parent — to CREATE a variation, call ' +
+        'create_variant.\n\n' +
+        '`currentRevisionNumber` moves the recipe to another stored ' +
+        'version. People then read that version. Every version stays.',
+      inputSchema: updateRecipeShape,
+    },
+    async (args, extra) =>
+      runTool(
+        extra as AuthCtx,
+        'update_recipe',
+        { slug: args.slug },
+        async (principal) => {
+          requireWrite(principal);
+          const input = updateRecipeSchema.parse(args);
+          const result = await updateRecipe(input);
+          return {
+            ...result,
+            url: `/recipes/${result.slug}`,
+            // The same follow-up text `create_recipe` gets, for the same
+            // reason: `categories` replaces the whole list and names what it
+            // creates, so a correction can mint a bare tag exactly as a
+            // creation can, and it owes the same description.
+            message: followUpMessage('Corrected.', result),
+          };
+        },
+      ),
+  );
+
+  server.registerTool(
+    'update_revision',
+    {
+      title: 'Correct a version',
+      description:
+        'Correct a version that is already stored. This tool changes the ' +
+        'version in place. It makes no new version. It moves no number.\n\n' +
+        'Ask one question first: did the food change, or is the record ' +
+        'wrong? If the food changed, call revise_recipe. It adds a new ' +
+        'version and keeps the old one. If the record is wrong, call this ' +
+        'tool. Use it for a typo, for an amount that nobody cooked, or for ' +
+        'a version that two chats wrote twice.\n\n' +
+        '`ingredients`, `steps` and `massFlow` each replace the whole list. ' +
+        'A list that you leave out stays as it is. Send `steps` with ' +
+        '`ingredients` when you change a line that a step names. Send ' +
+        '`massFlow` as null to remove the figure.\n\n' +
+        '`occurredAt` says when this version existed. The history is ' +
+        'ordered by it, so the history re-orders.\n\n' +
+        'You do not need to give a reason.',
+      inputSchema: updateRevisionShape,
+    },
+    async (args, extra) =>
+      runTool(
+        extra as AuthCtx,
+        'update_revision',
+        { slug: args.slug, revisionNumber: args.revisionNumber },
+        async (principal) => {
+          requireWrite(principal);
+          const input = updateRevisionSchema.parse(args);
+          const result = await updateRevision(input);
+          return {
+            ...result,
+            url: `/recipes/${result.slug}/revisions/${result.revisionNumber}`,
+            message: followUpMessage(
+              `Corrected revision ${result.revisionNumber}. No version was ` +
+                'made and no number moved.',
+              result,
+            ),
+          };
+        },
+      ),
+  );
+
+  server.registerTool(
+    'update_note',
+    {
+      title: 'Correct a note',
+      description:
+        'Correct a note that is already stored. This tool changes the kind, ' +
+        'the title, the body, the conditions and the sources. It can also ' +
+        'move the note to another recipe, version, ingredient or run.\n\n' +
+        '`conditions` and `sources` each replace the whole list. Send an ' +
+        'empty list to clear one.\n\n' +
+        'Add a note of kind "correction" when you want the old claim to ' +
+        'stay readable. Use this tool when the note itself is wrong: a ' +
+        'typo, a wrong number, the wrong recipe.\n\n' +
+        'get_recipe gives the id of each note on a recipe. Use that id ' +
+        'here.\n\n' +
+        'You do not need to give a reason.',
+      inputSchema: updateNoteShape,
+    },
+    async (args, extra) =>
+      runTool(
+        extra as AuthCtx,
+        'update_note',
+        { noteId: args.noteId },
+        async (principal) => {
+          requireWrite(principal);
+          const input = updateNoteSchema.parse(args);
+          const result = await updateNote(input);
+          return { ...result, message: 'Corrected.' };
+        },
+      ),
+  );
+
+  // ───────────────────────────────────────────────────────────────────────
+  // Delete and restore
+  //
+  // TWO TOOLS FOR SEVEN KINDS, AND NOT FOURTEEN. The argument list of a
+  // delete is a kind and an address, which is the same for every record — so
+  // a pair per kind would be fourteen definitions of roughly a hundred
+  // tokens each, about fifteen hundred tokens on every `tools/list` in every
+  // conversation, forever, to carry a distinction the `kind` argument
+  // already carries. The enum is in the schema the model reads beside the
+  // name, so the seven legal values are as visible as seven registry entries
+  // would be, and strictly more visible for the question "what can I
+  // delete?", which is one enum instead of a scan of the whole list.
+  //
+  // `image` is the seventh, and issue #54 asked for a `delete_image` tool
+  // instead. This is that tool: the picture stops being visible everywhere
+  // at once and `restore_record` brings it back. A separate verb would have
+  // needed a `restore_image` beside it, and then two answers to "how do I
+  // get it back" — which is the mistake AGENTS.md § "It is not called
+  // archive" spends a table avoiding.
+  //
+  // The counter-argument is blast radius: `delete_record` is easier to call
+  // by accident than `delete_tag`. It is bounded by construction. Every
+  // delete is soft, the result names everything that went with it,
+  // `list_deleted` shows the bin, and `restore_record` takes the same
+  // arguments back.
+  //
+  // THE NAMES ARE NOT `delete` AND `restore`. Every tool in this registry is
+  // verb_noun, and a bare `delete` is the single most likely name in this
+  // surface to collide with another connector in a session that has several.
+  // ───────────────────────────────────────────────────────────────────────
+
+  server.registerTool(
+    'delete_record',
+    {
+      title: 'Delete a record',
+      description:
+        'Delete one record. The record stops being visible: the site does ' +
+        'not show it and the read tools do not return it. It is not ' +
+        'destroyed. Call restore_record to bring it back.\n\n' +
+        'ONE ADDRESS IS NOT COVERED, and it is not a fault. A recipe that ' +
+        'came from the frozen Markdown archive is also served at ' +
+        '/archive/<path>, which reads the file off disk and never the ' +
+        'database. Deleting the record does not change that page. To take ' +
+        'the archived text down, remove the file.\n\n' +
+        'Name the kind, then say which record. Use `id` for any kind. Use ' +
+        '`slug` for a recipe, a run or an ingredient. Use `slug` with ' +
+        '`revisionNumber` for a version. Use `slug` with `categoryType` for ' +
+        'a tag. A note and an image have only an `id`.\n\n' +
+        'Deleting an image takes it off every record that shows it, at ' +
+        'once — a recipe, a step, an ingredient, a tag and a run can all ' +
+        'name the same picture. Nothing else changes, and no version is ' +
+        'rewritten. A restore brings all of them back.\n\n' +
+        'Some records take others with them. A recipe takes its versions, ' +
+        'its notes and its runs. A version takes its notes. A run takes its ' +
+        'notes. The result names what went with it, and one restore brings ' +
+        'back the same set.\n\n' +
+        'Give a `reason`. The bin shows it. It is the only thing that tells ' +
+        'the next reader why the record went.\n\n' +
+        'Delete a duplicate. Delete a record that somebody wrote by ' +
+        'mistake. Do not delete a version because the dish changed: call ' +
+        'revise_recipe for that.',
+      inputSchema: deleteRecordShape,
+    },
+    async (args, extra) =>
+      runTool(
+        extra as AuthCtx,
+        'delete_record',
+        // The audit rule holds: identifying primitives only. `reason` is
+        // free-form text the caller wrote, so it is not logged here — it is
+        // stored on the row itself, which is where the bin reads it.
+        {
+          kind: args.kind,
+          id: args.id,
+          slug: args.slug,
+          revisionNumber: args.revisionNumber,
+          categoryType: args.categoryType,
+        },
+        async (principal) => {
+          requireWrite(principal);
+          const input = deleteRecordSchema.parse(args);
+          const { reason, ...address } = input;
+          const result = await deleteRecord(address, {
+            reason,
+            // The one new thing the write layer learns. `deleted_by` is
+            // denormalised on purpose: the bin prints it beside the date and
+            // the reason, and `mcp_audit_log` cannot be asked for it — that
+            // write is fire-and-forget, nothing reads the table, and it
+            // records tool CALLS rather than the state of a row.
+            actor: principal.userId,
+          });
+          const went = countsInWords(result.cascaded);
+          return {
+            ...result,
+            message: [
+              `Deleted ${result.handle}. It is not destroyed: the site does`,
+              'not show it and the read tools do not return it.',
+              ...(went ? [`${went} went with it.`] : []),
+              'Call restore_record with the same arguments to bring back the',
+              'same set.',
+            ].join(' '),
+          };
+        },
+      ),
+  );
+
+  server.registerTool(
+    'restore_record',
+    {
+      title: 'Restore a record',
+      description:
+        'Bring back a record that is deleted. It becomes visible again. ' +
+        'Name the record the same way you name it in delete_record.\n\n' +
+        'A restore brings back the set that one delete removed. It does not ' +
+        'bring back a record that somebody deleted on its own before that. ' +
+        'Call list_deleted to see what is still in the bin.\n\n' +
+        'You cannot restore a record while the record it belongs to is ' +
+        'still deleted. The refusal names what to restore first.',
+      inputSchema: restoreRecordShape,
+    },
+    async (args, extra) =>
+      runTool(
+        extra as AuthCtx,
+        'restore_record',
+        {
+          kind: args.kind,
+          id: args.id,
+          slug: args.slug,
+          revisionNumber: args.revisionNumber,
+          categoryType: args.categoryType,
+        },
+        async (principal) => {
+          requireWrite(principal);
+          const input = restoreRecordSchema.parse(args);
+          const result = await restoreRecord(input, {
+            actor: principal.userId,
+          });
+          const back = countsInWords(result.restored);
+          return {
+            ...result,
+            message: [
+              `Restored ${result.handle}. It is visible again.`,
+              ...(back ? [`${back} came back with it.`] : []),
+              // Only for a version, and it is the one part of a restore that
+              // surprises a caller: deleting the current version moved the
+              // recipe to the newest survivor, and bringing it back does not
+              // move the recipe on to it again. The version returns to the
+              // history; what people read is a separate decision, and
+              // somebody has to state it.
+              ...(result.kind === 'revision'
+                ? [
+                    'A restore does not decide which version people read.',
+                    'Call update_recipe with `currentRevisionNumber` to move',
+                    'the recipe to this version.',
+                  ]
+                : []),
+            ].join(' '),
+          };
+        },
+      ),
+  );
+
+  // ───────────────────────────────────────────────────────────────────────
+  // Putting a picture in
+  // ───────────────────────────────────────────────────────────────────────
+
+  /**
+   * Issue #54, and the tool that closes the one gap an agent could not work
+   * around.
+   *
+   * Every image field in this connector took a web address, and nothing in
+   * the connector could make one. An agent that had just been sent a
+   * photograph of a finished dish held BYTES. It had no address for them and
+   * no way to mint one, so `heroImageUrl` was reachable in theory and
+   * unreachable in practice: the person had to leave the conversation, host
+   * the file somewhere, and come back with a link. Most pictures therefore
+   * never got added.
+   *
+   * REGISTERED ONLY WHEN THE BLOB STORE EXISTS, exactly as `report_issue` is
+   * registered only with a GitHub token, and for the same reason. The token
+   * is set in Production and Preview; a developer's machine and CI have
+   * none. A tool that is advertised and cannot work is worse than a tool
+   * that is absent, because an agent calls it, fails, and cannot tell a
+   * misconfiguration from a fault in its own arguments. `registerTools` runs
+   * per request inside a `force-dynamic` route, so this reads the live
+   * environment.
+   */
+  if (blobConfigured()) {
+    server.registerTool(
+      'upload_image',
+      {
+        title: 'Upload an image',
+        description:
+          'Put a picture into this repository and get back the address ' +
+          'every image field takes.\n\n' +
+          'FOR A PHOTOGRAPH THE PERSON HAS, DO NOT USE THIS TOOL. Call ' +
+          'request_image_upload. It gives you a link; the person opens it ' +
+          'and picks the file, at full size. You cannot send a photograph ' +
+          'here: `data` is base64 that you write one character at a time, ' +
+          'and a phone photograph is millions of characters.\n\n' +
+          'Use this tool for two things:\n' +
+          '- `sourceUrl`: an https address of a picture already on the ' +
+          'public web. The server fetches it. No bytes pass through you.\n' +
+          '- `data` with `mimeType`: a SMALL image, base64 encoded — one you ' +
+          'made yourself, or a thumbnail of a few kilobytes.\n\n' +
+          '`alt` is required. Write what the picture SHOWS, for a reader ' +
+          'who cannot see it: "Sliced biltong, dark red with a white fat ' +
+          'seam", not "a photo of biltong".\n\n' +
+          'The picture is resized and re-encoded. The longest edge becomes ' +
+          'at most 2400 pixels, the stored file is WebP, and smaller copies ' +
+          'are made for small screens.\n\n' +
+          'Give `attachTo` to put the picture on a record in the same ' +
+          'call. One record only:\n' +
+          '- `{ recipeSlug }` — the hero image of a recipe.\n' +
+          '- `{ recipeSlug, stepPosition }` — one step of the version ' +
+          'people read now. The first step is 1. get_recipe reports each ' +
+          "step's `position` counting from 0, so add 1 to it.\n" +
+          '- `{ ingredientSlug }` — a picture of the raw ingredient.\n' +
+          '- `{ experimentSlug }` — the hero image of a run.\n' +
+          '- `{ experimentSlug, gallery: true }` — added to the end of the ' +
+          "run's pictures. A run takes several.\n" +
+          '- `{ tagSlug, categoryType }` — a picture for a tag.\n\n' +
+          'Leave `attachTo` out to store the picture and attach it later. ' +
+          'The result carries the address; send it to update_recipe, ' +
+          'upsert_ingredient, upsert_category or log_experiment.\n\n' +
+          'A HERO IMAGE MAKES NO VERSION. It belongs to the recipe and not ' +
+          'to a version, so setting it is a correction and not a revision. ' +
+          'A STEP PICTURE IS INSIDE A VERSION. Writing one changes what ' +
+          'every reader of that stored version sees. That is allowed — ' +
+          'adding a photograph is not a statement that the food changed — ' +
+          'but it is a correction to a version somebody cooked from, so be ' +
+          'sure the picture is of that version.\n\n' +
+          'Sending the same picture twice returns the first one. The ' +
+          'result says `deduplicated: true`, and the alt text and the ' +
+          'caption are updated to what you sent.\n\n' +
+          'To take a picture down, call delete_record with kind "image" ' +
+          'and the id this returns. It stops being visible everywhere at ' +
+          'once, and restore_record brings it back. There is no ' +
+          'delete_image: this repository has one delete and it is soft.',
+        inputSchema: uploadImageShape,
+      },
+      async (args, extra) =>
+        runTool(
+          extra as AuthCtx,
+          'upload_image',
+          // The audit rule: identifying primitives only. `data` is the image
+          // itself and `alt` and `caption` are free-form text the caller
+          // wrote, so none of the three is logged. What is left says which
+          // record was touched, which is what the row is for.
+          {
+            mimeType: args.mimeType,
+            bytes: typeof args.data === 'string' ? args.data.length : 0,
+            // An address, not free text, and the one fact that says where
+            // a fetched picture came from.
+            sourceUrl:
+              typeof args.sourceUrl === 'string'
+                ? args.sourceUrl.slice(0, 300)
+                : undefined,
+            recipeSlug: args.attachTo?.recipeSlug,
+            stepPosition: args.attachTo?.stepPosition,
+            ingredientSlug: args.attachTo?.ingredientSlug,
+            experimentSlug: args.attachTo?.experimentSlug,
+            gallery: args.attachTo?.gallery,
+            tagSlug: args.attachTo?.tagSlug,
+            categoryType: args.attachTo?.categoryType,
+          },
+          async (principal) => {
+            requireWrite(principal);
+            const input = uploadImageSchema.parse(args);
+
+            // The schema has made sure exactly one of the two is here.
+            const prepared = input.sourceUrl
+              ? await prepareImage(
+                  await fetchRemoteImage(input.sourceUrl),
+                  null,
+                )
+              : await prepareImage(
+                  decodeBase64(input.data!),
+                  input.mimeType ?? null,
+                );
+
+            const result = await storeImage(
+              storeInput(prepared, {
+                alt: input.alt,
+                caption: input.caption,
+                attachTo: input.attachTo,
+              }),
+            );
+
+            return {
+              ...result,
+              message: [
+                result.deduplicated
+                  ? 'This picture was already stored, so it was not stored ' +
+                    'again. The address is the same one as before.'
+                  : `Stored. ${result.width}×${result.height}, ` +
+                    `${Math.round(result.bytes / 1024)} kB.`,
+                ...(prepared.resized
+                  ? [
+                      'It was made smaller to fit 2400 pixels on its longest edge.',
+                    ]
+                  : []),
+                result.attachedTo
+                  ? `It is now ${result.attachedTo}.`
+                  : `It is not on any record yet. Send url "${result.url}" to ` +
+                    'update_recipe, upsert_ingredient, upsert_category or ' +
+                    'log_experiment.',
+                `To take it down: delete_record { kind: "image", id: "${result.id}" }.`,
+              ].join(' '),
+            };
+          },
+        ),
+    );
+
+    /**
+     * Issues #56 and #58: the way a photograph gets in from a chat.
+     *
+     * `upload_image` needs the bytes in the tool call, and the model writes
+     * the tool call — so a photograph is millions of tokens, and the attempt
+     * fills the context window before it fails. This tool moves no bytes.
+     * It checks the record, writes a one-hour, one-picture link, and returns
+     * it. The person opens it on the phone that took the picture; the
+     * browser sends the original file straight to the blob store; the
+     * server shrinks it and puts it on the record. See `image_uploads` in
+     * `src/db/schema.ts`.
+     *
+     * Registered under the same condition as `upload_image`, because it
+     * needs the same blob store.
+     */
+    server.registerTool(
+      'request_image_upload',
+      {
+        title: 'Get a link to upload a photograph',
+        description:
+          'Get a link the person opens to upload a picture from their own ' +
+          'device, at full size. Use this for every photograph the person ' +
+          'has — one they sent you in the chat, or one on their phone. You ' +
+          'cannot send a photograph yourself: upload_image takes base64 ' +
+          'that you write one character at a time, and a photograph is ' +
+          'millions of characters. This tool sends no bytes. It gives you a ' +
+          'link of about a hundred characters.\n\n' +
+          'What to do:\n' +
+          '1. Call this tool with `attachTo`. Add `alt` if you have seen the ' +
+          'picture.\n' +
+          '2. Give the person the `link`. Tell them to open it on the ' +
+          'device that has the photograph and pick it.\n' +
+          '3. When they say it is done, call the read tool of that record ' +
+          '(get_recipe, get_ingredient, get_experiment or list_categories) ' +
+          'to see the picture.\n\n' +
+          'If YOU hold the file on disk and can run a shell, send it to ' +
+          '`putUrl` instead: an HTTP PUT with the file as the body, its type ' +
+          'in Content-Type, and `?alt=` when you gave no alt here. The body ' +
+          'limit there is 4.5 MB, so shrink a larger file to 2400 pixels on ' +
+          'its longest edge first. That loses nothing: 2400 is the largest ' +
+          'copy the store keeps.\n\n' +
+          '`attachTo` is required and names one record, as on upload_image. ' +
+          'It is checked now: a record that is not there, is deleted, or has ' +
+          'no such step is refused here, not after the person uploads.\n\n' +
+          'One link takes one picture, and it lasts one hour. For several ' +
+          "pictures — a run's gallery, say — ask for several links.\n\n" +
+          'The page asks the person for the alt text when you give none, ' +
+          'and shows yours for them to correct when you do.\n\n' +
+          'The picture is resized to at most 2400 pixels on its longest ' +
+          'edge and stored as WebP, with smaller copies for small screens. ' +
+          'The limit on the file is 25 MB.\n\n' +
+          'The same rules as upload_image hold for what the picture does: a ' +
+          'hero image makes no version; a step picture is a correction to ' +
+          'the version people read now.',
+        inputSchema: requestImageUploadShape,
+      },
+      async (args, extra) =>
+        runTool(
+          extra as AuthCtx,
+          'request_image_upload',
+          // Identifying primitives only, as for upload_image. The alt and
+          // the caption are free text; the token is a credential and is
+          // never in the arguments at all.
+          {
+            recipeSlug: args.attachTo?.recipeSlug,
+            stepPosition: args.attachTo?.stepPosition,
+            ingredientSlug: args.attachTo?.ingredientSlug,
+            experimentSlug: args.attachTo?.experimentSlug,
+            gallery: args.attachTo?.gallery,
+            tagSlug: args.attachTo?.tagSlug,
+            categoryType: args.attachTo?.categoryType,
+          },
+          async (principal) => {
+            requireWrite(principal);
+            const input = requestImageUploadSchema.parse(args);
+            const created = await createImageUpload({
+              userId: principal.userId,
+              clientId: principal.clientId,
+              alt: input.alt,
+              caption: input.caption,
+              attachTo: input.attachTo,
+            });
+            const origin = getPublicOriginFromHeaders(
+              (extra as AuthCtx).requestInfo?.headers,
+            );
+            const link = `${origin}/upload/${created.token}`;
+            return {
+              link,
+              // The same link for a caller with a shell and a file on disk.
+              // See `src/app/api/uploads/[token]/route.ts`.
+              putUrl: `${origin}/api/uploads/${created.token}`,
+              target: created.target,
+              expiresAt: created.expiresAt.toISOString(),
+              message:
+                `Give the person this link: ${link} — it puts one picture ` +
+                `on ${created.target}. They open it on the device that has ` +
+                'the photograph and pick the file. It lasts ' +
+                `${UPLOAD_LINK_MINUTES} minutes and takes one picture. When ` +
+                'they say it is done, read the record to see it.',
+            };
+          },
+        ),
+    );
+  } else {
+    warnImageUploadIsOff();
+  }
 
   // ───────────────────────────────────────────────────────────────────────
   // Reporting a fault
@@ -995,7 +1947,7 @@ export function registerTools(server: McpServer): void {
    * would file into a void and consider the problem reported.
    *
    * NO SCOPE CHECK, AND DELIBERATELY SO. Do not add `requireWrite` here.
-   * `noble-notations:write` means "may add and revise content in this
+   * `noble-notations:write` means "may change the content of this
    * repository"; this tool writes no row and reads none. Worse, gating on it
    * fails the use case: a read-only agent is exactly the one that meets a
    * read tool's bug, and the reports we most want would be the ones we could

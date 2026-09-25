@@ -8,20 +8,25 @@ Each entry says what I chose, why, and what to do to change it.
 The build is complete. This table is the state of each decision after M7.
 An entry that a later milestone settled says so in place.
 
-| ID   | Decision                                                | State after M7                                                                       |
-| ---- | ------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| D-01 | The address of a batch log with no recipe               | Built in M2. Two routes, one canonical address for each run.                         |
-| D-02 | The conditions on a mechanism block                     | Option A built in M5.5. M6 fixed the drawing and seeded 9 notes. **Met, and drawn.** |
-| D-03 | The old stylesheet stays until M7                       | **Done. M7 deleted the file, the layer and the bridge, and turned preflight on.**    |
-| D-04 | The rename reaches the page copy in M2                  | Built in M2.                                                                         |
-| D-05 | What "Applied in" means, and what counts as a study     | Built in M2. M6 seeded the 4 missing demi-glace mechanisms.                          |
-| D-06 | One file per design component, or one file per family   | Held for the whole build. 25 files carry 36 design names.                            |
-| D-07 | The page foot's left slot is a document issue           | Built in M3. M6 gave each screen its own effectivity through `src/app/@foot/`.       |
-| D-08 | An explanation on a tag requires a term page            | Built in M3. The unreachable shape is not representable.                             |
-| D-09 | The bridge carries colour, not the faces or the radius  | **Done. The bridge is gone. M7 deleted it with the stylesheet it fed.**              |
-| D-10 | The body link is an underline                           | Built in M4.                                                                         |
-| D-11 | A card summary is not cut at 160 characters             | Built in M4. C-05 of the specification is corrected in §20.7.                        |
-| D-12 | Three things the design draws that the data cannot fill | The figure is built. The other two stay out. **The 360 readout is still open.**      |
+| ID   | Decision                                                             | State after M7                                                                             |
+| ---- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| D-01 | The address of a batch log with no recipe                            | Built in M2. Two routes, one canonical address for each run.                               |
+| D-02 | The conditions on a mechanism block                                  | Option A built in M5.5. M6 fixed the drawing and seeded 9 notes. **Met, and drawn.**       |
+| D-03 | The old stylesheet stays until M7                                    | **Done. M7 deleted the file, the layer and the bridge, and turned preflight on.**          |
+| D-04 | The rename reaches the page copy in M2                               | Built in M2.                                                                               |
+| D-05 | What "Applied in" means, and what counts as a study                  | Built in M2. M6 seeded the 4 missing demi-glace mechanisms.                                |
+| D-06 | One file per design component, or one file per family                | Held for the whole build. 25 files carry 36 design names.                                  |
+| D-07 | The page foot's left slot is a document issue                        | Built in M3. M6 gave each screen its own effectivity through `src/app/@foot/`.             |
+| D-08 | An explanation on a tag requires a term page                         | Built in M3. The unreachable shape is not representable.                                   |
+| D-09 | The bridge carries colour, not the faces or the radius               | **Done. The bridge is gone. M7 deleted it with the stylesheet it fed.**                    |
+| D-10 | The body link is an underline                                        | Built in M4.                                                                               |
+| D-11 | A card summary is not cut at 160 characters                          | **Reversed after M7. The cut is back, on a sentence, in the data layer. C-05 stands.**     |
+| D-12 | Three things the design draws that the data cannot fill              | The figure is built. The other two stay out. **The 360 readout is still open.**            |
+| D-13 | A note's location is not covered by the immutability rule            | Built after M7. `reattach_note` moves a note; `notes.previous_subjects` keeps each move.   |
+| D-14 | The site does not explain itself, and neither does a recipe          | Built after M7. The home page's fifth band is gone; the connector states the writing rule. |
+| D-15 | Delete is soft, it is called delete, and the flag goes down the tree | Decided by the owner, built on `feat/crud`. Six tables, six views, one event id.           |
+| D-16 | The reader gets a theme control, and it has three states             | Asked for by the owner. Built in the page foot: system, light, dark. R-CON-08 is reversed. |
+| D-17 | A variation is a recipe, not a revision and not a link               | Asked for by the owner. `recipes.variant_of_id`, a Variations panel, and `create_variant`. |
 
 Two things are still open at the end of the build, and
 `design/BUILD-PLAN.md` §6 carries both:
@@ -582,8 +587,9 @@ Change `PROSE_LINK` in `src/components/f/button.tsx`. Both callers —
 
 ## D-11 — A card summary is not cut at 160 characters
 
-**Status:** Decided. **Worth your eye.**
-**Date:** 2026-09-09
+**Status:** **Reversed after M7 — the cut is back. The entry below is kept
+as written, and the reversal is the last section.**
+**Date:** 2026-09-09, reversed 2026-09-12
 **Touches:** C-05, §9.2, R-BLD-03
 
 ### The problem
@@ -617,6 +623,55 @@ Restore `truncate(text, 160)` in `src/components/recipe-card.tsx` and pass
 `summary={truncate(recipe.summary, 160)}`. Do not put it in
 `src/components/f/recipe-card.tsx`: that file is the drawing and holds no
 data rule.
+
+### Reversed — 2026-09-12
+
+It was changed, on the terms this entry set out.
+
+The decision above weighed a 160-character cut against summaries of 181 and
+245 characters, and at that length it is the wrong trade: the cut buys a few
+words and costs two of the design's own cards. The summaries the repository
+went on to store are not that length. They are multi-paragraph, and a card
+flattens them into one block: Gai Ob Hom Yai's is **1,028 characters**, four
+times the longest the design drew and around fourteen lines of body text in
+a 286px column, under a 26px title. A grid of three of those is a wall of
+prose with the titles lost in it, and the index stops being an index. That
+is a different case from the one decided, not a change of taste about the
+one that was.
+
+What the reversal keeps:
+
+- **The cut is on the data, not on the card.** `src/components/f/recipe-card.tsx`
+  is untouched. It still has no `line-clamp`, no `text-overflow` and no
+  `truncate`, still draws what it is given, and still wraps freely. This
+  entry named that as the condition and it holds.
+- **One length, everywhere a summary meets a card.** `cardSummary` in
+  `src/lib/site.ts`, used by `src/components/recipe-card.tsx`, the
+  `/cuisines/[slug]` list, the `/classes/[type]/[slug]` row and the related
+  cards on the recipe screen. `RecipeSummaryView.summary` itself is left
+  whole, because `/recipes` filters on it and the OG image takes its own
+  170-character cut.
+- **The design's own cards still draw whole.** Anything shorter than the
+  limit reaches the card untouched, and text that overruns it by less than a
+  line with no sentence to stop at is left whole too — an ellipsis is not
+  worth fourteen characters. The design's 181-character card is in that
+  band. Two of the ten stored summaries are as well.
+
+Measured over all ten stored summaries: six are already short enough and
+reach the card unchanged, four are cut, and exactly one of those needs an
+ellipsis.
+
+What it changes from C-05: the cut stops on a SENTENCE at or before 160
+characters rather than on the 160th character. A card that ends mid-clause
+reads as damaged, and these summaries are written as whole sentences — a
+sentence boundary is free and it is better. The ellipsis, which the design
+draws nowhere, is therefore drawn only when a first sentence alone overruns
+the card. Gai Ob Hom Yai's card now reads "Four chicken Marylands braise on
+1000 g of onions cooked to deep gold." and stops: 70 characters, two lines,
+no ellipsis.
+
+The recipe screen is unaffected — `recipe-detail.tsx` draws the summary
+whole, because there the summary is the thing you came for.
 
 ---
 
@@ -761,3 +816,548 @@ Two things look absent on the seeded site and are correct:
 - **The literature block** on Baumy Biltong. That recipe cites nothing.
   R-SCR-38 says the block is absent then. Demi-Glace cites four works and
   draws it.
+
+---
+
+## D-13 — A note's location is not covered by the immutability rule
+
+**Status:** Decided. **Built.**
+**Date:** 2026-09-11
+**Touches:** issue #23, `notes.previous_subjects`, `reattach_note`
+
+### The problem
+
+A note is bound to exactly one record — a recipe, one of its revisions, a
+step, an ingredient or a run — and that binding is chosen at write time and
+was permanent. There was no tool to move a note, and none to edit or delete
+one.
+
+An agent filed #23 after hitting the consequence. It wrote five notes about
+stock — diagnosing and fixing bitter stock, holding stock below the boil,
+oven versus hob control, small-batch scorching, roasting sequence — and
+attached them to the batch `mixed-bone-demi-glace-batch-1`, because no
+demi-glace recipe existed yet and it had no way to create one. Those notes
+belong on the recipe. When the recipe is written, they cannot follow it.
+
+The only repair available was to write fresh notes on the recipe pointing at
+the batch. That duplicates the content and splits one piece of knowledge
+across two records that will drift apart.
+
+### The argument against fixing it
+
+Append-only is the core value of this repository, and the instinct is that a
+note is append-only too: the answer to a wrong note is a `correction`, never
+a rewrite. A tool that reaches into a stored note looks like the beginning of
+the end of that rule.
+
+### Why it is decided the other way
+
+**A note's CONTENT being fixed and a note's LOCATION being fixed are two
+decisions, and only the first follows from the revision rule.** Moving a note
+changes nothing about what it says or when it was written. The rule
+`src/lib/queries/write.ts` actually states at the top of the file is that a
+recipe's ingredients and steps are never edited in place, and `/connect`
+already records that the wider claim — "nothing is ever deleted or edited in
+place" — was removed from the screen because it was never true of the
+connector: `upsert_ingredient` and `upsert_category` write over a stored
+label, and `describe_mechanism` fills a field on a stored note.
+
+**There is already a precedent for exactly this move.** `log_experiment`
+accepts a different `recipeSlug` on a later call and re-homes a stored run;
+the contract suite unlinks a run and relinks it. Notes were the only record
+type that could not be re-homed.
+
+**The choice of parent is usually forced, not chosen.** An agent attaches a
+note to whatever exists at the time. Punishing it permanently for the order
+in which records happened to be created is not immutability, it is an
+accident.
+
+### What is refused
+
+A note pinned to one revision cannot be moved, and neither can a note on a
+step. Such a note is a statement about that version. Moving it would make a
+stored version say something it never said, which is the revision rule
+itself. The caller is told to write the note again where it belongs.
+
+### Why the move is recorded
+
+`notes.previous_subjects` keeps every record the note has hung off, oldest
+first, as `recipe:<slug>` / `ingredient:<slug>` / `experiment:<slug>`.
+
+The audit log cannot hold this. `runTool` builds its audit row from the
+arguments the tool was CALLED with, so a row for a move names where the note
+went and never where it came from. Without the column, the fact that a note
+was written against a batch and later moved to a recipe exists nowhere — and
+losing that is the kind of quiet erasure this whole repository is built to
+refuse. The slug is stored rather than a foreign key on purpose: a record
+that is later deleted takes its row with it, and this column's job is to
+survive that.
+
+### Where a moved note sorts
+
+A move reassigns `notes.position`, because that column is an ordinal within
+one subject and the old value means nothing at the destination. That alone is
+not enough, and the first implementation of this decision got it wrong.
+
+`position` is only the TIEBREAK. The primary sort key for a subject's notes
+was `created_at`, and that worked because until this tool every note was read
+where it was written — its write time and its arrival at its subject were the
+same instant, so one column carried both meanings. A move separates them. The
+note keeps the date it was written, deliberately, since rewriting that would
+falsify when the claim was made; but it arrives at its new subject today.
+
+Sorting on `created_at`, a note written against a batch in 2024 and moved onto
+a recipe in 2026 therefore lands FIRST among that recipe's notes rather than
+last — the canonical case for this tool, inverted. Worse, `listScienceIndex`
+and `getScienceStudy` number a study's mechanisms `M1…Mn` by position in that
+list, so one moved science note renumbers every mechanism below it, including
+codes already published. That is the fault D-02 records, arriving by a new
+route. Measured against the seeded archive before the fix: the moved note came
+back at index 0 of 7.
+
+So `notes.sort_at` splits the two meanings. `created_at` says when the note
+was written and never changes; `sort_at` says where it sits and only a move
+changes it. It is backfilled to `created_at` in migration 0008, so no stored
+note reordered, no mechanism was renumbered, and `pnpm export` writes the same
+bytes for an unchanged database.
+
+---
+
+## D-14 — The site does not explain itself, and neither does a recipe
+
+**Status:** Decided. **Built.**
+**Date:** 2026-09-11
+**Touches:** §10.1 block 5, issue #21, `src/lib/mcp/guide.ts`, AGENTS.md § Words and writing style
+
+### The problem
+
+Two halves of one fault, reported together by the owner of the repository.
+
+**The screens explain the build.** Issue #21 took the worst of it off
+`/search` — the HTTP method, the query string the form produced, the count
+of fields to clear. What it did not touch was the home page's fifth band,
+HOW THIS WORKS: four columns teaching the revision model, the fourth of them
+telling a reader how an agent connects to the repository. That band is on
+the screen every reader lands on, and one card of it sells a connector to
+people who will never wire one up. The same habit ran through the ledes: a
+`/cuisines` lede ending "the name and the origin outlive any single
+revision", a `/list` lede explaining that the address holds the selection, a
+`/search` lede saying that a search is a link. None of it helps anyone cook.
+
+**The recipes read like prose.** Everything a reader sees on this site is
+written in ASD Simplified Technical English, and has been since M2 — except
+the recipes themselves, which are written by an agent through the connector
+and were governed by nothing at all. A model asked for a recipe writes food
+writing: a step carrying three actions, an amount given as "a good glug", a
+rationale that praises the dish. The reader is a cook, on a phone, mid-task,
+and not always a first-language English reader.
+
+### What I chose
+
+The band is gone, with the SCIENCE band's closing sentence, and each lede is
+cut back to what a reader can act on. The rule the four cards taught is not
+lost: the home lede states it in two sentences, every revision on a recipe
+carries its own reason next to it, and `/connect` — reachable from the foot
+of every screen and from nowhere louder, which `e2e/site.spec.ts` already
+pins — is where the connector is explained to the one person who sets it up.
+
+And the writing rule is now stated where a recipe is actually written: in
+the server instructions a client reads at connect time, in `howToWrite`
+behind `get_started`, and in `PLAIN_ENGLISH`, appended to the description of
+every write tool that stores prose. Three places, because an agent that
+skips the first two still reads the third.
+
+### The other option
+
+Keep the cards and rewrite them shorter. Rejected: the fault is not their
+length. A card that says "Agents read and write it" is addressed to somebody
+who is not reading the page, and no wording fixes that.
+
+Enforcing the writing rule in the schema was the other one. Rejected:
+sentence length is not something `src/lib/domain/schemas.ts` can refuse
+without refusing good text along with the bad, and a write that fails on
+prose style would cost an agent a recipe it had already worked out.
+
+### What this costs
+
+§10.1 of `design/FUNCTIONAL-SPEC.md` lists five blocks for `/` and the
+design draws all five, so this is a departure from both. BUILD-PLAN §2 makes
+the design the source of truth for how a screen READS, which is exactly what
+is overruled here — so it is recorded rather than quietly done, the same way
+D-07 settled the page foot's copy. §10.1 is annotated in place. Neither
+R-SCR-01 nor R-SCR-02 is touched: both are about blocks 2 to 4.
+
+### To change it
+
+Put `HOW_THIS_WORKS` back in `src/app/page.tsx` — it is four titles and four
+sentences in one `const` — and drop `howToWrite` from the guide. Nothing
+else depends on either.
+
+## D-15 — Delete is soft, it is called delete, and the flag goes down the tree
+
+**Status:** Decided by the repository owner. Built on `feat/crud`.
+**Date:** 2026-09-11
+**Touches:** AGENTS.md § _Delete is soft, and it is called delete_,
+`docs/mcp-connector.md` § _Delete, restore and the bin_, migration `0009`
+
+### The problem
+
+The connector could create and it could not correct. The rule was that
+nothing is deleted and nothing is edited in place, and that rule was
+defending the right thing at the wrong target: the purpose here is an
+**accurate history**, not an immutable record, and the two only agree while
+every row was written on purpose.
+
+They stop agreeing the moment two chats write the same revision, which is a
+thing that happens — this is a connector several conversations hold at once.
+The second row is not a version of the dish, because the dish did not change
+between them. It is a data-entry accident, and a rule that preserves it is
+protecting a mistake: the history then says a person cooked something twice
+when they cooked it once.
+
+### What I chose
+
+Full CRUD, and a delete that is **soft**. The row stays, it stops being
+visible, and `restore_record` brings it back. Four columns —`deleted_at`,
+`deleted_by`, `deleted_reason`, `deleted_event_id` — on the six tables that
+hold a record somebody can address: recipes, revisions, notes, experiments,
+ingredients and tags. Children and link tables carry no flag, because their
+lifetime is their parent's and every read reaches them through it.
+
+Three things follow, and each is the reason the design is shaped this way:
+
+1. **It is called delete, not archive.** Three things in this repository
+   already carry that word — the `/archive` route, `status: 'archived'` on a
+   recipe, and the frozen `content/` Markdown — and each means something
+   different. A fourth meaning makes all four unreadable. A caller says
+   delete; the row survives; restore brings it back.
+2. **One delete mints one event id and writes it to every row it touches.**
+   A restore clears by that id. Every UPDATE carries `deleted_at IS NULL`, so
+   a row deleted earlier on its own is skipped, keeps its own stamp, and is
+   not brought back by its parent's restore. The restore never has to know
+   the tree. The addressed row is also taken `FOR UPDATE`: two connectors
+   deleting one record under READ COMMITTED both read it live, and without
+   the lock the loser's event id landed on the root while the winner's stayed
+   on the children — a restore then brought back the root alone. Locking the
+   addressed row is not the whole of it: two calls deleting two DIFFERENT
+   revisions of one recipe disagree about a third row, `recipes`, so the
+   pointer is read under `FOR UPDATE` on that row too. The order is
+   **`recipes` last** for every writer but a delete or a restore addressing a
+   recipe, and those two take a per-recipe advisory lock before any row lock
+   so the one pair of opposite orders cannot interleave.
+3. **A delete does not renumber and does not leave a recipe versionless.**
+   Revision numbers are in public URLs and in the browser's ticked-ingredient
+   key, and renumbering does not 404 — it serves a _wrong_ page silently. So a
+   deleted number is retired and never reissued, and deleting the current
+   revision moves the pointer to the newest survivor by the order the history
+   already uses. Deleting the only revision is refused.
+
+The read side is three layers: six `*_live` views that `read.ts` selects from
+and nothing else; an ESLint import ban scoped to that file, because a helper
+can be left out and an import ban cannot; and a census in the end-to-end
+suite that calls every exported read and fails when a new one is not in its
+table. The write side is one rule — a write that names a deleted row **by its
+own key** restores it when the tool is an upsert and refuses when the tool
+appends or corrects.
+
+### The other option
+
+Two narrow tools instead: something like `withdraw_revision` and
+`merge_duplicate`, each doing one job and nothing else.
+
+It was offered and the owner turned it down, and the reasoning holds up: a
+narrow tool answers the accident that has already been seen and nothing else.
+Every record an agent can create is a record it can get wrong, and a
+connector that can write six kinds and correct two makes the other four
+permanent by omission. The bounded risk of the generic form is blast radius —
+`delete_record` is easier to call by accident than `delete_tag` would be — and
+that is bounded by construction rather than by hoping: every delete is soft,
+the result names every record that went with it, `list_deleted` is the bin,
+and one call puts it back.
+
+A **hard** delete was never a candidate. It frees a revision number for the
+next revise to take, and an old bookmark then points quietly at a different
+version.
+
+### To change it
+
+The flag is `deleted_at` on six tables in `src/db/schema.ts` and the views
+beside it; `deleteRecord` and `restoreRecord` in `src/lib/queries/write.ts`
+are the whole mechanism; `src/lib/queries/deleted.ts` is the bin. To take the
+tools away, unregister `delete_record`, `restore_record` and the three
+`update_*` tools in `src/lib/mcp/tools.ts` — the columns and the views can
+stay, and a site whose reads all go through the views does not notice.
+
+Do **not** make a delete hard without reading point 3 above first.
+
+## D-16 — The reader gets a theme control, and it has three states
+
+**Status:** Asked for by the repository owner. **Built.**
+**Date:** 2026-09-16
+**Touches:** R-CON-08 and Q-01 in `design/FUNCTIONAL-SPEC.md`, R-BLD-07 in
+`design/BUILD-PLAN.md`, §5 and §7 of `design/TOKEN-MAP.md`,
+`src/app/theme.css`, `src/components/f/theme-toggle.tsx`
+
+### The problem
+
+R-CON-08 said it plainly: _there is no theme control today. To add one is a
+product decision. Do not assume it._ Q-01 asked the question and the build
+answered no. The owner has now made that product decision and asked for the
+control, so the requirement is reversed rather than worked around.
+
+The reason the answer was no is still worth keeping. A control is a promise:
+once a reader can choose, the choice has to survive a reload, it has to beat
+the system preference, and it has to not flash the wrong theme on the way in.
+None of that is free, and none of it was worth paying for a preference the
+operating system already carries.
+
+### What I chose
+
+**Three states, not two: system, light, dark. System is the default.**
+
+A two-state switch cannot say "follow my machine". The first thing it does
+to a reader who never wanted a control is take that behaviour away: they
+click once to see the other theme and the site stops following their machine
+for good. Most readers should stay in the third state, so it is first in the
+row and it is what an untouched control reports.
+
+**"System" is the ABSENCE of `data-theme`, not `data-theme="system"`.** A
+reader who has never touched the control is already in that state. One state
+for "no choice" cannot then disagree with itself, and the server can render
+the same markup for a first-time reader and for one who has chosen to follow
+the system.
+
+**Each colour became one `light-dark()` declaration.** The palette was a
+dark block on `:root` and a light block inside
+`@media (prefers-color-scheme: light)`. That shape cannot carry a control: an
+explicit choice has to beat a media query, which means a third and a fourth
+copy of all fourteen values. A colour with four homes will be wrong in one of
+them. `light-dark()` reads the used value of `color-scheme`, `color-scheme`
+is inherited, so declaring the tokens on `:root` and switching `color-scheme`
+there switches the page — three rules, one line each.
+
+**The default behaviour did not change.** `color-scheme: light dark` follows
+the system, and Media Queries Level 5 resolves "no preference" to light —
+which is exactly what the media query did, for the same reason. A reader who
+never uses the control sees what they saw before.
+
+**Radio inputs, not buttons.** Three exclusive options is what a radio group
+is. The native inputs bring the whole keyboard contract, and the screen
+reader announces "Theme, radio group, Dark, 3 of 3". A row of `aria-pressed`
+buttons would be three tab stops and would read as three independent
+toggles. The inputs are `sr-only` and the labels carry the drawn mono words.
+
+**An inline script sets the attribute before the first paint.** R-STO-02
+makes a client component read storage in an effect, and an effect runs after
+the first paint — so a reader who chose dark on a light machine would see the
+light page flash first. The script in `src/app/layout.tsx` runs while the
+document is parsing. It costs `suppressHydrationWarning` on `<html>`, which
+is scoped to that element's own attributes.
+
+### What it cost the drawing
+
+The control is the fourth word in the foot's middle run, after
+`CONNECT · SOURCE · LLMS.TXT`. It is inside that run rather than beside it
+because the foot is `justify-between` with three children: the drawing puts
+the middle slot's centre at 673.3 in a 1280 box, and a fourth flex child
+would move that centre on every screen in the site. Inside the run the three
+slots are still three and only the middle one gets wider.
+
+It is last in the run because it is the only one of the four that is not a
+destination. A control in front of three links reads as a fourth link until
+somebody uses it.
+
+The designer owns where the control finally sits, and what the 360 foot
+should say now that it carries one. This build will not answer that by
+leaving the control out.
+
+### The one thing the control does not reach
+
+`src/app/icon.svg` is a separate document with its own
+`prefers-color-scheme` query and no access to this one's attributes, so the
+favicon follows the system even for a reader who has forced the other theme.
+The alternative is serving the icon from a route that reads a cookie, which
+is a request and a cache entry for sixteen pixels.
+
+### To change it
+
+`src/app/theme.css` § Colour holds the palette and the two `data-theme`
+rules; `src/components/f/theme-toggle.tsx` is the control;
+`src/app/layout.tsx` holds the pre-paint script. To take the control away,
+delete the component and its use in `src/components/f/page-foot.tsx` — the
+`light-dark()` palette stands on its own and the site goes back to following
+the system alone.
+
+---
+
+## D-17 — A variation is a recipe, not a revision and not a link
+
+**Status:** Asked for by the repository owner. **Built.**
+**Date:** 2026-09-17
+**Touches:** `recipes.variant_of_id` and `recipes.variant_note` in
+`src/db/schema.ts`, `drizzle/0010_recipe_variants.sql`, `variantFamily` in
+`src/lib/queries/read.ts`, `resolveVariantParent` and `VARIANT_GRAPH_LOCK`
+in `src/lib/queries/write.ts`, the `create_variant` tool, D-05's table, and
+the fifth panel of C-13
+
+### The problem
+
+Dan dan noodles with shiitake instead of pork. The store had two places to
+put that and both were wrong.
+
+**`revise_recipe` is the tool an agent reaches for, and it is the expensive
+mistake.** A revision is the same dish made better, and it moves
+`current_revision_id` — so the pork version stops being what people read.
+Nobody finds out until they open the page looking for it. The owner's own
+words for why this is not a revision: _it is not a revision where there is
+refinement of the same attempted thing._
+
+**`recipe_links.kind = 'variant_of'` said the sentence and could not hold
+it.** It was one of five editorial edges, rendered as a bullet in a Related
+list. Three things a variation needs, and an edge in that table gives none
+of them:
+
+1. **At most one parent.** `uq_recipe_link` is unique on (from, to, kind),
+   so nothing stopped a recipe holding two `variant_of` rows and belonging
+   to two families at once.
+2. **No cycles.** Nothing read those edges as a tree, so nothing had to
+   refuse A variant_of B variant_of A. As a tree it is a page that hangs.
+3. **Surviving a list rewrite.** `applyLinks` replaces a recipe's whole
+   link list and `get_recipe` hides an edge whose target is deleted, so a
+   caller sending back exactly what it was shown dropped its own parentage.
+   That is the bug the link tables' own comment in `AGENTS.md` records, with
+   a whole panel and a breadcrumb to lose rather than one bullet.
+
+### What I chose
+
+**A variation is a RECIPE.** Its own slug, its own revisions, its own batch
+logs, its own variations. What is new is one column saying where it came
+from: `recipes.variant_of_id`, with `recipes.variant_note` for the line that
+says what differs.
+
+**It is structural, so it is a column and not a row in a link table.** At
+most one parent is the column itself. No cycles is `assertNoVariantCycle`
+plus a `variant_not_self` CHECK. Surviving a rewrite is `update_recipe`
+touching the field only when it is named — absent means leave it alone, a
+slug moves the recipe into that family, `null` makes it a dish of its own
+again. The four remaining link kinds are editorial remarks about two
+finished dishes and keep their wholesale-replace contract, which is right
+for what they are.
+
+**`create_variant` is a tool of its own, because the tool name is the
+question.** The store already splits `revise_recipe` from `update_recipe` on
+a question about the food, and this is the third answer to the same
+question:
+
+| The dish                     | The tool         |
+| ---------------------------- | ---------------- |
+| got better                   | `revise_recipe`  |
+| went a different way         | `create_variant` |
+| is fine, the record is wrong | `update_recipe`  |
+
+**The panel shows the WHOLE family, from any member.** `variantFamily`
+climbs to the base dish and comes back down, so standing on "with shiitake"
+a reader sees the base, the sibling "with lamb" and the branch below. The
+owner's word for these was siblings, and a panel that showed one step in
+each direction would put a sibling two clicks away and would look different
+to every member of one family.
+
+**Nothing is carried forward into a variation.** The same rule
+`backfill_revision` has, for the same reason: inheriting the parent's
+ingredients would record a dish nobody cooked, and the part that differs is
+the whole reason the variation exists.
+
+### What a delete does to a family
+
+Nothing to the data and everything to the view. The column is not cleared
+and no child is touched, because a delete is soft and a restore has to put
+the family back exactly. `variantFamily` walks `recipes_live`, so a deleted
+recipe is not a node: the family breaks at the gap, the branch below becomes
+a family of its own, and `restore_record` rejoins them. That is the answer
+`recipe_terms` already gives for an edge to a deleted tag. A `draft` breaks
+the chain the same way and for the same reason — `draft` means hidden from
+listings and a panel on a public page is a listing — with one exception, the
+recipe whose page it is, so a draft variation can see its own family while
+it is being written.
+
+### The other option
+
+**Keep `variant_of` in `recipe_links`, add a partial unique index, and build
+the panel on top of it.** No data migration, no retired enum value, no
+second way of saying nothing. It was rejected on the third point above: the
+edge is invisible to `get_recipe` when its target is deleted and it is
+replaced wholesale by `update_recipe { links }`, so the parentage that the
+panel, the breadcrumb and every sibling depend on could be dropped by a
+caller doing exactly what the tool description tells it to do. An invariant
+that a correct caller can break by accident is not an invariant.
+
+### What it cost
+
+**A data migration that retires an enum value**, which means recreating the
+type — and the `USING kind::recipe_link_kind` cast fails on any surviving
+`variant_of` row, so the order in `drizzle/0010_recipe_variants.sql` is
+load-bearing: add the columns, move the rows, break any cycle the move
+creates, delete the rest, and only then recreate the type. The cycle sweep
+is the one-time cost of a table that never had to refuse a loop. Two `kind`
+values are dropped when a recipe held two, which cannot be avoided: one
+column holds one parent.
+
+**One more advisory lock.** `assertNoVariantCycle` is check-then-act across
+two rows and loses to itself the way `updateRecipe`'s pointer check did, and
+row locks cannot fix it because the rows that close the loop are not known
+until the walk has run. `VARIANT_GRAPH_LOCK` serialises parent changes,
+which are rare. The rule that keeps it from meeting `RECIPE_TREE_LOCK` is
+one line: a writer takes at most one advisory lock, and takes it first.
+
+**A fifth tab on C-13**, which the design draws as four — and the phone
+strip gets its scroller back to take it.
+
+Measured rather than assumed, and the measurement is why: at 320 the five
+tabs sit at their own label widths (66 + 46 + 46 + 54 + 60) and four 4px
+gaps, which is 288px inside a 288px content box. Exactly full. A flex item's
+`min-width` is `auto`, so a tab does not squish below its label — it holds
+its width and the strip overflows — and with the `overflow-visible` M7 left
+there, that overflow was the PAGE going sideways and the last tab simply
+gone. Five fit. Six would not, and neither would one longer word.
+
+So `overflow-x: auto` returns to the phone strip. M7's reason for removing
+it was that four `flex-1` tabs fit 328px with room to spare, so a scroller
+there would never scroll — true of four, and it stopped being true at five.
+`auto` paints nothing and scrolls nothing while the content fits, so four
+and five tabs are byte-for-byte what they were. It is not R-ACC-11's
+UNREACHABLE shape either, and that shape is not representable here: the
+check fires on a child stranded past the START edge at `scrollLeft` 0, which
+is what `justify-content: flex-end` did to the nav, and this row has no
+`justify-content` at all. **Never give it one.**
+
+It cost 8px of strip height. `overflow-x: auto` makes the row a clip box on
+both axes — a `visible` computes to `auto` when the other axis is not — and
+`FOCUS_RING` paints 4px outside a tab, so the ring was cut by exactly 4px
+top and bottom on every tab. `py-1` is that 4px and not a pixel more:
+measured at 360 in the overflow state, `py-0` clears the clip edge by −4px
+and `py-1` by 0px. The phone strip is 34px against the drawn 26px, and the
+designer owns the real answer now that the strip can scroll. A half-drawn
+focus ring is the worse of the two.
+
+Three tests in `e2e/recipe-layout.spec.ts` hold it: the strip scrolls and
+the page does not, the last tab is reachable and nothing is stranded at the
+start edge; a strip that fits still fills the width and does not scroll; and
+a focused tab keeps its whole ring inside the scroller. `pnpm audit:ui`
+reports 0 blockers and 0 major faults, and no finding on the strip.
+
+**D-05 lost a row and gained a query.** "Applied in" counted an incoming
+`variant_of` as an application of a study, and that edge no longer exists.
+A second query picks the variations up — a fourth arm of the existing `or`
+would not, because that one reads `FROM recipe_links` and a variation
+usually holds no link row at all.
+
+### To change it
+
+`src/db/schema.ts` at `recipes.variantOfId` carries the argument;
+`variantFamily` in `src/lib/queries/read.ts` is the walk and the one place
+the membership rule is written; `createVariantShape` in
+`src/lib/domain/schemas.ts` is the contract; the strip's scroller and the
+rule about `justify-*` are argued in `src/components/recipe-tabs.tsx`'s
+header. To take variations out, drop
+the two columns and the panel — the four editorial link kinds stand on
+their own, and `recipe_links` is where `variant_of` would go back.

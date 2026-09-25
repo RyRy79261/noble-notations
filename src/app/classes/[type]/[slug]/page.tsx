@@ -12,6 +12,7 @@ import { SectionHead } from '@/components/f/section-label';
 import { Stat } from '@/components/f/stat';
 import { DatabaseNotice } from '@/components/database-notice';
 import { TermHierarchy } from '@/components/term-hierarchy';
+import { RecordImage } from '@/components/record-image';
 import {
   getTerm,
   listCategories,
@@ -21,6 +22,7 @@ import {
 import { safeRead } from '@/lib/safe';
 import {
   CATEGORY_TYPE_LABELS,
+  cardSummary,
   cardinal,
   revisionOrdinal,
   roman,
@@ -157,6 +159,7 @@ function NarrowerRow({
 /** One recipe. `classes-cuisines-1280.html:2077`. */
 function RecipeRow({ recipe }: { recipe: RecipeSummaryView }) {
   const revision = revisionOrdinal(recipe.revisionNumber);
+  const summary = cardSummary(recipe.summary);
   /*
    * The design's meta run holds three values and no more:
    * `SOUTH AFRICAN · AIR-DRYING · SIXTH REVISION`
@@ -212,9 +215,13 @@ function RecipeRow({ recipe }: { recipe: RecipeSummaryView }) {
             {recipe.title}
           </Link>
         </h3>
-        {recipe.summary ? (
+        {/* The same cut the card takes, for the same reason and from the
+            same helper: this row is a list entry, not the recipe, and a
+            stored summary runs past a thousand characters. Point 3 of
+            `src/components/recipe-card.tsx` has the whole note. */}
+        {summary ? (
           <p className="m-0 w-full text-13 leading-170 font-sans tracking-flat text-ink-2 shell:text-14 shell:leading-170">
-            {recipe.summary}
+            {summary}
           </p>
         ) : null}
         {terms.length > 0 ? (
@@ -356,6 +363,18 @@ export default async function TermPage({ params }: Params) {
               lede={data.term.description ?? undefined}
               ledeClassName="shell:max-w-160"
             />
+
+            {/* Inside the hero column and not across the full width: the
+                statistics sit beside it at 1280, and a picture spanning both
+                would push them down a screen. A technique is often easier to
+                show than to say, which is what this is for. */}
+            {data.term.heroImageUrl ? (
+              <RecordImage
+                url={data.term.heroImageUrl}
+                alt={data.term.heroImageAlt ?? null}
+                className="mt-6 shell:max-w-160"
+              />
+            ) : null}
           </div>
 
           <div className="flex w-full shrink-0 flex-row gap-5 shell:w-50 shell:flex-col shell:gap-6 shell:pt-2">
@@ -396,7 +415,10 @@ export default async function TermPage({ params }: Params) {
         ) : null}
 
         <SectionHead
-          ordinal={roman(++section)}
+          /* `section + 1` and not `++section`: this is the last section on
+             the screen, so the increment wrote a value nothing reads. The
+             number drawn is the same one. */
+          ordinal={roman(section + 1)}
           title="Recipes using this tag"
           meta={cardinal(recipes.length)}
         />

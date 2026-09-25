@@ -388,3 +388,108 @@ test('the primary tag is the first tag of its type, whatever its label', async (
     SECONDARY_TAG,
   ]);
 });
+
+/**
+ * `searchNotes` is the fifth note ordering, and the only one that runs the
+ * other way.
+ *
+ * The five reads that return the notes of ONE subject order `created_at`,
+ * `position`, `id` ascending, because a reader goes through those in order.
+ * `searchNotes` crosses subjects to answer "what is here", which is the
+ * question `listRecipes` and `listExperiments` answer newest first — so it
+ * orders `created_at` DESC and keeps the other two ascending as tiebreaks.
+ *
+ * That makes it exactly the shape of change this file exists to catch: a
+ * direction that is deliberate in one query and a bug in five others, with
+ * nothing but a comment telling them apart. Both halves are pinned — which
+ * note comes first when the timestamps differ, and which comes first when
+ * they cannot.
+ */
+test.describe('search_notes puts the newest first, then falls back to position', () => {
+  const ORDER_RECIPE = 'order-notes-subject';
+  const WORD = 'quillon';
+
+  interface NoteHit {
+    id: string;
+    title: string | null;
+  }
+  interface NoteSearch {
+    results: NoteHit[];
+    total: number;
+  }
+
+  test('the newer of two notes comes back first', async () => {
+    const mcp = rw();
+
+    await mcp.call('create_recipe', {
+      title: 'Note ordering subject',
+      slug: ORDER_RECIPE,
+      kind: 'recipe',
+      rationale: 'Somewhere for two notes to be written at two times.',
+      ingredients: [
+        { name: 'Order Quiet Silverside', quantity: 1, unit: 'kg' },
+      ],
+      steps: [{ instruction: 'Wait.' }],
+    });
+
+    // Two calls, so `created_at` really differs — it is fixed for a whole
+    // transaction, which is the reason `position` exists at all.
+    await mcp.call('add_note', {
+      recipeSlug: ORDER_RECIPE,
+      kind: 'observation',
+      title: 'Written first',
+      body: `The earlier ${WORD}.`,
+    });
+    await mcp.call('add_note', {
+      recipeSlug: ORDER_RECIPE,
+      kind: 'observation',
+      title: 'Written second',
+      body: `The later ${WORD}.`,
+    });
+
+    const found = await mcp.call<NoteSearch>('search_notes', {
+      query: WORD,
+      recipeSlug: ORDER_RECIPE,
+      limit: 50,
+    });
+
+    // Asserted as a PAIR, never by absolute index: the suite shares one
+    // database and other specs write notes into it.
+    const titles = found.results.map((hit) => hit.title);
+    expect(titles.indexOf('Written second')).toBeLessThan(
+      titles.indexOf('Written first'),
+    );
+  });
+
+  test('notes written in one call fall back to the order they were sent', async () => {
+    const mcp = rw();
+
+    // One call, so all three share a timestamp to the microsecond and only
+    // `position` can separate them. Ascending, even though `created_at`
+    // above is descending — a list written as a list keeps its order.
+    await mcp.call('revise_recipe', {
+      slug: ORDER_RECIPE,
+      rationale: 'Three notes in one transaction.',
+      ingredients: [
+        { name: 'Order Quiet Silverside', quantity: 2, unit: 'kg' },
+      ],
+      steps: [{ instruction: 'Wait longer.' }],
+      notes: [
+        { kind: 'observation', title: 'Tied one', body: `A tied ${WORD}.` },
+        { kind: 'observation', title: 'Tied two', body: `A tied ${WORD}.` },
+        { kind: 'observation', title: 'Tied three', body: `A tied ${WORD}.` },
+      ],
+    });
+
+    const found = await mcp.call<NoteSearch>('search_notes', {
+      query: WORD,
+      recipeSlug: ORDER_RECIPE,
+      limit: 50,
+    });
+    const tied = found.results
+      .map((hit) => hit.title)
+      .filter((title) => title?.startsWith('Tied'));
+
+    expect(tied).toEqual(['Tied one', 'Tied two', 'Tied three']);
+  });
+});

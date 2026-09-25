@@ -16,13 +16,20 @@
  *                   ingredient, with citable sources.
  *
  * The organising principle is REVISIONS. A recipe is a stable identity with a
- * slug and a title; its ingredients and steps belong to an immutable
- * `recipe_revisions` row. Refining a recipe appends a revision and moves the
- * pointer — it never edits history. That is the whole point of the rebuild:
- * the same dish gets better over time instead of being re-derived from
- * scratch on every conversation.
+ * slug and a title; its ingredients and steps belong to a `recipe_revisions`
+ * row. Refining a recipe APPENDS a revision and moves the pointer. That is
+ * the whole point of the rebuild: the same dish gets better over time instead
+ * of being re-derived from scratch on every conversation.
+ *
+ * Append-only is not the same as immutable, and this schema states the
+ * difference in two places rather than one. A dish that CHANGED gets a new
+ * revision. A revision that was written down WRONG gets corrected in place —
+ * `update_recipe`, `update_revision`, `update_note` — which makes no version
+ * and moves no number. A record that should never have been written gets
+ * DELETED, softly: see `softDelete` below, which is where the four columns
+ * that carry that are defined and argued for.
  */
-import { sql } from 'drizzle-orm';
+import { isNull, sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
   boolean,
@@ -31,9 +38,11 @@ import {
   date,
   index,
   integer,
+  jsonb,
   numeric,
   pgEnum,
   pgTable,
+  pgView,
   text,
   timestamp,
   uniqueIndex,
@@ -55,6 +64,58 @@ const now = () =>
   timestamp('created_at', { withTimezone: true }).defaultNow().notNull();
 const touched = () =>
   timestamp('updated_at', { withTimezone: true }).defaultNow().notNull();
+
+/**
+ * The four columns a DELETE writes, on the seven tables that carry a record.
+ *
+ * A delete here is soft: the row stays, it stops being visible, and
+ * `restore_record` brings it back. The purpose of this repository is an
+ * accurate history, not an immutable one — two chats can write the same
+ * revision twice, and a duplicate is a data-entry accident rather than a
+ * version, so the model has to be able to take one back out.
+ *
+ * **`deleted_at`, not `is_deleted`.** A timestamp answers "when", which the
+ * bin listing and the restore order both need, and a boolean would want a
+ * second column for it. It is also already this schema's vocabulary for "this
+ * row stopped counting at a moment": `mcp_access_tokens.revoked_at`,
+ * `mcp_auth_codes.consumed_at`.
+ *
+ * **`deleted_by` is denormalised on purpose, and the audit log is not enough.**
+ * `writeMcpAudit` is fire-and-forget and swallows its own failure into a
+ * `console.warn`, so a value the bin must display cannot depend on it; nothing
+ * reads `mcp_audit_log` and building `list_deleted` over it would mean matching
+ * a text blob against live rows; the audit log records tool CALLS while the bin
+ * needs row STATE (deleted, restored, deleted again is three audit rows and one
+ * truth); and not every write comes through MCP — `pnpm ingest` calls the write
+ * layer with no principal at all. Nullable for that last reason.
+ *
+ * **`deleted_reason` is stored and the tool argument is optional.** A delete is
+ * reversible, so a required reason is friction for a small payoff — but the bin
+ * prints it, and it is the only thing that tells the next reader why a record
+ * went.
+ *
+ * **`deleted_event_id` is the cascade stamp.** One delete call mints one uuid
+ * and writes it to every row it touches, the root included, and every UPDATE
+ * carries `AND deleted_at IS NULL` — so a row that was already deleted keeps
+ * its own stamp and its own date. A restore clears exactly the rows carrying
+ * the addressed row's stamp, which is why a child deleted on its own before its
+ * parent stays deleted when the parent comes back. Named `event` and not
+ * `cascade` because `ON DELETE CASCADE` already means a hard delete in this
+ * schema, and not `batch` because this repository's batches are biltong.
+ *
+ * **This is not `recipes.status = 'archived'`, and the word "archive" is not
+ * used for it anywhere.** `archived` means *readable at its own address, off
+ * the index*; `deleted_at` means *not readable anywhere, 404*. The third
+ * `archive` — the frozen Markdown under `content/`, served by
+ * `src/lib/archive.ts` off disk behind `/archive` — never touches the database.
+ * Three meanings is already two too many.
+ */
+const softDelete = () => ({
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  deletedBy: text('deleted_by'),
+  deletedReason: text('deleted_reason'),
+  deletedEventId: uuid('deleted_event_id'),
+});
 
 // ─────────────────────────────────────────────────────────────────────────
 // Enums
@@ -128,9 +189,23 @@ export const ingredientRelationKind = pgEnum('ingredient_relation_kind', [
   'component_of',
 ]);
 
+/**
+ * The editorial edges between two recipes. All five are optional, unordered
+ * and many-to-many: a recipe may reference six others and be referenced by
+ * ten.
+ *
+ * **`variant_of` is NOT in this list, and its absence is the point.** It was
+ * here until migration 0011 and it was the wrong shape for what it said. The
+ * other four are remarks a writer makes about two finished dishes; being a
+ * variation is structural — it is at most one parent, it must not form a
+ * cycle, it decides what the Variations panel draws and it is what makes two
+ * recipes siblings. An edge in a table that `applyLinks` rewrites wholesale
+ * could hold none of that, and a caller echoing back the list it was shown
+ * would drop the parentage every time. It is `recipes.variant_of_id` now:
+ * one column, one parent, one meaning. See that column's comment.
+ */
 export const recipeLinkKind = pgEnum('recipe_link_kind', [
   'derived_from',
-  'variant_of',
   'component_of',
   'pairs_with',
   'references',
@@ -166,6 +241,12 @@ export const taxonomyTerms = pgTable(
     slug: text('slug').notNull(),
     label: text('label').notNull(),
     description: text('description'),
+    /**
+     * One picture for the tag's own page. See `images` below for what these
+     * two columns hold: an address this site serves, not a blob URL.
+     */
+    heroImageUrl: text('hero_image_url'),
+    heroImageAlt: text('hero_image_alt'),
     /** Self-referential parent for hierarchy, e.g. Sichuan → Chinese. */
     parentId: uuid('parent_id').references(
       (): AnyPgColumn => taxonomyTerms.id,
@@ -175,10 +256,28 @@ export const taxonomyTerms = pgTable(
     ),
     createdAt: now(),
     updatedAt: touched(),
+    ...softDelete(),
   },
   (t) => [
     uniqueIndex('uq_taxonomy_facet_slug').on(t.facet, t.slug),
     index('idx_taxonomy_parent').on(t.parentId),
+    /**
+     * Two partial indexes per soft-deletable table, and partial is what makes
+     * them cheap: they cover deleted rows only, which is a handful in a store
+     * whose whole point is keeping things. `list_deleted` reads the first and
+     * `restore_record` reads the second.
+     *
+     * There is deliberately no index on the live side. The tables are small
+     * and every live read already carries a selective predicate — a slug, a
+     * recipe id, a facet — so `deleted_at IS NULL` is a filter on a handful of
+     * rows rather than a scan.
+     */
+    index('idx_taxonomy_terms_deleted')
+      .on(t.deletedAt.desc())
+      .where(sql`${t.deletedAt} IS NOT NULL`),
+    index('idx_taxonomy_terms_deleted_event')
+      .on(t.deletedEventId)
+      .where(sql`${t.deletedEventId} IS NOT NULL`),
   ],
 );
 
@@ -214,6 +313,12 @@ export const ingredients = pgTable(
     category: ingredientCategory('category').notNull().default('other'),
     description: text('description'),
     /**
+     * A picture of the raw ingredient. Two chillies are told apart faster by
+     * a photograph than by any description, which is why this exists.
+     */
+    heroImageUrl: text('hero_image_url'),
+    heroImageAlt: text('hero_image_alt'),
+    /**
      * Grams per millilitre, where known. Lets a volume measurement in one
      * recipe be compared against a weight in another — the biltong logs are
      * all grams, most Western recipes are cups.
@@ -227,8 +332,17 @@ export const ingredients = pgTable(
       .default(sql`ARRAY[]::text[]`),
     createdAt: now(),
     updatedAt: touched(),
+    ...softDelete(),
   },
-  (t) => [index('idx_ingredients_category').on(t.category)],
+  (t) => [
+    index('idx_ingredients_category').on(t.category),
+    index('idx_ingredients_deleted')
+      .on(t.deletedAt.desc())
+      .where(sql`${t.deletedAt} IS NOT NULL`),
+    index('idx_ingredients_deleted_event')
+      .on(t.deletedEventId)
+      .where(sql`${t.deletedEventId} IS NOT NULL`),
+  ],
 );
 
 export const ingredientRelations = pgTable(
@@ -276,8 +390,86 @@ export const recipes = pgTable(
      * Points at the revision the site renders. Nullable only in the window
      * between inserting a recipe and inserting its first revision; every
      * write path closes that window in a transaction.
+     *
+     * **The invariant, and every child read depends on it: this always names a
+     * LIVE revision of a LIVE recipe.** Deleting the current revision of a
+     * recipe that has others moves the pointer to the newest survivor by
+     * `COALESCE(occurred_at, created_at) DESC, revision_number DESC` — the
+     * order the history is already listed in, not `MAX(revision_number)`, for
+     * the reason `getRecipeIdentity` gives: a backfilled revision carries a
+     * later number and an earlier date. Deleting the ONLY revision is refused
+     * and says to delete the recipe instead, because a null pointer would let
+     * `listRecipes` print a recipe whose page 404s.
      */
     currentRevisionId: uuid('current_revision_id'),
+    /**
+     * The recipe this one is a VARIATION of. Null for a base dish, which is
+     * the ordinary case.
+     *
+     * ── WHY THIS IS A COLUMN AND NOT A `recipe_links` ROW ──────────────
+     *
+     * A variation is not a revision and it is not a remark. Dan dan noodles
+     * with shiitake is not a refinement of dan dan noodles — nothing was
+     * learned and the older version was not superseded — so it cannot be a
+     * revision, which would move `current_revision_id` and take the original
+     * off the page. It is a second dish that keeps its own name, its own
+     * slug, its own revisions and its own batch logs, and says where it came
+     * from.
+     *
+     * `recipe_links.kind = 'variant_of'` said that sentence and could not
+     * hold it. Three things a variation needs and an edge in that table
+     * cannot give:
+     *
+     * 1. **At most one.** A dish varies one dish. Two `variant_of` rows out
+     *    of one recipe put it in two families and the panel drew both.
+     *    A column has one value; the partial unique index a link table would
+     *    have needed is the column itself.
+     * 2. **No cycles.** A is a variation of B is a variation of A has no
+     *    root, and the recursive walk that draws the family would not
+     *    terminate. `assertNoVariantCycle` in `write.ts` refuses it; the
+     *    `variant_not_self` check below refuses the one-step case in the
+     *    database, where no write path can get around it.
+     * 3. **It survives a list rewrite.** `applyLinks` replaces a recipe's
+     *    whole link list, and `get_recipe` hides an edge whose target is
+     *    deleted — so a caller sending back exactly what it was shown
+     *    dropped the parentage silently, and the Variations panel, the
+     *    breadcrumb and every sibling went with it. The same shape as the
+     *    bug the link tables' own comment records, with more to lose.
+     *    `update_recipe` touches this only when it is named.
+     *
+     * ── WHAT A DELETE DOES TO A FAMILY ────────────────────────────────
+     *
+     * Nothing, and that is deliberate. The column is not cleared and no
+     * child is touched, because a delete here is soft and a restore has to
+     * put the family back exactly. What changes is what a READER sees:
+     * `variantFamily` walks `recipes_live`, so a deleted recipe is not a
+     * node and is not a path — its children become roots of their own
+     * families until it is restored, and the branch below them stays
+     * attached to them throughout. That is the same answer `recipe_terms`
+     * gives for an edge to a deleted tag, for the same reason.
+     *
+     * `ON DELETE SET NULL` is the hard-delete backstop, matching
+     * `taxonomy_terms.parent_id`. No application path hard-deletes a recipe;
+     * if one ever does, a child is orphaned rather than destroyed.
+     */
+    variantOfId: uuid('variant_of_id').references(
+      (): AnyPgColumn => recipes.id,
+      { onDelete: 'set null' },
+    ),
+    /**
+     * What makes this variation different, in one line: "With shiitake
+     * instead of pork", "Vegan". Drawn beside the title in the Variations
+     * panel and on the card that marks a variation on the index, so a
+     * reader can tell three siblings apart without opening all three.
+     *
+     * Null when nothing was said, and the panel then draws the title alone.
+     * Meaningless without `variant_of_id`, and `variantOfShape` in
+     * `schemas.ts` refuses the pair where the note is set and the parent is
+     * not — a caller that writes one and forgets the other has almost
+     * certainly made a mistake, and a stray line of prose on a base dish is
+     * invisible until somebody makes it a variation months later.
+     */
+    variantNote: text('variant_note'),
     heroImageUrl: text('hero_image_url'),
     heroImageAlt: text('hero_image_alt'),
     /** Where this came from — a cookbook, a conversation, a restaurant. */
@@ -286,10 +478,34 @@ export const recipes = pgTable(
     searchVector: tsvector('search_vector'),
     createdAt: now(),
     updatedAt: touched(),
+    ...softDelete(),
   },
   (t) => [
     index('idx_recipes_status').on(t.status),
     index('idx_recipes_kind').on(t.kind),
+    /**
+     * Every variation read starts from a parent id — the family walk
+     * descends by it and `listRecipes` marks a card by it — and unlike the
+     * deleted indexes below this one covers the LIVE side, because the
+     * predicate is the whole query rather than a filter on top of a slug.
+     */
+    index('idx_recipes_variant_of')
+      .on(t.variantOfId)
+      .where(sql`${t.variantOfId} IS NOT NULL`),
+    /**
+     * The one-step cycle, refused where no write path can reach around it.
+     * The longer ones are `assertNoVariantCycle`'s job: Postgres has no
+     * declarative constraint for "this edge closes a loop", and a trigger
+     * doing the walk would fire on every recipe write to catch a case the
+     * write layer already has the row locked for.
+     */
+    check('variant_not_self', sql`${t.variantOfId} <> ${t.id}`),
+    index('idx_recipes_deleted')
+      .on(t.deletedAt.desc())
+      .where(sql`${t.deletedAt} IS NOT NULL`),
+    index('idx_recipes_deleted_event')
+      .on(t.deletedEventId)
+      .where(sql`${t.deletedEventId} IS NOT NULL`),
   ],
 );
 
@@ -300,7 +516,18 @@ export const recipeRevisions = pgTable(
     recipeId: uuid('recipe_id')
       .notNull()
       .references(() => recipes.id, { onDelete: 'cascade' }),
-    /** 1-based, dense, per recipe. */
+    /**
+     * 1-based, per recipe, and permanent. Dense until a version is deleted.
+     *
+     * **A deleted number is retired and is never reissued**, and that is the
+     * second thing the *soft* half of a delete buys. `reviseRecipe` takes
+     * `MAX(revision_number) + 1` over this table, deleted rows included, so the
+     * next version gets a fresh number; a hard delete would free number 3, the
+     * next revise would reuse it, and `/recipes/x/revisions/3` — a public URL,
+     * and half of the `nn:checked:{slug}:{revision}` key a phone remembers a
+     * ticked list under — would quietly start drawing a different version.
+     * A deleted 3 answers 404 forever instead, which is the honest answer.
+     */
     revisionNumber: integer('revision_number').notNull(),
     title: text('title').notNull(),
     summary: text('summary'),
@@ -333,11 +560,26 @@ export const recipeRevisions = pgTable(
      */
     occurredAt: timestamp('occurred_at', { withTimezone: true }),
     createdAt: now(),
+    /**
+     * Every other content table has carried one since the first migration.
+     * This table was the exception because a revision was never editable, and
+     * `update_revision` is the moment that stopped being true: a version that
+     * is corrected in place has a record that changed, and the row has to be
+     * able to say so.
+     */
+    updatedAt: touched(),
+    ...softDelete(),
   },
   (t) => [
     uniqueIndex('uq_revision_number').on(t.recipeId, t.revisionNumber),
     index('idx_revisions_recipe').on(t.recipeId),
     check('revision_number_positive', sql`${t.revisionNumber} > 0`),
+    index('idx_recipe_revisions_deleted')
+      .on(t.deletedAt.desc())
+      .where(sql`${t.deletedAt} IS NOT NULL`),
+    index('idx_recipe_revisions_deleted_event')
+      .on(t.deletedEventId)
+      .where(sql`${t.deletedEventId} IS NOT NULL`),
   ],
 );
 
@@ -631,6 +873,66 @@ export const notes = pgTable(
       .default(sql`ARRAY[]::text[]`),
 
     /**
+     * Every subject this note has hung off before the one it hangs off now,
+     * oldest first, as `recipe:<slug>`, `ingredient:<slug>` or
+     * `experiment:<slug>`. Empty for a note that has never moved, which is
+     * almost all of them. This is D-13.
+     *
+     * **Why a note may move at all.** A note is bound to one subject chosen
+     * at write time, and that choice is often forced. Five notes about
+     * stock were attached to a batch because no demi-glace recipe existed
+     * yet to attach them to; when the recipe arrives, the notes belong on
+     * it. Before `reattachNote` the only repair was to write them again on
+     * the recipe, which duplicates the text and lets the two copies drift.
+     * A note's CONTENT being fixed and its LOCATION being fixed are
+     * different decisions: moving one changes nothing about what it says or
+     * when it was written. `logExperiment` already re-homes a run this way.
+     *
+     * **Why the move is recorded rather than silent.** `mcp_audit_log` is
+     * written from the arguments a tool was CALLED with, so an audit row
+     * for a move can name where the note went and never where it came from.
+     * Without this column that fact exists nowhere, and a reader looking at
+     * a note on a recipe could not tell it was written against a batch.
+     * That is the kind of loss the whole repository is built to refuse.
+     *
+     * A text array rather than a child table, following `conditions` and
+     * `ingredients.aliases`: nothing joins on these and no screen filters
+     * by them. The slug is stored rather than a foreign key on purpose — a
+     * subject that is later deleted takes its row with it, and the point of
+     * this column is to survive that.
+     */
+    previousSubjects: text('previous_subjects')
+      .array()
+      .notNull()
+      .default(sql`ARRAY[]::text[]`),
+
+    /**
+     * Where this note sorts among the notes of its subject. Part of D-13.
+     *
+     * **Why `created_at` could not keep doing this job.** It was the primary
+     * sort key, and `position` its tiebreak, because until `reattachNote`
+     * every note was written where it stays: a note's write time and its
+     * arrival at its subject were the same instant, so one column meant
+     * both things. A move breaks that. The note keeps the date it was
+     * written — deliberately, since rewriting it would falsify when the
+     * claim was made — but it arrives at its new subject today.
+     *
+     * With `created_at` sorting, a note written against a batch in 2024 and
+     * moved onto a recipe in 2026 lands FIRST among that recipe's notes,
+     * not last. That is not merely untidy: `listScienceIndex` and
+     * `getScienceStudy` number a study's mechanisms `M1…Mn` by position in
+     * this list, so moving one science note renumbers every mechanism below
+     * it — codes that are already published. That is the exact fault D-02
+     * records, arriving by a new route.
+     *
+     * So the two meanings are separated. `created_at` says when the note was
+     * written and never changes. This says where it sits, and only a move
+     * changes it. Backfilled to `created_at`, so no stored note moved and
+     * `pnpm export` writes the same bytes it did before.
+     */
+    sortAt: timestamp('sort_at', { withTimezone: true }).defaultNow().notNull(),
+
+    /**
      * Where this note sits among the notes on the same subject. 1-based,
      * assigned by `writeNotes` as `MAX(position) + 1` for the subject.
      *
@@ -690,12 +992,19 @@ export const notes = pgTable(
 
     createdAt: now(),
     updatedAt: touched(),
+    ...softDelete(),
   },
   (t) => [
     index('idx_notes_recipe').on(t.recipeId),
     index('idx_notes_revision').on(t.revisionId),
     index('idx_notes_ingredient').on(t.ingredientId),
     index('idx_notes_kind').on(t.kind),
+    index('idx_notes_deleted')
+      .on(t.deletedAt.desc())
+      .where(sql`${t.deletedAt} IS NOT NULL`),
+    index('idx_notes_deleted_event')
+      .on(t.deletedEventId)
+      .where(sql`${t.deletedEventId} IS NOT NULL`),
     // A note hangs off exactly one subject. Anything else makes "show me the
     // notes for X" ambiguous and lets orphans accumulate silently.
     check(
@@ -754,7 +1063,18 @@ export const experiments = pgTable(
     recipeId: uuid('recipe_id').references(() => recipes.id, {
       onDelete: 'set null',
     }),
-    /** The exact revision that was cooked, when it is known. */
+    /**
+     * The exact revision that was cooked, when it is known.
+     *
+     * A run is NOT taken along when that revision is deleted: the run
+     * happened, and its number and its title are still readable because the
+     * revision row is still there. The two experiment reads join the base
+     * table rather than the live view for exactly this, and set
+     * `revisionWithdrawn` from `deleted_at IS NOT NULL` so the page can say
+     * "third revision · withdrawn". A hard delete would fire the
+     * `ON DELETE SET NULL` below and make the run read "no version recorded",
+     * which is a false statement about a run that recorded one.
+     */
     revisionId: uuid('revision_id').references(() => recipeRevisions.id, {
       onDelete: 'set null',
     }),
@@ -767,10 +1087,26 @@ export const experiments = pgTable(
     outcome: text('outcome'),
     costTotal: numeric('cost_total', { precision: 12, scale: 2 }),
     currency: text('currency').default('EUR'),
+    /**
+     * The one picture that stands for the run. A run also takes a LIST —
+     * `experiment_images` below — because a run is the record that most
+     * needs photographs and one run produces several.
+     */
+    heroImageUrl: text('hero_image_url'),
+    heroImageAlt: text('hero_image_alt'),
     createdAt: now(),
     updatedAt: touched(),
+    ...softDelete(),
   },
-  (t) => [index('idx_experiments_recipe').on(t.recipeId)],
+  (t) => [
+    index('idx_experiments_recipe').on(t.recipeId),
+    index('idx_experiments_deleted')
+      .on(t.deletedAt.desc())
+      .where(sql`${t.deletedAt} IS NOT NULL`),
+    index('idx_experiments_deleted_event')
+      .on(t.deletedEventId)
+      .where(sql`${t.deletedEventId} IS NOT NULL`),
+  ],
 );
 
 /** An individually tracked unit within a run — one hanging piece, one jar. */
@@ -788,6 +1124,41 @@ export const experimentItems = pgTable(
   (t) => [
     uniqueIndex('uq_experiment_item_label').on(t.experimentId, t.label),
     index('idx_experiment_items_experiment').on(t.experimentId),
+  ],
+);
+
+/**
+ * The pictures of a run, in the order they should be read.
+ *
+ * A CHILD, and it follows the rule every other child here follows: no id of
+ * its own worth addressing, no soft delete, and no per-row update. A caller
+ * replaces the list by sending the parent's whole list, and its lifetime is
+ * its parent's. `upload_image` appending one row is the single exception the
+ * write layer makes, and it is an append rather than a rewrite for the
+ * reason the tool description gives: a caller holding one photograph does
+ * not hold the other five.
+ *
+ * `image_url` and not an `images.id` foreign key, deliberately. The column
+ * holds the same kind of value `recipes.hero_image_url` has always held — an
+ * address — so a run can carry a picture that was never uploaded here, and
+ * the site renders both without knowing which is which.
+ */
+export const experimentImages = pgTable(
+  'experiment_images',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    experimentId: uuid('experiment_id')
+      .notNull()
+      .references(() => experiments.id, { onDelete: 'cascade' }),
+    position: integer('position').notNull(),
+    imageUrl: text('image_url').notNull(),
+    imageAlt: text('image_alt'),
+    caption: text('caption'),
+    createdAt: now(),
+  },
+  (t) => [
+    uniqueIndex('uq_experiment_image_position').on(t.experimentId, t.position),
+    index('idx_experiment_images_experiment').on(t.experimentId),
   ],
 );
 
@@ -819,6 +1190,183 @@ export const experimentObservations = pgTable(
     index('idx_observations_item').on(t.itemId),
     index('idx_observations_metric').on(t.metric),
   ],
+);
+
+// ─────────────────────────────────────────────────────────────────────────
+// 6. Images
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Every picture this repository stores, and the SEVENTH soft-deletable table.
+ *
+ * Before this existed, `recipes.hero_image_url` and `recipe_steps.image_url`
+ * took a web address and nothing could make one. An agent in a chat session
+ * holds a photograph as bytes; it has no address for it and no way to mint
+ * one, so the field was reachable in theory and unreachable in practice.
+ * That is issue #54. `upload_image` is the answer and this is where it lands
+ * the row.
+ *
+ * **THE BYTES ARE NOT HERE.** They go to Vercel Blob, and `blob_url` is
+ * where they went. This row is the registry: what was stored, what it looks
+ * like, who it belongs to, and whether it is still visible. Two reasons it is
+ * a row and not just a blob. A blob store has no `deleted_at`, so a picture
+ * could never take part in the delete-and-restore rule the rest of the
+ * repository runs on; and a blob nobody has a record of is the orphan the
+ * issue asked us not to create.
+ *
+ * **What a recipe stores is `/images/<id>`, NOT `blob_url`.** This is the
+ * decision the whole design turns on, so it is written down here rather than
+ * left to be inferred from the route handler.
+ *
+ * A soft delete has to make a record stop being visible. The reference from
+ * a recipe to its picture is a TEXT COLUMN and not a foreign key — it always
+ * was, because a recipe may legitimately point at a picture on somebody
+ * else's site. So deleting an image row can do nothing about a recipe that
+ * names it. If the stored value were the blob address, a deleted picture
+ * would keep rendering on every page that referenced it, and the only fix
+ * would be a delete that rewrote rows across four tables and inside stored
+ * revisions — a cascade that edits versions people cooked from, to hide a
+ * photograph.
+ *
+ * Serving the picture from our own address instead makes that cascade
+ * unnecessary. `/images/<id>` reads `images_live`; a deleted row is a 404;
+ * every reference to it goes dark at once and comes back whole on a restore,
+ * and no revision is touched. The blob address stays an implementation
+ * detail of this table.
+ *
+ * **What that does not buy.** A Vercel blob is public — the SDK has no other
+ * access mode — so anyone who kept the `blob_url` can still fetch the file
+ * after the row is deleted. The path is unguessable (Vercel appends a random
+ * suffix) and this table is the only place the address is written down, so
+ * "deleted" here means the picture leaves the site and the tools, not that
+ * the bytes are destroyed. Nothing in this repository destroys bytes, and
+ * `restore_record` is exact because of it.
+ *
+ * `checksum` is the sha256 of the stored bytes, and it is what makes a
+ * second upload of the same photograph return the first row instead of
+ * paying for the same file twice.
+ */
+export const images = pgTable(
+  'images',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** Where the bytes actually are. Never rendered; `/images/<id>` is. */
+    blobUrl: text('blob_url').notNull(),
+    /** The blob's pathname, which is what deleting it from the store needs. */
+    blobPathname: text('blob_pathname').notNull(),
+    /** Always the stored type, which is what came out of the re-encode. */
+    mimeType: text('mime_type').notNull(),
+    /**
+     * Required, and required at the tool as well. The guide has always said
+     * to write alt text; a column that allows null is a column that collects
+     * nulls.
+     */
+    alt: text('alt').notNull(),
+    caption: text('caption'),
+    width: integer('width').notNull(),
+    height: integer('height').notNull(),
+    bytes: integer('bytes').notNull(),
+    /** sha256 of the stored bytes. Unique, and that is the de-duplication. */
+    checksum: text('checksum').notNull(),
+    /**
+     * Smaller copies of the same picture, for `srcset`. `blob_url` is the
+     * largest one; these are the widths below it that were worth making.
+     *
+     * A page asks `/images/<id>?w=960` and the route redirects to the
+     * smallest copy at least that wide. A phone on a slow connection then
+     * fetches a 960 px file and not a 2400 px one. The widths are made once,
+     * at upload, and not on each request: the image optimiser would re-read
+     * and re-encode the file on a cold cache for every size, for a result
+     * that never changes.
+     *
+     * Empty for a picture stored before this column existed. The route then
+     * answers every width with `blob_url`, which is what it did before.
+     */
+    renditions: jsonb('renditions')
+      .$type<ImageRendition[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    createdAt: now(),
+    updatedAt: touched(),
+    ...softDelete(),
+  },
+  (t) => [
+    uniqueIndex('uq_images_checksum').on(t.checksum),
+    index('idx_images_deleted')
+      .on(t.deletedAt.desc())
+      .where(sql`${t.deletedAt} IS NOT NULL`),
+    index('idx_images_deleted_event')
+      .on(t.deletedEventId)
+      .where(sql`${t.deletedEventId} IS NOT NULL`),
+  ],
+);
+
+/** One smaller copy of a stored picture. See `images.renditions`. */
+export interface ImageRendition {
+  width: number;
+  height: number;
+  bytes: number;
+  url: string;
+  pathname: string;
+}
+
+/**
+ * An upload link: permission to put ONE picture on ONE record, handed to a
+ * person by an agent.
+ *
+ * Issues #56 and #58. `upload_image` takes the bytes as base64 inside a tool
+ * call, and the model writes the tool call. So every base64 character is a
+ * token the model must emit. A phone photograph is millions of them. No chat
+ * session can send one, and the attempt fills the context window before it
+ * fails.
+ *
+ * The fix is to keep the bytes away from the model entirely.
+ * `request_image_upload` writes one of these rows and returns a link. The
+ * person opens it on the phone that took the picture and picks the file. The
+ * browser sends the file straight to the blob store, and the server then
+ * shrinks it and puts it on the record this row names. The model handles a
+ * link of about a hundred characters, whatever the size of the photograph.
+ *
+ * **The link is the credential.** Nobody signs in on the page. The token is
+ * 32 random bytes, only its sha256 is stored, it expires, and it is spent by
+ * the first picture that lands. That is the same trust as the consent screen
+ * the agent already passed: only a connector with the write scope can mint
+ * one, and it names the one record the picture may go on.
+ *
+ * **Not soft-deletable, and not a record.** It is plumbing, like
+ * `mcp_auth_codes`: nothing reads it back as content, and an expired row is
+ * inert.
+ */
+export const imageUploads = pgTable(
+  'image_uploads',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** sha256 of the token in the link. The token itself is never stored. */
+    tokenHash: text('token_hash').notNull(),
+    /** The principal that asked for the link, for the audit trail. */
+    userId: text('user_id').notNull(),
+    clientId: text('client_id').notNull(),
+    /**
+     * What the agent said the picture shows, if it had seen it. The page
+     * asks the person when this is empty, and lets them correct it when not.
+     */
+    alt: text('alt'),
+    caption: text('caption'),
+    /** The `attachTo` object of `upload_image`, checked when the row is made. */
+    attachTo: jsonb('attach_to').notNull(),
+    /**
+     * Where the picture will go, in the words the site uses — "the hero
+     * image of Gai yang". The page shows it so the person can see the link
+     * is for the dish they think it is.
+     */
+    target: text('target').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    /** Set once, by the picture that spends the link. */
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    imageId: uuid('image_id').references(() => images.id),
+    createdAt: now(),
+  },
+  (t) => [uniqueIndex('uq_image_uploads_token_hash').on(t.tokenHash)],
 );
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -919,4 +1467,55 @@ export const mcpAuditLog = pgTable(
     ),
     index('idx_mcp_audit_ts').on(t.timestamp),
   ],
+);
+
+// ─────────────────────────────────────────────────────────────────────────
+// The live views — what a read is allowed to see
+//
+// One view per soft-deletable table, each the table minus its deleted rows.
+// `src/lib/queries/read.ts` selects from these and from nothing else, and
+// that is enforced rather than agreed: `eslint.config.mjs` bans the seven
+// base tables from being imported into that file, so a new query CANNOT name
+// one and `pnpm lint` is a CI gate. A shared `and(live(t), …)` helper was the
+// other option and is weaker for one reason — a helper can be left out of a
+// new query, an import ban cannot.
+//
+// Two files see the base tables on purpose. `src/lib/queries/deleted.ts`
+// reads deleted rows, because listing the bin is its whole job; and the two
+// experiment reads take `recipe_revisions` unfiltered, so a batch log pinned
+// to a withdrawn version can still print its number.
+// ─────────────────────────────────────────────────────────────────────────
+
+export const recipesLive = pgView('recipes_live').as((qb) =>
+  qb.select().from(recipes).where(isNull(recipes.deletedAt)),
+);
+
+export const recipeRevisionsLive = pgView('recipe_revisions_live').as((qb) =>
+  qb.select().from(recipeRevisions).where(isNull(recipeRevisions.deletedAt)),
+);
+
+export const notesLive = pgView('notes_live').as((qb) =>
+  qb.select().from(notes).where(isNull(notes.deletedAt)),
+);
+
+export const experimentsLive = pgView('experiments_live').as((qb) =>
+  qb.select().from(experiments).where(isNull(experiments.deletedAt)),
+);
+
+export const ingredientsLive = pgView('ingredients_live').as((qb) =>
+  qb.select().from(ingredients).where(isNull(ingredients.deletedAt)),
+);
+
+export const taxonomyTermsLive = pgView('taxonomy_terms_live').as((qb) =>
+  qb.select().from(taxonomyTerms).where(isNull(taxonomyTerms.deletedAt)),
+);
+
+/**
+ * The seventh, and the one whose reader is a route handler rather than a
+ * page. `/images/[id]` selects from this, so deleting an image row is what
+ * makes every reference to it 404 at once — see `images` above for why the
+ * stored address is ours and not the blob's.
+ */
+export const imagesLive = pgView('images_live').as((qb) =>
+  qb.select().from(images).where(isNull(images.deletedAt)),
 );

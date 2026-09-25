@@ -1,5 +1,5 @@
 import type { MetadataRoute } from 'next';
-import { site } from '@/lib/site';
+import { batchLogPath, site } from '@/lib/site';
 import { listArchive } from '@/lib/archive';
 import {
   listExperiments,
@@ -114,9 +114,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // but it redirects in the first case, so listing it here would put a
     // redirect in the sitemap. See D-01.
     ...experiments.data.map((experiment) => ({
-      url: experiment.recipe
-        ? `${site.url}/recipes/${experiment.recipe.slug}/batch-logs/${experiment.slug}`
-        : `${site.url}/batch-logs/${experiment.slug}`,
+      url: `${site.url}${batchLogPath(experiment)}`,
       changeFrequency: 'yearly' as const,
       priority: 0.4,
     })),

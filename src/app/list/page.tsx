@@ -116,7 +116,7 @@ export default async function ShoppingListPage({
           <PageHero
             kicker="Section VI · List"
             title="Shopping list"
-            lede="The recipes you are cooking, gathered into the order of a supermarket. The address holds the selection, so a list is a link you can keep, send or print."
+            lede="The recipes you are cooking, gathered into the order of a supermarket."
             ledeClassName="shell:max-w-210"
           />
           <BasketBridge />

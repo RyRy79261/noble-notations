@@ -124,8 +124,12 @@ async function main() {
 
   // Imported after loadEnv so the database client sees DATABASE_URL.
   const { db } = await import('@/db/client');
-  const { recipes, experiments: experimentsTable } =
-    await import('@/db/schema');
+  const {
+    recipes,
+    experiments: experimentsTable,
+    ingredients: ingredientsTable,
+    taxonomyTerms,
+  } = await import('@/db/schema');
   const {
     addMassFlow,
     createRecipe,
@@ -134,8 +138,10 @@ async function main() {
     upsertIngredient,
     upsertCategory,
     logExperiment,
+    ConflictError,
   } = await import('@/lib/queries/write');
   const { getRecipeBySlug } = await import('@/lib/queries/read');
+  const { slugify } = await import('@/lib/domain/slug');
   const { withTransaction } = await import('@/db/client');
   const { recipeLinks } = await import('@/db/schema');
   const { eq } = await import('drizzle-orm');
@@ -159,12 +165,99 @@ async function main() {
   // recipe pass finds them already labelled and explained. Parents are
   // resolved by slug, so a child listed before its parent would fail —
   // the seed is ordered parent-first and sorted here as a backstop.
+  // WHAT IS DELETED STAYS DELETED, and this is where that is decided — for
+  // ALL FOUR passes, which is the part that took two goes to get right.
+  //
+  // A load must not undo a delete somebody made on purpose. The first attempt
+  // gave the tag and ingredient passes an explicit check and left the recipe
+  // and experiment passes to get it free: each reads the BASE table for what
+  // is already present, so a deleted row counts as present and is skipped.
+  //
+  // That is true of `pnpm ingest` and false of `pnpm ingest --force`, which
+  // is a documented, supported way to add revisions from a terminal — and
+  // `--force` is exactly the flag that skips "already present". A deleted
+  // seeded RUN then reached `logExperiment`, which restores a deleted run by
+  // design, so the run came back with the notes its delete had cascaded and
+  // nothing said so. A deleted seeded RECIPE reached `reviseRecipe`, which
+  // refuses one, so the load aborted on an unhandled ConflictError with the
+  // tag and ingredient passes already committed and the experiment and link
+  // passes never run.
+  //
+  // So every pass now reads `deleted_at` for itself, before `force` is
+  // consulted, and none of them is allowed to write through a tool that
+  // restores: `upsertCategory` and `upsertIngredient` restore by design,
+  // because naming one in a real recipe line is proof it exists, and
+  // `logExperiment` restores for the same reason. `pnpm build` runs this
+  // script on any deployment that asks for the archive, so a restore here is
+  // a deleted record coming back on a deploy.
+  //
+  // The skip is printed rather than silent, and it names the way back. That
+  // is the rule the mass-flow pass below states for itself: a visible skip an
+  // operator can act on beats a silent write.
+  const deletedTags = new Map(
+    (
+      await db
+        .select({
+          facet: taxonomyTerms.facet,
+          slug: taxonomyTerms.slug,
+          deletedAt: taxonomyTerms.deletedAt,
+        })
+        .from(taxonomyTerms)
+    )
+      .filter((row) => row.deletedAt !== null)
+      .map((row) => [`${row.facet}/${row.slug}`, row.deletedAt!]),
+  );
+  const deletedIngredients = new Map(
+    (
+      await db
+        .select({
+          slug: ingredientsTable.slug,
+          deletedAt: ingredientsTable.deletedAt,
+        })
+        .from(ingredientsTable)
+    )
+      .filter((row) => row.deletedAt !== null)
+      .map((row) => [row.slug, row.deletedAt!]),
+  );
+  const deletedRecipes = new Map(
+    (
+      await db
+        .select({ slug: recipes.slug, deletedAt: recipes.deletedAt })
+        .from(recipes)
+    )
+      .filter((row) => row.deletedAt !== null)
+      .map((row) => [row.slug, row.deletedAt!]),
+  );
+  const deletedExperiments = new Map(
+    (
+      await db
+        .select({
+          slug: experimentsTable.slug,
+          deletedAt: experimentsTable.deletedAt,
+        })
+        .from(experimentsTable)
+    )
+      .filter((row) => row.deletedAt !== null)
+      .map((row) => [row.slug, row.deletedAt!]),
+  );
+  const deletedOn = (at: Date) => at.toISOString().slice(0, 10);
+  const skipDeleted = (what: string, at: Date) =>
+    console.log(
+      `  skip ${what} (deleted on ${deletedOn(at)} — ` +
+        'restore_record to bring it back)',
+    );
+
   console.log('Taxonomy…');
   const orderedTaxonomy = [
     ...TAXONOMY.filter((t) => !t.parent),
     ...TAXONOMY.filter((t) => t.parent),
   ];
   for (const term of orderedTaxonomy) {
+    const gone = deletedTags.get(`${term.facet}/${term.slug}`);
+    if (gone) {
+      skipDeleted(`${term.facet}/${term.slug}`, gone);
+      continue;
+    }
     const result = await upsertCategory(
       upsertCategorySchema.parse({
         categoryType: term.facet,
@@ -181,6 +274,14 @@ async function main() {
 
   console.log('\nIngredients…');
   for (const ingredient of INGREDIENTS) {
+    // The key `upsertIngredient` matches on, which is what a seed entry
+    // without an explicit `slug` resolves to. Almost none of them carry one.
+    const key = ingredient.slug ?? slugify(ingredient.name);
+    const gone = deletedIngredients.get(key);
+    if (gone) {
+      skipDeleted(key, gone);
+      continue;
+    }
     const result = await upsertIngredient(
       upsertIngredientSchema.parse(ingredient),
     );
@@ -194,27 +295,47 @@ async function main() {
 
   for (const seed of RECIPES) {
     const slug = seed.recipe.slug;
+    // BEFORE `force` is consulted. `--force` is what turns the check below
+    // off, and a deleted recipe is the one thing it must not turn off.
+    const gone = slug ? deletedRecipes.get(slug) : undefined;
+    if (gone) {
+      skipDeleted(slug!, gone);
+      continue;
+    }
     if (slug && existing.has(slug) && !force) {
       console.log(`  skip ${slug} (already present)`);
       continue;
     }
 
-    let currentSlug = slug;
-    if (!slug || !existing.has(slug)) {
-      const created = await createRecipe(
-        createRecipeSchema.parse(seed.recipe),
-        'import',
-      );
-      currentSlug = created.slug;
-      console.log(`  created ${created.slug} (revision 1)`);
-    }
+    // A ConflictError here is one recipe refusing, not a broken load, and it
+    // is the same argument the experiments loop below makes: every write in
+    // this script is its own transaction, so a throw leaves the passes that
+    // already ran committed and the passes after it unrun. The check above
+    // covers the deleted recipe this used to abort on; this covers anything
+    // else `createRecipe` or `reviseRecipe` refuses — a taken slug, a step
+    // naming a line that a rewritten seed no longer has — with a line saying
+    // which recipe stopped and why.
+    try {
+      let currentSlug = slug;
+      if (!slug || !existing.has(slug)) {
+        const created = await createRecipe(
+          createRecipeSchema.parse(seed.recipe),
+          'import',
+        );
+        currentSlug = created.slug;
+        console.log(`  created ${created.slug} (revision 1)`);
+      }
 
-    for (const revision of seed.revisions ?? []) {
-      const result = await reviseRecipe(
-        reviseRecipeSchema.parse({ slug: currentSlug, ...revision }),
-        'import',
-      );
-      console.log(`    revision ${result.revisionNumber}`);
+      for (const revision of seed.revisions ?? []) {
+        const result = await reviseRecipe(
+          reviseRecipeSchema.parse({ slug: currentSlug, ...revision }),
+          'import',
+        );
+        console.log(`    revision ${result.revisionNumber}`);
+      }
+    } catch (error) {
+      if (!(error instanceof ConflictError)) throw error;
+      console.log(`  skip ${slug ?? seed.recipe.title}: ${error.message}`);
     }
   }
 
@@ -399,14 +520,37 @@ async function main() {
     ).map((e) => e.slug),
   );
   for (const experiment of EXPERIMENTS) {
+    // The same check the taxonomy, ingredient and recipe passes make, and for
+    // the sharpest version of the reason: `logExperiment` RESTORES a deleted
+    // run by design — that is the escape hatch a run whose recipe is still
+    // deleted needs — so without this, `pnpm ingest --force` brought every
+    // withdrawn seeded run back, with its notes, and printed it as a success.
+    const goneRun = experiment.slug
+      ? deletedExperiments.get(experiment.slug)
+      : undefined;
+    if (goneRun) {
+      skipDeleted(experiment.slug!, goneRun);
+      continue;
+    }
     if (experiment.slug && existingExperiments.has(experiment.slug) && !force) {
       console.log(`  skip ${experiment.slug} (already present)`);
       continue;
     }
-    const result = await logExperiment(logExperimentSchema.parse(experiment));
-    console.log(
-      `  ${result.slug}: ${result.itemCount} items, ${result.observationCount} observations`,
-    );
+    // A ConflictError here is one run refusing, not a broken load. The
+    // mass-flow pass above already prefers a visible skip to an abort for the
+    // same reason: every write in this script is its own transaction, so a
+    // throw leaves the half that ran behind it committed, and `pnpm ingest
+    // --force` re-logs every seeded run — one of which may name a version
+    // somebody withdrew. Say which run stopped and why, and load the rest.
+    try {
+      const result = await logExperiment(logExperimentSchema.parse(experiment));
+      console.log(
+        `  ${result.slug}: ${result.itemCount} items, ${result.observationCount} observations`,
+      );
+    } catch (error) {
+      if (!(error instanceof ConflictError)) throw error;
+      console.log(`  skip ${experiment.slug}: ${error.message}`);
+    }
   }
 
   console.log('\nDone.');

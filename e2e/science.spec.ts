@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { mcpClient, tokens } from './helpers';
 
 /**
  * `/science` and `/science/[slug]` are the two routes the design added.
@@ -33,14 +34,17 @@ import { test, expect } from '@playwright/test';
  * random uuid and the codes would have moved on every ingest.
  *
  * **On R-SCR-43.** The requirement is that `/science` shows an empty state
- * when *no recipe anywhere* has a science note. That state cannot be
- * reached against this database: `global-setup` seeds through the real
- * `pnpm ingest`, which loads five of them, and nothing can be deleted —
- * that is the point of the repository. Writing a test that pretends
- * otherwise would be a test of a mock. What is reachable, and is tested
- * here, are the two neighbouring states: a study that carries no mechanism
- * (`peri-peri-cocktail`), and a recipe with no science at all, which must
- * have no `/science` address rather than a thin second one.
+ * when *no recipe anywhere* has a science note. This used to be untestable
+ * here and the reason was stated in this comment: `global-setup` seeds
+ * through the real `pnpm ingest`, which loads five of them, and nothing
+ * could be deleted. The connector now has `delete_record`, so the state is
+ * reachable without a mock — delete every science note and every research
+ * note over the wire, read the page, put them back. That test is the last
+ * one in this file, and it runs serially because it empties a page the rest
+ * of the file reads. The two neighbouring states are still tested as well:
+ * a study that carries no mechanism (`peri-peri-cocktail`), and a recipe
+ * with no science at all, which must have no `/science` address rather than
+ * a thin second one.
  */
 
 test('/science renders', async ({ page }) => {
@@ -224,4 +228,100 @@ test('a recipe with no science has no science address', async ({ page }) => {
   const response = await page.goto('/science/baumy-biltong');
 
   expect(response?.status()).toBe(404);
+});
+
+test.describe('the empty index R-SCR-43 asks for', () => {
+  // SERIAL, and it must be: this deletes every science and research note in
+  // the database and puts them back at the end. `playwright.config.ts` runs
+  // one worker with `fullyParallel: false`, so nothing else is reading the
+  // page while it does — but the two tests below are a pair, and the second
+  // is the proof that the first put everything back.
+  test.describe.configure({ mode: 'serial' });
+  test.slow();
+
+  test('/science is empty when no recipe anywhere has a science or research note', async ({
+    page,
+  }) => {
+    const mcp = mcpClient(test.info().project.use.baseURL!, tokens().readWrite);
+
+    /*
+     * WHICH RECIPES CARRY ONE IS ASKED OF THE PAGE, not listed here. The
+     * seed loads five science notes and one research note across three
+     * recipes, but by the time this file runs, other spec files have written
+     * recipes of their own through the connector and some of those carry a
+     * science note too. A hand-written list would empty the seed and leave
+     * the page full.
+     *
+     * So the page names its own subjects: every study card links
+     * `/science/<slug>`, and every research entry links back to the recipe
+     * it came from. Deleting those and reloading converges, because a
+     * mechanism that is gone takes its card with it.
+     */
+    const emptied: string[] = [];
+    const emptyOne = async (slug: string) => {
+      const recipe = await mcp.call<{
+        notes: { id: string; kind: string }[];
+      }>('get_recipe', { slug });
+      for (const note of recipe.notes) {
+        if (note.kind !== 'science' && note.kind !== 'research') continue;
+        await mcp.call('delete_record', {
+          kind: 'note',
+          id: note.id,
+          reason: 'Emptied by e2e/science.spec.ts, and restored below.',
+        });
+        emptied.push(note.id);
+      }
+    };
+
+    for (let round = 0; round < 8; round += 1) {
+      await page.goto('/science');
+      const hrefs = await page
+        .locator('main a[href^="/science/"], main a[href^="/recipes/"]')
+        .evaluateAll((nodes) =>
+          nodes.map((node) => (node as HTMLAnchorElement).getAttribute('href')),
+        );
+      const slugs = new Set<string>();
+      for (const href of hrefs) {
+        const match = /^\/(?:science|recipes)\/([^/?#]+)(?:[?#].*)?$/.exec(
+          href ?? '',
+        );
+        if (match) slugs.add(match[1]!);
+      }
+      if (slugs.size === 0) break;
+      for (const slug of slugs) await emptyOne(slug);
+    }
+    expect(emptied.length).toBeGreaterThan(0);
+
+    try {
+      const response = await page.goto('/science');
+      expect(response?.status()).toBe(200);
+
+      // R-SCR-43: one sentence, not three empty bands.
+      await expect(
+        page.getByText('No recipe has a science note yet'),
+      ).toBeVisible();
+      await expect(page.getByText('The octagon sear')).toHaveCount(0);
+      await expect(page.getByText('Why each layer exists')).toHaveCount(0);
+
+      // And a study address goes with its last mechanism, rather than
+      // leaving a page that indexes nothing.
+      expect((await page.goto('/science/demi-glace'))?.status()).toBe(404);
+    } finally {
+      for (const id of emptied) {
+        await mcp.call('restore_record', { kind: 'note', id });
+      }
+    }
+  });
+
+  test('restoring the notes brings the index back', async ({ page }) => {
+    // The other half of the same claim, and the reason the test above is
+    // safe to run in a file the rest of the suite reads: a restore is exact.
+    await page.goto('/science');
+
+    await expect(page.getByText('The octagon sear').first()).toBeVisible();
+    await expect(page.getByText('Why each layer exists').first()).toBeVisible();
+    await expect(
+      page.getByText('Where to buy crayfish in Berlin').first(),
+    ).toBeVisible();
+  });
 });

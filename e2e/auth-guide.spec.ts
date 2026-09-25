@@ -9,7 +9,7 @@ import { mcpClient, tokens, type AdvertisedTool } from './helpers';
  * the guide behind `get_started`. AGENTS.md says they live in one file "so
  * they cannot drift" — but nothing checked that either of them agrees with
  * the registry, the schemas or the scope rules underneath. `serverInstructions()`
- * had no assertion at all, and eleven of the guide's sixteen sections had
+ * had no assertion at all, and eleven of the guide's eighteen sections had
  * none.
  *
  * The tests here are not about wording. They are about the three ways this
@@ -80,6 +80,22 @@ function enumOf(tool: AdvertisedTool, field: string): string[] {
   return values!;
 }
 
+/**
+ * The guide as one piece of text, the way a model reads it.
+ *
+ * The guide is an object of strings, arrays and nested objects, and the
+ * checks below are about the words in it. Serialising it to JSON instead
+ * would put backslash escapes through the middle of those words.
+ */
+function flatten(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return value.map(flatten).join('\n');
+  if (value && typeof value === 'object') {
+    return Object.values(value).map(flatten).join('\n');
+  }
+  return String(value ?? '');
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // 1. The instructions — the first thing a client reads
 // ─────────────────────────────────────────────────────────────────────────
@@ -90,11 +106,34 @@ test('the instructions state the rule the whole repository is built on', async (
   // for one dish is the exact failure this project exists to stop. That
   // sentence has to be in the text a client reads BEFORE its first tool
   // call, not only in the guide behind a tool it may never call.
-  const instructions = await serverInstructions();
+  // Whitespace is collapsed before the phrase matches below. The
+  // instructions are a template literal with real line breaks in it, so a
+  // sentence that gets re-wrapped by a later edit would otherwise fail a
+  // test about its meaning — which has happened once on this very phrase.
+  const instructions = (await serverInstructions()).replace(/\s+/g, ' ');
 
   expect(instructions).toContain('revise_recipe');
-  expect(instructions).toMatch(/cannot change a version/i);
-  expect(instructions).toMatch(/cannot delete/i);
+
+  // THIS PAIR OF LINES USED TO READ `/cannot change a version/` AND
+  // `/cannot delete/`, AND BOTH SENTENCES ARE NOW FALSE. They are replaced
+  // rather than deleted, because the line is the tripwire that caught the
+  // drift: a promise about what the connector CANNOT do is a claim about
+  // every tool that will ever be registered, and this repository has now had
+  // one age badly twice.
+  //
+  // What replaces them is the question that carries the defence the
+  // prohibition was giving. `revise_recipe` and `update_revision` are both
+  // valid calls, so no refusal can catch the wrong pick — an agent that
+  // corrects a version when the dish changed writes over what a person
+  // cooked from. The sentence has to be in the text a client reads BEFORE
+  // its first tool call, not only in the guide behind a tool it may never
+  // call.
+  expect(instructions).toMatch(/did the food change/i);
+  expect(instructions).toContain('update_revision');
+  expect(instructions).toContain('restore_record');
+  // A capability an agent does not know exists is one it works around, so
+  // the bin is named too.
+  expect(instructions).toContain('list_deleted');
   // The two write paths that are easy to confuse with editing, and the two
   // fill-once tools, are named where an agent will see them.
   expect(instructions).toContain('backfill_revision');
@@ -124,6 +163,14 @@ test('the guide and the instructions name only tools that exist', async () => {
     'initial_weight',
     'final_weight',
     'days_to_cut',
+    // The one name here that is named in order to be DENIED. Issue #54
+    // asked for a `delete_image` tool, and the answer is that this
+    // repository has one delete and it is soft — so `upload_image` and the
+    // guide both say, in those words, that there is no `delete_image` and
+    // that `delete_record { kind: "image" }` is the way. An agent that has
+    // read the issue would otherwise try the name and get a
+    // tool-not-found, which is the exact failure this test exists to stop.
+    'delete_image',
   ]);
 
   const mcp = agent();
@@ -133,7 +180,12 @@ test('the guide and the instructions name only tools that exist', async () => {
 
   const sources: [string, string][] = [
     ['the server instructions', await serverInstructions()],
-    ['get_started', JSON.stringify(guide)],
+    // The guide's TEXT, not its JSON. `JSON.stringify` turns every newline
+    // into the two characters `\` and `n`, and the word-boundary match then
+    // reads a tool name at the start of a line as `nupdate_recipe` — a name
+    // no registry carries, reported as drift that is not there. Flattening
+    // the values matches what a model actually reads.
+    ['get_started', flatten(guide)],
     ...advertised.map((tool): [string, string] => [
       `the description of ${tool.name}`,
       tool.description ?? '',
@@ -151,6 +203,78 @@ test('the guide and the instructions name only tools that exist', async () => {
   }
 });
 
+test('the guide and the instructions name the website and its word', async () => {
+  // THE FAILURE THIS CATCHES is the one that produced issue #19. The
+  // connector's word is "experiment" and the site's word is "batch log".
+  // An agent that is never told the mapping writes a run, is asked where it
+  // went, and reports a page as missing that has existed since the rename —
+  // seventh in the navigation, with `/experiments` already redirecting to
+  // it. Nothing in the sixteen sections mentioned the website at all.
+  //
+  // Only the relative route is asserted. `NEXT_PUBLIC_SITE_URL` is set
+  // nowhere in this repository, so `site.url` falls back to the production
+  // host and an absolute address here would pin a lie.
+  const instructions = await serverInstructions();
+  const guide = JSON.stringify(await agent().call('get_started', {}));
+
+  for (const text of [instructions, guide]) {
+    expect(text.toLowerCase()).toContain('batch log');
+    expect(text).toContain('/batch-logs');
+  }
+});
+
+test('the guide, the instructions and the write tools state the writing rule', async () => {
+  // A model writes the way it is asked to write. Asked for a recipe and
+  // told nothing about style, it writes food prose: a step carrying three
+  // actions and a metaphor, an amount given as "a good glug". That text is
+  // read by a cook, on a phone, while cooking — the same reader the site's
+  // own copy has been written for since M2 — and nothing told the connector
+  // so. The rule is now in three places on purpose: the instructions a
+  // client reads at connect time, the guide behind `get_started`, and the
+  // description of every write tool that stores prose, because an agent
+  // that skips the first two still reads the third.
+  const mcp = agent();
+  const instructions = await serverInstructions();
+  const guide = await mcp.call<{ howToWrite: string }>('get_started', {});
+
+  for (const [where, text] of [
+    ['the server instructions', instructions],
+    ['howToWrite', guide.howToWrite],
+  ] as const) {
+    expect(text, `${where} does not name the style`).toMatch(
+      /simple technical english/i,
+    );
+    expect(text, `${where} does not ask for short sentences`).toMatch(
+      /short sentence/i,
+    );
+    expect(text, `${where} does not ask for the active voice`).toMatch(
+      /active voice/i,
+    );
+  }
+
+  // Every tool that stores text a reader sees carries the reminder. The
+  // list is the write tools that take prose — not `add_mass_flow` or
+  // `describe_mechanism`, which take figures and conditions.
+  const WRITES_PROSE = [
+    'create_recipe',
+    'revise_recipe',
+    'backfill_revision',
+    'add_note',
+    'log_experiment',
+    'upsert_category',
+    'upsert_ingredient',
+  ];
+  const advertised = await mcp.listToolSchemas();
+  for (const name of WRITES_PROSE) {
+    const tool = advertised.find((entry) => entry.name === name);
+    expect(tool, `${name} is not advertised`).toBeTruthy();
+    expect(
+      tool?.description ?? '',
+      `${name} does not state the writing rule`,
+    ).toMatch(/simple technical english/i);
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────────────
 // 2. The guide agrees with the schemas
 // ─────────────────────────────────────────────────────────────────────────
@@ -159,12 +283,13 @@ test('every section of the guide is present and says something', async () => {
   // The guide is one object and a client reads all of it. A section that
   // became an empty string, or lost its key in a refactor, disappears in
   // silence — and the sections most likely to go are the ones no other test
-  // touches, which until now was eleven of the sixteen.
+  // touches, which until now was eleven of the eighteen.
   const guide = await agent().call<Record<string, unknown>>('get_started', {});
 
   const SECTIONS = [
     'whatThisIs',
     'theOneRule',
+    'howToWrite',
     'olderVersions',
     'workflow',
     'noteKinds',
@@ -172,8 +297,16 @@ test('every section of the guide is present and says something', async () => {
     'ingredients',
     'mechanismConditions',
     'massFlow',
+    // The two the CRUD surface added. Which tool owns which record, what a
+    // delete takes with it, why a restore is refused and why a number is
+    // never given again all live here rather than in the instructions,
+    // because they cost a call the agent chose to make.
+    'correctingARecord',
+    'deletingARecord',
     'images',
     'shoppingList',
+    'theWebsite',
+    'movingANote',
     'scopes',
     'reportingAFault',
     'rules',
@@ -225,6 +358,40 @@ test('the note kinds the guide explains are the note kinds add_note accepts', as
   // repository uses for them.
   expect(guide.noteKinds.science).toMatch(/happens in the dish/i);
   expect(guide.noteKinds.research).toMatch(/after you made it/i);
+});
+
+test('the guide and add_note state the source rule the schema enforces', async () => {
+  // Failure 2 from this file's header: the prose names a value the schema
+  // then refuses. The guide said "Add sources if you have them" and the
+  // tool said "Give `sources` where you have them", but a research note
+  // with no source is rejected outright — and the rejection fails the whole
+  // call, so an agent that believed either sentence re-sends its payload.
+  const mcp = agent();
+  const addNote = (await mcp.listToolSchemas()).find(
+    (tool) => tool.name === 'add_note',
+  );
+  expect(addNote).toBeTruthy();
+  const guide = await mcp.call<{ noteKinds: Record<string, string> }>(
+    'get_started',
+    {},
+  );
+
+  // The guide states the requirement, and still tells the two kinds apart.
+  expect(guide.noteKinds.research).toMatch(/must/i);
+  expect(guide.noteKinds.research).toMatch(/source/i);
+  expect(guide.noteKinds.research).toMatch(/after you made it/i);
+
+  // So does the tool description.
+  expect(addNote!.description).toMatch(/at least one source/i);
+
+  // And so does the advertised field, which is the one an agent reads when
+  // it reads nothing else.
+  const sources = (
+    addNote!.inputSchema as
+      { properties?: Record<string, { description?: string }> } | undefined
+  )?.properties?.sources?.description;
+  expect(sources).toBeTruthy();
+  expect(sources!).toMatch(/research/i);
 });
 
 test('the category types the guide lists are the ones upsert_category accepts', async () => {
@@ -295,8 +462,13 @@ const CALLS: Record<string, Record<string, unknown>> = {
   get_ingredient: { slug: 'bay-leaf' },
   list_experiments: {},
   get_experiment: { slug: 'biltong-batch-3' },
+  search_notes: { query: 'biltong' },
   build_shopping_list: { slugs: ['baumy-biltong'] },
   get_repository_stats: {},
+  // The bin is a READ. A caller that can delete already sees what it deleted
+  // in the delete's own result; the value of this tool is to the caller that
+  // arrives afterwards and has to find out what is missing and why.
+  list_deleted: { limit: 1 },
 
   // Neither scope.
   report_issue: {
@@ -309,6 +481,7 @@ const CALLS: Record<string, Record<string, unknown>> = {
 
   // Writes. Each is refused a second time after the scope check.
   create_recipe: { title: 'A scope sweep', slug: 'baumy-biltong' },
+  create_variant: { title: 'A scope sweep', variantOf: GHOST },
   revise_recipe: { slug: GHOST, rationale: 'A sweep that must not write.' },
   backfill_revision: {
     slug: GHOST,
@@ -337,10 +510,41 @@ const CALLS: Record<string, Record<string, unknown>> = {
     parentSlug: 'no-such-parent-for-the-scope-sweep',
   },
   log_experiment: { title: 'A scope sweep', revisionNumber: 1 },
+  reattach_note: {
+    noteId: '00000000-0000-0000-0000-000000000000',
+    recipeSlug: GHOST,
+  },
+  update_recipe: { slug: GHOST, title: 'A sweep that must not write.' },
+  update_revision: { slug: GHOST, revisionNumber: 1, servings: 1 },
+  update_note: {
+    noteId: '00000000-0000-0000-0000-000000000000',
+    body: 'A sweep that must not write.',
+  },
+  delete_record: { kind: 'recipe', slug: GHOST },
+  restore_record: { kind: 'recipe', slug: GHOST },
+  // A one-pixel PNG, so the scope check is reached without the sweep
+  // spending a resize on a photograph. It is refused for its scope before
+  // the bytes are looked at, and refused for its `attachTo` after — either
+  // way nothing is stored.
+  upload_image: {
+    data:
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmM' +
+      'IQAAAABJRU5ErkJggg==',
+    mimeType: 'image/png',
+    alt: 'A scope sweep, one pixel and no meaning.',
+    attachTo: { recipeSlug: GHOST },
+  },
+  // Refused for its scope before the target is probed, so the ghost slug is
+  // never looked up and no link is minted.
+  request_image_upload: {
+    attachTo: { recipeSlug: GHOST },
+  },
 };
 
 const WRITE_TOOLS = [
   'create_recipe',
+  'create_variant',
+  'reattach_note',
   'revise_recipe',
   'backfill_revision',
   'add_note',
@@ -349,6 +553,13 @@ const WRITE_TOOLS = [
   'upsert_ingredient',
   'upsert_category',
   'log_experiment',
+  'update_recipe',
+  'update_revision',
+  'update_note',
+  'delete_record',
+  'restore_record',
+  'upload_image',
+  'request_image_upload',
 ];
 
 /** English for a count, because the guide writes the number in words. */
@@ -359,6 +570,14 @@ const IN_WORDS: Record<number, string> = {
   10: 'ten',
   11: 'eleven',
   12: 'twelve',
+  13: 'thirteen',
+  14: 'fourteen',
+  15: 'fifteen',
+  16: 'sixteen',
+  17: 'seventeen',
+  18: 'eighteen',
+  19: 'nineteen',
+  20: 'twenty',
 };
 
 test('a read-only token is refused every write tool and no other', async () => {

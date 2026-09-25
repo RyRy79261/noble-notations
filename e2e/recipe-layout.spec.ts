@@ -63,6 +63,135 @@ test.describe('mobile tabs', () => {
     await expect(page.locator('[data-tab="ingredients"]')).toBeHidden();
   });
 
+  /**
+   * THE STRIP TAKES A TAB IT DOES NOT HAVE ROOM FOR, AND THE PAGE DOES NOT
+   * MOVE.
+   *
+   * A flex item's `min-width` is `auto`, so a tab never squishes below its
+   * own label — it holds its width and the strip overflows. Before the strip
+   * could scroll, that overflow was the PAGE going sideways, and the tab
+   * past the edge was simply gone. Five panels already fill 288px of a 288px
+   * content box at 320, so the next panel anybody adds is the one that
+   * breaks it.
+   *
+   * The extra tabs are injected rather than built from a recipe with six
+   * panels, because there is no sixth panel to build one from. What is under
+   * test is the strip's CSS, and a cloned button exercises it exactly.
+   */
+  test('a strip too wide for the phone scrolls, and takes the page nowhere', async ({
+    page,
+  }) => {
+    await page.goto('/recipes/berlin-crayfish-boil');
+    const strip = page.locator('[data-tab-strip]');
+    await expect(strip).toBeVisible();
+
+    const overflowed = await strip.evaluate((el) => {
+      // Cloned until it really does overflow, rather than a fixed number of
+      // clones: this recipe has two panels and the biltong has five, and a
+      // count that happened to fit would pass the test by not testing it.
+      const last = el.querySelector('button:last-of-type')!;
+      let added = 0;
+      while (el.scrollWidth <= el.clientWidth && added < 12) {
+        const clone = last.cloneNode(true) as HTMLElement;
+        clone.textContent = `SUBSTITUTIONS ${++added}`;
+        el.appendChild(clone);
+      }
+      const doc = document.documentElement;
+      const box = el.getBoundingClientRect();
+
+      // Reach the far end, then come back. The first is what a reader does
+      // to get at the last tab; the second is what R-ACC-11's UNREACHABLE
+      // check asks — nothing may sit past the START edge at scrollLeft 0,
+      // which is what `justify-content: flex-end` once did to the nav.
+      el.scrollLeft = el.scrollWidth;
+      const lastTab = el
+        .querySelector('button:last-of-type')!
+        .getBoundingClientRect();
+      const reachable = lastTab.right <= el.getBoundingClientRect().right + 1;
+      el.scrollLeft = 0;
+      const stranded = [...el.children].filter(
+        (c) => c.getBoundingClientRect().right <= box.left + 1,
+      ).length;
+
+      return {
+        scrolls: el.scrollWidth > el.clientWidth,
+        pageMoved: doc.scrollWidth > doc.clientWidth + 1,
+        reachable,
+        stranded,
+      };
+    });
+
+    expect(overflowed.scrolls, 'the strip is the thing that scrolls').toBe(
+      true,
+    );
+    expect(overflowed.pageMoved, 'and the page is not').toBe(false);
+    expect(overflowed.reachable, 'the last tab can be scrolled to').toBe(true);
+    expect(overflowed.stranded, 'nothing is past the start edge').toBe(0);
+  });
+
+  /**
+   * And the common case is untouched: while the tabs fit, `auto` paints no
+   * affordance and takes no scroll, so `flex-1 basis-0` still hands the
+   * whole width out between them. This is the half of the change that could
+   * regress silently — a strip that scrolled when it did not need to would
+   * look identical in a screenshot.
+   */
+  test('a strip that fits does not scroll, and still fills the width', async ({
+    page,
+  }) => {
+    await page.goto('/recipes/berlin-crayfish-boil');
+    const strip = page.locator('[data-tab-strip]');
+
+    const fit = await strip.evaluate((el) => ({
+      scrolls: el.scrollWidth > el.clientWidth,
+      // The tabs share the row edge to edge, which is what `flex-1` buys.
+      spare:
+        el.clientWidth -
+        [...el.querySelectorAll('button')].reduce(
+          (sum, b) => sum + b.getBoundingClientRect().width,
+          0,
+        ) -
+        (el.querySelectorAll('button').length - 1) *
+          parseFloat(getComputedStyle(el).columnGap || '0'),
+    }));
+
+    expect(fit.scrolls, 'nothing to scroll while the tabs fit').toBe(false);
+    expect(Math.abs(fit.spare), 'the tabs fill the strip').toBeLessThanOrEqual(
+      1,
+    );
+  });
+
+  /**
+   * `overflow-x: auto` makes the row a clip box on BOTH axes — the spec
+   * computes a `visible` on one axis to `auto` when the other is not — and
+   * `FOCUS_RING` paints 4px outside a tab. Without the row's own 4px of
+   * padding the ring is cut on every tab, on the one input method that has
+   * nothing else to go on.
+   */
+  test('a focused tab keeps its whole focus ring inside the scroller', async ({
+    page,
+  }) => {
+    await page.goto('/recipes/berlin-crayfish-boil');
+
+    const clearance = await page.locator('[data-tab-strip]').evaluate((el) => {
+      const tab = el.querySelector('button')!;
+      tab.focus();
+      const style = getComputedStyle(tab);
+      const out =
+        (parseFloat(style.outlineWidth) || 0) +
+        (parseFloat(style.outlineOffset) || 0);
+      const t = tab.getBoundingClientRect();
+      const s = el.getBoundingClientRect();
+      return { top: t.top - out - s.top, bottom: s.bottom - (t.bottom + out) };
+    });
+
+    expect(
+      clearance.top,
+      'the ring is not cut at the top',
+    ).toBeGreaterThanOrEqual(0);
+    expect(clearance.bottom, 'nor at the bottom').toBeGreaterThanOrEqual(0);
+  });
+
   test('ticks survive switching tabs', async ({ page }) => {
     // Panels are hidden, not unmounted — losing ticks on a tab switch
     // would make the checklist useless on the device it matters most on.
@@ -101,7 +230,13 @@ test.describe('agent onboarding', () => {
     }>('get_started', {});
 
     expect(guide.theOneRule).toMatch(/revise_recipe/);
-    expect(guide.theOneRule).toMatch(/cannot change a version/i);
+    // THIS LINE USED TO READ `/cannot change a version/i`, and that sentence
+    // is now false: `update_revision` exists. The prohibition became a
+    // question, and the question is the part an agent has to answer before
+    // it writes — both calls are valid, so nothing downstream can catch the
+    // wrong pick.
+    expect(guide.theOneRule).toMatch(/did the food change/i);
+    expect(guide.theOneRule).toMatch(/update_revision/);
     expect(guide.workflow[0]).toMatch(/search_recipes/);
 
     // The distinction the note kinds exist to make.

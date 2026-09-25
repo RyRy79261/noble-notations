@@ -13,6 +13,24 @@ import 'server-only';
  * idea in each sentence, active voice, and no words that need other words
  * to explain them.
  *
+ * THE SPLIT, AND WHAT DECIDES WHICH HALF A THING GOES IN.
+ * `INSTRUCTIONS_HEAD` is read by a client before its first tool call, and it
+ * is paid for in every conversation whether or not it is used — so it holds
+ * only what an agent must know BEFORE it calls anything, and it holds each
+ * of those as one sentence. `GUIDE` is behind `get_started` and is paid for
+ * once, by an agent that asked, so it holds the explanation.
+ *
+ * The four things the CRUD surface added are split on that rule. The
+ * question that decides between a revision and a correction is in BOTH,
+ * because an agent that never calls `get_started` still has to answer it
+ * before it writes — that is the sentence whose absence costs a history.
+ * The names of the three correction tools, `restore_record` and
+ * `list_deleted` are in the instructions, because a capability an agent does
+ * not know exists is one it works around. Everything else — which tool owns
+ * which record, what a delete takes with it, why a restore is refused, why a
+ * number is never given again — is in `GUIDE.correctingARecord` and
+ * `GUIDE.deletingARecord`, where it costs a call that the agent chose.
+ *
  * ONE PARAGRAPH IS CONDITIONAL. `report_issue` is registered only when
  * `GITHUB_ISSUE_TOKEN` is set, so on a deployment without it — local
  * development, a preview, a fork — instructions that tell an agent to call
@@ -25,17 +43,45 @@ import 'server-only';
  * predicate here costs this module nothing.
  */
 import { issueReportingConfigured } from '@/lib/github/config';
+/**
+ * The second conditional capability, and it works exactly like the first.
+ *
+ * `upload_image` is registered only when `BLOB_READ_WRITE_TOKEN` is set —
+ * Production and Preview have it, a developer's machine and CI do not. So
+ * every sentence of this guide that tells an agent to call it is included by
+ * the same predicate the registration uses, for the reason the header gives
+ * about `report_issue`: teaching a tool the registry does not carry sends an
+ * agent to a tool-not-found error.
+ *
+ * It also moves a COUNT, which `report_issue` does not: `upload_image` and
+ * `request_image_upload` are write tools, so the sentence naming how many
+ * write tools there are is sixteen or eighteen depending on this. `e2e/auth-guide.spec.ts` measures
+ * that against the live registry and fails on a mismatch, which is how the
+ * number was caught being wrong before.
+ */
+import { isConfigured as imageUploadConfigured } from '@/lib/images/blob';
 
 const INSTRUCTIONS_HEAD = `
 Noble Notations is a cooking store that keeps versions.
 
 The most important rule: a recipe has a name that does not change. Its
-ingredients and steps belong to a version. You cannot change a version
-after you make it. To improve a dish, call revise_recipe and give a
-reason. Do not make a second recipe for the same dish.
+ingredients and steps belong to a version. To improve a dish, call
+revise_recipe and give a reason. The old version stays and people can still
+read it. Do not make a second recipe for the same dish.
 
-You cannot delete anything. You cannot edit ingredients or steps. This is
-correct behaviour, not a fault.
+You can correct a record and you can delete one. A delete is not
+destruction: the record stops being visible, and restore_record brings it
+back. Call list_deleted to see the bin.
+
+Ask one question first: did the food change, or is the record wrong? If the
+food changed, call revise_recipe. If the record is wrong, call
+update_recipe, update_revision or update_note.
+
+A dish can also go a different way. Dan dan noodles with shiitake instead of
+pork is not a better dan dan noodles. It is a variation. Call create_variant.
+It makes a recipe of its own, with its own versions, and it changes nothing
+about the dish it came from. Every variation of one dish is a sibling of the
+others, and get_recipe reports the whole family as variantFamily.
 
 A write can still replace a list. The categories field holds all the tags
 of a recipe, in every category type. A write that sends this field replaces
@@ -50,12 +96,32 @@ This adds history. It does not change the recipe that people read.
 Two fields were added after the store was full, so two tools fill them on
 a record that is already stored. Call add_mass_flow to say what a dish
 weighs at each stage. Call describe_mechanism to give a science note its
-conditions. Each field is written once. Neither tool changes a value.
+conditions. Each of these two tools writes its field one time. Neither
+replaces a value. To correct a value that is already stored, call
+update_revision or update_note.
+
+A note can move to another record. Call reattach_note. The text of the
+note does not change. Only the record that holds it changes. Use it when
+you wrote a note before the record it belongs to existed.
 
 Units come from a fixed list. A unit outside it is refused.
 
 After a write, read needsDescription in the result. It names the tags and
 ingredients that are still bare. Describe them in the same session.
+
+Write every word that a person reads in simple technical English. Use
+short sentences. Put one idea in each sentence. Use the active voice.
+Write a step as an instruction to the cook. Use the same word for the
+same thing each time. A cook reads this text, and many cooks do not read
+English as a first language. Call get_started for the full rule.
+`.trim();
+
+const INSTRUCTIONS_IMAGES = `
+You can put a picture in this store. For a photograph that the person has,
+call request_image_upload with attachTo. It gives you a link. Give the link
+to the person. They open it and pick the file. Do not send a photograph as
+base64: you write each character, and a photograph is millions of them. For
+a picture on the public web, call upload_image with sourceUrl.
 `.trim();
 
 const INSTRUCTIONS_REPORTING = `
@@ -67,6 +133,10 @@ that tells you what to send instead is not a fault.
 
 const INSTRUCTIONS_TAIL = `
 Before you make anything, call search_recipes.
+
+The website calls a run a batch log. Every run is at /batch-logs.
+
+Before you write a note, call search_notes. It finds notes on every record.
 
 Call get_started to read the full guide.
 `.trim();
@@ -81,18 +151,46 @@ Call get_started to read the full guide.
  */
 export function serverInstructions(
   reportingConfigured = issueReportingConfigured(),
+  uploadConfigured = imageUploadConfigured(),
 ): string {
   return [
     INSTRUCTIONS_HEAD,
+    ...(uploadConfigured ? [INSTRUCTIONS_IMAGES] : []),
     ...(reportingConfigured ? [INSTRUCTIONS_REPORTING] : []),
     INSTRUCTIONS_TAIL,
   ].join('\n\n');
 }
 
-const SCOPES_WITHOUT_REPORTING =
-  'The read tools need the scope noble-notations:read. The nine write ' +
-  'tools also need noble-notations:write. The system checks the scope on ' +
-  'each call.';
+/**
+ * The write-tool count, in the two states it has.
+ *
+ * `upload_image` is a write tool and is registered only where the blob store
+ * is configured, so this number is not a constant. That is new: the count
+ * used to be one, then `create_variant` made it sixteen, and a CONDITIONAL
+ * write tool makes it a pair. It is spelled out rather than computed because
+ * the registry is built in `tools.ts` and importing it here would make the
+ * guide depend on the thing that documents it; `e2e/auth-guide.spec.ts`
+ * counts the live registry and asserts the word, which is the check that
+ * matters and the one that has caught this sentence being wrong before.
+ */
+function writeToolCountWord(uploadConfigured: boolean): string {
+  return uploadConfigured ? 'eighteen' : 'sixteen';
+}
+
+function scopesParagraph(
+  uploadConfigured: boolean,
+  reportingConfigured: boolean,
+): string {
+  const head =
+    'The read tools need the scope noble-notations:read. The ' +
+    `${writeToolCountWord(uploadConfigured)} write tools also need ` +
+    'noble-notations:write.';
+  return reportingConfigured
+    ? `${head} list_deleted is a read tool, so it needs the read scope ` +
+        'only. The system checks the scope on each call. report_issue needs ' +
+        'no extra scope. Each connector can file a report.'
+    : `${head} The system checks the scope on each call.`;
+}
 
 const GUIDE = {
   whatThisIs:
@@ -100,13 +198,200 @@ const GUIDE = {
     'was made again from the start in each conversation. Now the dish ' +
     'becomes better in steps.',
 
+  /**
+   * The rule, and the sentence that keeps it a rule now that a stored
+   * version can be corrected.
+   *
+   * The old text said "you cannot change a version" and "you cannot delete a
+   * recipe", and both are now false. The danger the old text was defending
+   * against did not go away with it: an agent that corrects a version when
+   * the dish changed overwrites what a person cooked from, and that is the
+   * loss this whole repository exists to prevent. So the defence moves from
+   * a prohibition to a question, and the question is about the FOOD — the
+   * one thing the caller reliably knows.
+   */
   theOneRule:
     'A recipe has a name that does not change. Its ingredients and steps ' +
-    'belong to a version. You cannot change a version after you make it. ' +
-    'Each version records why you made it. To change a recipe, call ' +
-    'revise_recipe and give a reason. Do not make a second recipe for the ' +
-    'same dish. You cannot delete a recipe. You cannot edit ingredients or ' +
-    'steps.',
+    'belong to a version. Each version records why you made it. To improve ' +
+    'a dish, call revise_recipe and give a reason. The old version stays, ' +
+    'and people can still read it. Do not make a second recipe for the same ' +
+    'dish.\n\n' +
+    'Ask one question before you write: did the food change, or is the ' +
+    'record wrong?\n\n' +
+    'If the food changed, call revise_recipe. It adds a version. This is ' +
+    'almost always the answer.\n\n' +
+    'If the record is wrong, correct it. A typo, a wrong number, a version ' +
+    'that two chats wrote twice: these are not new versions of the dish. ' +
+    'They are mistakes in the record. Call update_recipe, update_revision ' +
+    'or update_note.\n\n' +
+    'Do not correct a version because the dish changed. The correction ' +
+    'writes over the version that a person cooked from, and the history of ' +
+    'the dish is gone.\n\n' +
+    'One more answer is possible, and it is the one that is easy to miss. ' +
+    'The dish did not get better and the record is not wrong: the dish went ' +
+    'a different way. That is a variation. Call create_variant. See ' +
+    'variations below.',
+
+  /**
+   * Variations, and the one mistake this section exists to stop.
+   *
+   * An agent asked for "dan dan noodles but with shiitake" reaches for
+   * `revise_recipe`, because that is the tool the guide spends the most
+   * words on and because a variation LOOKS like a change to the dish. It is
+   * the most expensive wrong answer available: a revision moves
+   * `current_revision_id`, so the pork version stops being what people read,
+   * and nobody finds out until they open the page looking for it.
+   *
+   * So the fork is stated as three sentences with three tools, in the same
+   * shape as the question that separates a revision from a correction. That
+   * question works because it is about the FOOD rather than about the
+   * database, and this one is written to match: got better, went a
+   * different way, was written down wrong.
+   */
+  variations:
+    'A dish can go a different way. Dan dan noodles with shiitake instead ' +
+    'of pork is not a better dan dan noodles. It is a second dish, beside ' +
+    'the first.\n\n' +
+    'That is a variation, and it is not a version. Call create_variant. ' +
+    'Give it the slug of the dish it varies, and one line in variantNote ' +
+    'for what makes it different.\n\n' +
+    'Ask which of three things happened:\n' +
+    'The dish got better. Call revise_recipe.\n' +
+    'The dish went a different way. Call create_variant.\n' +
+    'The dish is fine and the record is wrong. Call update_recipe.\n\n' +
+    'Do not call revise_recipe for a variation. A version becomes the one ' +
+    'that people read, so the dish you started from stops being on its own ' +
+    'page. A variation changes nothing about that dish.\n\n' +
+    'A variation is a recipe. It has its own address, its own versions and ' +
+    'its own batch logs. You can revise it. It can have variations of its ' +
+    'own.\n\n' +
+    'Every variation of one dish is a sibling of the others. get_recipe ' +
+    'reports them all as variantFamily: the dish they came from, the ones ' +
+    'beside them, and the ones below them. Read it before you add one. The ' +
+    'variation that you are about to write may be there.\n\n' +
+    'Nothing is copied from the dish that a variation varies. Send the ' +
+    'whole ingredient list and the whole method. The part that differs is ' +
+    'the reason the variation exists, so it must be written.\n\n' +
+    'update_recipe moves a recipe into a family, or out of one. Send ' +
+    'variantOf with a slug to move it in. Send variantOf as null to make it ' +
+    'a dish of its own. Use this to correct a wrong parent. To make a new ' +
+    'variation, call create_variant.',
+
+  /**
+   * The three correction tools, and which record each one owns.
+   *
+   * It says what is NOT here as plainly as what is: an agent looking for
+   * `update_experiment` must find out in one read that `log_experiment` is
+   * that tool, rather than filing a missing-capability report.
+   */
+  correctingARecord:
+    'Six kinds of record can be corrected, and three tools do it.\n\n' +
+    'update_recipe corrects the name, the summary, the tags, the links, the ' +
+    'kind and the status of a recipe. It also moves a recipe into a family ' +
+    'of variations, or out of one, with variantOf. It touches no version. ' +
+    'You cannot change the slug: it is the public address of the ' +
+    'recipe.\n\n' +
+    'update_revision corrects a stored version in place. It makes no new ' +
+    'version and it moves no number. Send ingredients, steps or massFlow to ' +
+    'replace a whole list. A list that you leave out stays as it is.\n\n' +
+    'update_note corrects a note, and it can move the note to another ' +
+    'recipe, version, ingredient or run.\n\n' +
+    'The other three records need no new tool. log_experiment, ' +
+    'upsert_ingredient and upsert_category each write the keys that you ' +
+    'send onto the record that is stored. They are already the way to ' +
+    'correct a run, an ingredient and a tag.\n\n' +
+    'No correction asks for a reason. A reason records why a dish changed, ' +
+    'and a correction is the statement that the dish did not change.\n\n' +
+    'A note of kind "correction" is a different thing, and it is still ' +
+    'there. Add one when the old claim must stay readable. Correct the note ' +
+    'itself when the note was never true.',
+
+  /**
+   * Delete, restore and the bin.
+   *
+   * Why the rule changed is worth one sentence here as well as in AGENTS.md:
+   * an agent that believes a delete is final will leave a duplicate in
+   * place, and a duplicate revision is exactly what two chats working in
+   * parallel produce.
+   */
+  deletingARecord:
+    'You can delete a recipe, a version, a note, a run, an ingredient, a ' +
+    'tag and an image. Call delete_record. Name the kind, then say which ' +
+    'record.\n\n' +
+    'An image is named by its id and nothing else. Deleting one takes it ' +
+    'off every record that shows it, at once. Nothing else changes, and no ' +
+    'version is rewritten.\n\n' +
+    'A delete is not destruction. The record stops being visible: the site ' +
+    'does not show it and the read tools do not return it. The record ' +
+    'itself stays. Call restore_record to bring it back, with the same ' +
+    'arguments.\n\n' +
+    'Delete a duplicate. Delete a record that somebody wrote by mistake. Do ' +
+    'not delete a version because the dish changed: call revise_recipe for ' +
+    'that, and the old version stays where it is.\n\n' +
+    'Give a reason. The bin shows it. It is the only thing that tells the ' +
+    'next reader why the record went.\n\n' +
+    'Some records take others with them. A recipe takes its versions, its ' +
+    'notes and its runs. A version takes its notes. A run takes its notes. ' +
+    'The result names what went with it. One restore brings back the same ' +
+    'set.\n\n' +
+    'A record that somebody deleted on its own, before the record above it ' +
+    'went, keeps its own date and its own reason. It does not come back ' +
+    'with the one above it. Restore it on its own.\n\n' +
+    'You cannot restore a record while the record it belongs to is still ' +
+    'deleted. The refusal names what to restore first.\n\n' +
+    'Call list_deleted to see the bin. Each row gives the kind, a name that ' +
+    'you can read, the date, who deleted it and the reason. Each row also ' +
+    'gives the arguments for restore_record, ready to send.\n\n' +
+    'Two rules keep a number safe. A number is never given again: a deleted ' +
+    'version keeps the number it had, so the address of that version stays ' +
+    'an address that nothing else can take. And a restore does not decide ' +
+    'which version people read. Call update_recipe with ' +
+    'currentRevisionNumber for that.\n\n' +
+    'You cannot delete the only version of a recipe. A recipe with no ' +
+    'version cannot be read. Delete the recipe.',
+
+  /**
+   * WHY THE GUIDE TELLS AN AGENT HOW TO WRITE.
+   *
+   * A model writes the way it was asked to write, and asked for a recipe it
+   * writes food prose: a step that carries three actions and a metaphor, a
+   * rationale that reads as a paragraph of praise. A cook reading that on a
+   * phone, with wet hands, has to decode it before doing anything — and a
+   * reader who does not have English as a first language may not decode it
+   * at all. The site's own copy has followed ASD Simplified Technical
+   * English since M2; everything an agent writes THROUGH the connector is
+   * the same reader-facing text and was governed by nothing.
+   *
+   * This is a writing rule and not a schema rule on purpose. Sentence
+   * length is not something the write layer can refuse without refusing
+   * good text with the bad, so it is stated where an agent reads it and
+   * left to the agent. AGENTS.md § Words and writing style is the same rule
+   * for the humans.
+   */
+  howToWrite:
+    'Write every word that a person reads in simple technical English. ' +
+    'This is the ASD Simplified Technical English style. A cook reads this ' +
+    'store, often while cooking. Many cooks do not read English as a first ' +
+    'language.\n\n' +
+    'Use short sentences. Keep a step to 20 words or fewer. Put one idea ' +
+    'in each sentence, and one action in each step. Use the active voice: ' +
+    'write "Cut the beef into strips of 10 mm", not "the beef is then cut ' +
+    'into strips".\n\n' +
+    'Use the simple word. Write "cut", not "butterfly". Write "add", not ' +
+    '"incorporate". Use the same word for the same thing each time: a pan ' +
+    'that becomes a skillet in the next step reads as a second pan. If a ' +
+    'technical word is the only correct word, use it and explain it one ' +
+    'time in plain words.\n\n' +
+    'Give a number and a unit for each amount, each time and each ' +
+    'temperature. Do not write "a good glug" or "until it looks right". If ' +
+    'nobody measured it, say so in a note.\n\n' +
+    'Do not write a metaphor, a joke, or a sentence that praises the dish. ' +
+    'A rationale says what changed and why, in the words a cook can act ' +
+    'on.\n\n' +
+    'This rule holds for the title, the subtitle, the summary, every step, ' +
+    'every note, every rationale, and the explanation of a tag or an ' +
+    'ingredient. It does not hold for a quotation from a source: copy that ' +
+    'exactly, and say who wrote it.',
 
   olderVersions:
     'You can add a version that is older than every version in the store. ' +
@@ -121,13 +406,18 @@ const GUIDE = {
 
   workflow: [
     'Call search_recipes first. Always. Find out if the dish is here.',
-    'If the dish is here, call revise_recipe. Give a reason that says what you changed.',
+    'If the dish is here and the food changed, call revise_recipe. Give a reason that says what you changed.',
     'If the dish is not here, call create_recipe.',
+    'If the dish is here and it went a different way, call create_variant. A variation is not a version.',
     'If you find a version that is older than every stored version, call backfill_revision.',
     'Call upsert_category for each new tag. This gives the tag an explanation.',
+    'Call search_notes before you write a note. Find out if the store already says it.',
     'Call add_note for each thing that you learned that is not an instruction.',
     'Call log_experiment after you cook a batch and measure it.',
     'Call add_mass_flow or describe_mechanism only for a record that is already stored.',
+    'If a note sits on the wrong record, call reattach_note. Do not write the note again.',
+    'If the record is wrong and the food did not change, call update_recipe, update_revision or update_note.',
+    'If a record is a duplicate or a mistake, call delete_record and give a reason. Call restore_record if you were wrong.',
     'If a tool does the wrong thing, call report_issue. Send the payload and the response, copied exactly.',
   ],
 
@@ -139,7 +429,10 @@ const GUIDE = {
     research:
       'What you learned about the dish after you made it. Other methods, ' +
       'small improvements, where to buy things, background. Example: ' +
-      '"Where to buy crayfish in Berlin." Add sources if you have them.',
+      '"Where to buy crayfish in Berlin." A research note must have at ' +
+      'least one source. Research records where a fact came from. If you ' +
+      'have no source, write the note as an observation or an idea. The ' +
+      'other kinds can have sources, but they do not need them.',
     observation: 'What you saw during one cook.',
     result: 'How the dish was at the end.',
     substitution: 'What you used in place of something, and why.',
@@ -233,14 +526,30 @@ const GUIDE = {
     'join them with a comma or a dot. The page draws the separators. Keep ' +
     'a range in one value: "4 °C → 71 °C" is one condition, not two.\n\n' +
     'Send conditions to add_note when you write the note. If the note is ' +
-    'already stored, call describe_mechanism. A note states its ' +
-    'conditions once. If they are wrong, add a note of kind "correction".',
+    'already stored, call describe_mechanism. That tool writes the ' +
+    'conditions one time and refuses a second set. If they are wrong, call ' +
+    'update_note. To leave the old claim readable, add a note of kind ' +
+    '"correction".',
 
   /**
    * D-12, R-SCR-39. The figure is optional by requirement, so the text has
    * to say when NOT to send one as clearly as it says how — a mass flow on
    * every recipe is worse than none, because it stops meaning anything.
    */
+  movingANote:
+    'A note hangs off one record. You choose the record when you write the ' +
+    'note. Sometimes the right record does not exist yet. A note about a ' +
+    'dish goes on a run, because nobody wrote the recipe. Call ' +
+    'reattach_note to move the note later. Give the id of the note and one ' +
+    'record. The text of the note does not change. The kind, the title, ' +
+    'the body, the sources and the date stay the same. Only the record ' +
+    'changes.\n\n' +
+    'Do not write the note a second time. Two copies of one note become ' +
+    'different over time, and no reader can tell which one is right.\n\n' +
+    'The store keeps each record that the note was on before. A note on a ' +
+    'version of a recipe cannot move. That note says something about that ' +
+    'version. Write a new note where it belongs.',
+
   massFlow:
     'A dish can lose or gain a lot of weight while it is made. Biltong of ' +
     '10 kg raw becomes 4.5 kg dried. The mass flow figure shows what the ' +
@@ -253,13 +562,23 @@ const GUIDE = {
     'The figure belongs to one version, because it records one batch. It ' +
     'is not copied into the next version. Send it again only when you ' +
     'weighed that version. To give a stored version its figure, call ' +
-    'add_mass_flow. A version takes one figure and then refuses another.',
+    'add_mass_flow. A version takes one figure and then refuses another. ' +
+    'To correct a figure that is wrong, call update_revision.',
 
+  /**
+   * Replaced when `upload_image` is registered — see `IMAGES_WITH_UPLOAD`.
+   *
+   * This is the text for a deployment with no blob store, and it is the
+   * text this section held for the whole life of the project before issue
+   * #54: give an address, because there is nothing here that can make one.
+   */
   images:
     'Images are not necessary. Give a web address for each image. This ' +
-    'store keeps notes, not image files. A recipe can have heroImageUrl ' +
-    'and heroImageAlt. Each step can have imageUrl and imageAlt for the ' +
-    'correct appearance at that stage. Always write the alt text.',
+    'deployment cannot store an image file, so the address must already ' +
+    'exist on the web. A recipe can have heroImageUrl and heroImageAlt. ' +
+    'Each step can have imageUrl and imageAlt for the correct appearance ' +
+    'at that stage. An ingredient, a tag and a run can each have ' +
+    'heroImageUrl and heroImageAlt. Always write the alt text.',
 
   shoppingList:
     'build_shopping_list joins two or more recipes into one list. The list ' +
@@ -269,17 +588,54 @@ const GUIDE = {
     'invent an amount.',
 
   /**
-   * The count was "six" and the registry held seven, because
-   * `backfill_revision` was added and this line was not. It is nine now —
-   * `add_mass_flow` and `describe_mechanism` — and the number is worth
-   * keeping true: an agent that reads "six" and counts nine has no way to
-   * tell which three it must not trust.
+   * WHY THE GUIDE NAMES THE WEBSITE AT ALL.
+   *
+   * The tools say "experiment". The website says "batch log". They are the
+   * same record — the reader's word won the URL and the database kept its
+   * own — and nothing told an agent so. One then wrote a run, could not
+   * find it on the site, and reported the page as missing. It had existed
+   * since the rename, seventh in the navigation.
+   *
+   * The addresses are relative on purpose. `NEXT_PUBLIC_SITE_URL` is set
+   * nowhere in this repository, so `site.url` falls back to the production
+   * host — which on a preview deployment or in the e2e suite would be a
+   * lie. `getPublicOrigin()` is no better here: `registerTools` has no
+   * request to read an origin from.
    */
-  scopes:
-    'The read tools need the scope noble-notations:read. The nine write ' +
-    'tools also need noble-notations:write. The system checks the scope on ' +
-    'each call. report_issue needs no extra scope. Each connector can file ' +
-    'a report.',
+  theWebsite:
+    'This store is also a website. The website calls a run a batch log. ' +
+    'Every run is on the page /batch-logs. This includes a run that names ' +
+    'no recipe. One run is at /batch-logs/<slug>. A run that names a ' +
+    'recipe is also at /recipes/<recipe>/batch-logs/<slug>. The address ' +
+    '/batch-logs/<slug> always answers. It sends you on when the run has ' +
+    'a recipe.',
+
+  /**
+   * The count was "six" and the registry held seven, because
+   * `backfill_revision` was added and this line was not. It is eighteen now
+   * — nine, plus `reattach_note`, the three corrections, the delete, the
+   * restore, `create_variant`, `upload_image` and `request_image_upload` —
+   * and the number is worth keeping true: an agent that reads "six" and
+   * counts eighteen has no way to tell which nine it must not trust.
+   *
+   * `list_deleted` is a READ and is counted as one. It reports rows the site
+   * does not show, which is why that looks wrong at first glance — but the
+   * read scope already grants an archived recipe, and `ALLOWED_EMAILS`
+   * means one administrator approved every connector that can ask.
+   *
+   * SIX OTHER PLACES STATE A COUNT and must move together: `scopesParagraph`
+   * above, four docs in `src/app/connect/page.tsx` and the total in
+   * `docs/mcp-connector.md`. The registry holds thirty-one tools: twelve
+   * read, eighteen write, and `report_issue` in neither scope.
+   *
+   * THREE OF THOSE ARE CONDITIONAL, so the count is a range and not a number.
+   * `report_issue` needs `GITHUB_ISSUE_TOKEN` and is in neither scope, so it
+   * moves the total and no scope count. `upload_image` and
+   * `request_image_upload` need `BLOB_READ_WRITE_TOKEN` and ARE write tools,
+   * so they move both — which is why the sentence below is built rather
+   * than written out.
+   */
+  scopes: scopesParagraph(true, true),
 
   /**
    * The short version of this is in SERVER_INSTRUCTIONS too, and that
@@ -332,6 +688,7 @@ const GUIDE = {
     'fault tells a person nothing new.',
 
   rules: [
+    'Write in simple technical English. Short sentences. One idea in each sentence. Active voice.',
     'Write a reason that says what you changed and why. Do not write "updated recipe".',
     'Do not invent a measurement. If nobody recorded it, say this in a note.',
     'Do not make a version that only changes the text format.',
@@ -370,29 +727,92 @@ const GUIDE = {
     'session, while you still know what the words mean.',
 } as const;
 
-export type AgentGuide =
-  | typeof GUIDE
-  | (Omit<typeof GUIDE, 'reportingAFault' | 'workflow' | 'scopes'> & {
-      workflow: string[];
-      scopes: string;
-    });
+/**
+ * What the `images` section says once there is somewhere to put the bytes.
+ *
+ * Issue #54 is the whole reason this variant exists. The old text told an
+ * agent to give a web address for a picture it was holding as bytes, which
+ * is advice it could not follow — so the field went unused and most pictures
+ * were never added. This says what to call instead.
+ */
+const IMAGES_WITH_UPLOAD =
+  'You can put a picture in this store. There are three ways. Choose by ' +
+  'where the picture is.\n\n' +
+  'A photograph that the person has: call request_image_upload with ' +
+  'attachTo. It gives you a link. Give the link to the person. They open ' +
+  'it on the device that has the photograph and pick the file. The file ' +
+  'goes to the store at full size. When they say it is done, read the ' +
+  'record to see the picture. One link takes one picture and lasts one ' +
+  'hour.\n\n' +
+  'Do not send a photograph as base64. You write each character of a tool ' +
+  'call yourself, and a photograph is millions of characters. It fills ' +
+  'your context and then fails.\n\n' +
+  'A picture on the public web: call upload_image with sourceUrl, an https ' +
+  'address. The server fetches it.\n\n' +
+  'A small picture that you made: call upload_image with the bytes base64 ' +
+  'encoded in data, and say what they are in mimeType.\n\n' +
+  'upload_image gives back an address. Every image field in this store ' +
+  'takes that address.\n\n' +
+  'Always write the alt text. Say what the picture shows, for a reader who ' +
+  'cannot see it. Write "Sliced biltong, dark red with a white fat seam", ' +
+  'not "a photo of biltong".\n\n' +
+  'Give attachTo to put the picture on a record in the same call. Name one ' +
+  'record: {recipeSlug} for the hero image of a recipe, {recipeSlug, ' +
+  'stepPosition} for one step, {ingredientSlug} for an ingredient, ' +
+  '{experimentSlug} for a run, {experimentSlug, gallery: true} to add to ' +
+  'the pictures of a run, or {tagSlug, categoryType} for a tag. Leave ' +
+  'attachTo out to store the picture and use the address later.\n\n' +
+  'The first step is stepPosition 1. get_recipe reports the position of a ' +
+  'step counting from 0. Add 1 to that number.\n\n' +
+  'A run takes several pictures. Every other record takes one. A second ' +
+  'upload to the same record replaces the picture that is there. A second ' +
+  'upload to the pictures of a run adds to them.\n\n' +
+  'A hero image belongs to the recipe and not to a version, so it makes no ' +
+  'version. A step picture is inside a stored version, so writing one ' +
+  'changes what every reader of that version sees. This is allowed. A ' +
+  'picture is not a change to the food. Be sure the picture is of that ' +
+  'version.\n\n' +
+  'The store makes the picture smaller and keeps it as WebP. The longest ' +
+  'edge becomes 2400 pixels at most. It also makes smaller copies for ' +
+  'small screens. The limit on a file is 25 MB.\n\n' +
+  'The same picture sent twice gives the same address back. Nothing is ' +
+  'stored a second time.\n\n' +
+  'To take a picture down, call delete_record with kind "image" and the id. ' +
+  'It stops being visible on every record that shows it. restore_record ' +
+  'brings it back. There is no delete_image. This store has one delete and ' +
+  'it is soft.';
+
+export type AgentGuide = Omit<
+  typeof GUIDE,
+  'reportingAFault' | 'workflow' | 'scopes'
+> & {
+  reportingAFault?: string;
+  workflow: readonly string[];
+  scopes: string;
+};
 
 /**
  * The full guide, as `get_started` returns it.
  *
- * The three places that name `report_issue` go together when the tool is not
- * registered. A guide that teaches a tool the registry does not carry sends
- * an agent to a tool-not-found error at the moment it most needs to be
- * believed.
+ * TWO CAPABILITIES ARE CONDITIONAL and both are handled the same way. The
+ * three places that name `report_issue` go together when
+ * `GITHUB_ISSUE_TOKEN` is missing, and the `images` section and the write
+ * count go together when `BLOB_READ_WRITE_TOKEN` is. A guide that teaches a
+ * tool the registry does not carry sends an agent to a tool-not-found error
+ * at the moment it most needs to be believed.
  */
 export function agentGuide(
   reportingConfigured = issueReportingConfigured(),
+  uploadConfigured = imageUploadConfigured(),
 ): AgentGuide {
-  if (reportingConfigured) return GUIDE;
-  const { reportingAFault: _reportingAFault, ...rest } = GUIDE;
+  const { reportingAFault, ...rest } = GUIDE;
   return {
     ...rest,
-    workflow: GUIDE.workflow.filter((step) => !step.includes('report_issue')),
-    scopes: SCOPES_WITHOUT_REPORTING,
+    ...(reportingConfigured ? { reportingAFault } : {}),
+    workflow: reportingConfigured
+      ? GUIDE.workflow
+      : GUIDE.workflow.filter((step) => !step.includes('report_issue')),
+    images: uploadConfigured ? IMAGES_WITH_UPLOAD : GUIDE.images,
+    scopes: scopesParagraph(uploadConfigured, reportingConfigured),
   };
 }

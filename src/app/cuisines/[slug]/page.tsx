@@ -15,7 +15,14 @@ import { TermHierarchy } from '@/components/term-hierarchy';
 import { TermTag } from '@/components/tags';
 import { getTerm, type RecipeSummaryView } from '@/lib/queries/read';
 import { safeRead } from '@/lib/safe';
-import { cardinal, revisionOrdinal, roman, site } from '@/lib/site';
+import {
+  cardSummary,
+  cardinal,
+  revisionOrdinal,
+  roman,
+  site,
+  variationCode,
+} from '@/lib/site';
 import { cn } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
@@ -250,8 +257,8 @@ export default async function CuisinePage({ params }: Params) {
         <Notice title="A cuisine is set once and never changes">
           A recipe keeps its name and its cuisine for the whole of its life.
           Everything else — the wash, the dredge, the timings — belongs to a
-          revision and may be revised. Nothing is edited in place; a new
-          revision is written and the old one is kept.
+          revision and may be revised. A change to the dish writes a new
+          revision, and the version it replaces is kept.
         </Notice>
 
         {/* C-09 and R-CMP-05: nothing at all when the cuisine is flat.
@@ -284,6 +291,7 @@ export default async function CuisinePage({ params }: Params) {
                   kind={recipe.kind}
                   code={
                     [
+                      variationCode(recipe.variantOf),
                       revisionOrdinal(recipe.revisionNumber),
                       recipe.updatedAt ? citationDate(recipe.updatedAt) : null,
                     ]
@@ -293,7 +301,7 @@ export default async function CuisinePage({ params }: Params) {
                   title={recipe.title}
                   href={`/recipes/${recipe.slug}`}
                   subtitle={recipe.subtitle}
-                  summary={recipe.summary}
+                  summary={cardSummary(recipe.summary)}
                   terms={recipe.terms.map((term) => (
                     <TermTag key={term.id} term={term} showFacet />
                   ))}

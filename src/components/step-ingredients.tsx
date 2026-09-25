@@ -1,6 +1,6 @@
 'use client';
 
-import { formatQuantity } from '@/lib/domain/units';
+import { formatQuantity, unresolvedLineNeeds } from '@/lib/domain/units';
 import type { IngredientLineView, StepView } from '@/lib/queries/read';
 import { IngredientCallout } from './f/ingredient-row';
 import { scaleAmount, useScale } from './scale';
@@ -104,8 +104,22 @@ export function StepIngredients({
          * list read the same `ScaleProvider` (R-CMP-11), so they cannot
          * disagree.
          */
+        /*
+         * A LINE THAT NAMES NO CANONICAL INGREDIENT DRAWS ITS OWN TEXT AND
+         * NOTHING ELSE — the same rule `ingredient-checklist.tsx` states at
+         * length, and for the same reason: `raw_text` is the line as it was
+         * written, amount and unit included, so an amount half beside it
+         * reads `10 pod` `10 pod Star anise`. Soft delete makes the state
+         * reachable, because deleting an ingredient leaves every line that
+         * named it on its revision.
+         */
+        const named = line.ingredient !== null;
+        /* WHICH of the parts `raw_text` already carries is asked of the text
+           rather than inferred; `unresolvedLineNeeds` carries the reasoning.
+           A chip draws the measure only. */
+        const needs = named ? { measure: true } : unresolvedLineNeeds(line);
         const quantity =
-          line.quantity == null
+          !needs.measure || line.quantity == null
             ? null
             : formatQuantity(
                 scaleAmount(line.quantity, scale, line.unit),

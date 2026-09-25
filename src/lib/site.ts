@@ -89,12 +89,53 @@ export function categoryRank(category: string): number {
   return index === -1 ? CATEGORY_ORDER.length : index;
 }
 
+/**
+ * D-01 — the one live address of a run.
+ *
+ * A run that names a recipe belongs under that recipe; a run that names none
+ * has no recipe slug to put in that shape and stays at the top level. Both
+ * indexes link straight at whichever of the two the run's own address is, so
+ * the reader never pays for the redirect in `/batch-logs/[log]`.
+ *
+ * It lived in `src/app/batch-logs/batch-log-parts.tsx` and the rule was
+ * written out again inline in `src/app/sitemap.ts`, which is how a sitemap
+ * comes to disagree with the pages it lists. `/search` now links runs too,
+ * from a file with no business importing a page component, so the rule
+ * moved here — beside the other addresses — and is stated once.
+ */
+export function batchLogPath(log: {
+  slug: string;
+  recipe: { slug: string } | null;
+}): string {
+  return log.recipe
+    ? `/recipes/${log.recipe.slug}/batch-logs/${log.slug}`
+    : `/batch-logs/${log.slug}`;
+}
+
 export const KIND_LABELS: Record<string, string> = {
   recipe: 'Recipe',
   preparation: 'Preparation',
   process: 'Process',
   research: 'Research',
   science: 'Science',
+};
+
+/**
+ * The same five kinds as nouns, for running prose.
+ *
+ * `KIND_LABELS` is a label: it sits in a `<select>`, a tag and a table
+ * head, where a capitalised singular is right. A sentence needs neither —
+ * "Six Recipe mention biltong" — and the plurals are not all `+ s`:
+ * `/recipes` already hand-writes "research write-ups" rather than
+ * "researches". Kept beside the labels so a sixth kind cannot be given one
+ * and not the other.
+ */
+export const KIND_NOUNS: Record<string, { one: string; many: string }> = {
+  recipe: { one: 'recipe', many: 'recipes' },
+  preparation: { one: 'preparation', many: 'preparations' },
+  process: { one: 'process', many: 'processes' },
+  research: { one: 'research write-up', many: 'research write-ups' },
+  science: { one: 'science study', many: 'science studies' },
 };
 
 export const NOTE_KIND_LABELS: Record<string, string> = {
@@ -165,6 +206,108 @@ export function revisionOrdinal(revisionNumber: number): string | undefined {
       ? 'th'
       : (['th', 'st', 'nd', 'rd'][n % 10] ?? 'th');
   return `${n}${suffix} revision`;
+}
+
+/**
+ * `Variation of Dan dan noodles`, for the mono run beside a card's badge.
+ *
+ * It goes in the `code` slot rather than in a slot of its own, because that
+ * slot is already "one free string with ` · ` separators" and the design
+ * draws three segments in it on `/cuisines/[slug]`. A card is a summary; the
+ * link to the dish it varies is one click away on the recipe's own page,
+ * where the sentence under the title says it with a link inside it.
+ *
+ * `undefined` for a recipe that varies nothing, so the segment is dropped by
+ * the same `.filter(Boolean)` every caller already writes (R-STA-05).
+ */
+export function variationCode(
+  variantOf: { title: string } | null | undefined,
+): string | undefined {
+  return variantOf ? `Variation of ${variantOf.title}` : undefined;
+}
+
+/**
+ * How much of a summary a card shows, in characters. C-05 of the
+ * specification says 160; M4 removed the cut (D-11) and this restores it,
+ * on the terms D-11 itself set out.
+ *
+ * D-11 weighed the cut against the summaries the DESIGN drew, 181 and 245
+ * characters, and at that length the cut is the wrong trade. The summaries
+ * the repository STORES are a different case: they are multi-paragraph, and
+ * the longest is 1,028 characters — four times anything the design drew, and
+ * fourteen lines of body text under a 26px title, because a card flattens
+ * the paragraphs into one block. A grid of three of those is a wall of prose
+ * with the titles lost in it.
+ *
+ * It is a ceiling and not a target. Nothing is padded up to it, and a
+ * summary shorter than it is drawn exactly as written.
+ */
+export const CARD_SUMMARY = 160;
+
+/**
+ * A quarter of the limit, used twice below and meaning the same thing both
+ * times: roughly one line of the card's 14px body in a 286px column. It is
+ * the smallest piece of text worth treating as a unit.
+ */
+const CARD_SUMMARY_LINE = CARD_SUMMARY / 4;
+
+/**
+ * The card-length reading of a summary. Long text is cut; short text is
+ * returned whole.
+ *
+ * THE CUT LANDS ON A SENTENCE, not on a character count. A card that stops
+ * mid-clause reads as damaged, and these summaries are written as whole
+ * sentences, so the boundary is free and it is better. It takes as many
+ * sentences as fit within `limit` and stops there, appending nothing — the
+ * result is a complete sentence, and the ellipsis is a mark the design draws
+ * nowhere.
+ *
+ * TWO CASES CANNOT END ON A SENTENCE, and both fall through to a word cut
+ * with an ellipsis: a first sentence long enough to swallow the card on its
+ * own, and an opening so short that the sentences which fit add up to less
+ * than a line — a three-word lede in front of a hundred-word second sentence
+ * would otherwise leave the card almost blank. Outside those two, a whole
+ * sentence wins however far short of the limit it stops.
+ *
+ * TEXT THAT OVERRUNS BY LESS THAN A LINE IS LEFT WHOLE. Trading an ellipsis
+ * for fourteen characters is a bad trade: one more line costs the grid less
+ * than a mark that says "there is more" about almost nothing. Two of the ten
+ * stored summaries are in that band, and the design's own 181-character card
+ * is too — so it still draws whole, which is what D-11 was protecting.
+ *
+ * Paragraph breaks collapse to single spaces, because the card draws one
+ * `<p>` and a raw newline renders as a space there anyway.
+ *
+ * Returns `undefined` for an empty summary, so the card drops the slot
+ * instead of drawing an empty paragraph (R-STA-05).
+ */
+export function cardSummary(
+  text: string | null | undefined,
+  limit: number = CARD_SUMMARY,
+): string | undefined {
+  const whole = text?.trim().replace(/\s+/g, ' ');
+  if (!whole) return undefined;
+  if (whole.length <= limit) return whole;
+
+  /* Every sentence ending that finishes at or before the limit, keeping the
+     last one. A closing quote or bracket belongs to the sentence it ends. */
+  const endings = /[.!?]['")\]]*(?=\s|$)/g;
+  let cut = 0;
+  for (let m = endings.exec(whole); m; m = endings.exec(whole)) {
+    const end = m.index + m[0].length;
+    if (end > limit) break;
+    cut = end;
+  }
+  if (cut >= CARD_SUMMARY_LINE) return whole.slice(0, cut);
+
+  /* No sentence to stop at. An overrun shorter than a line is not worth an
+     ellipsis; anything longer is cut on a word. */
+  if (whole.length <= limit + CARD_SUMMARY_LINE) return whole;
+
+  const head = whole.slice(0, limit);
+  const lastSpace = head.lastIndexOf(' ');
+  const word = lastSpace > 0 ? head.slice(0, lastSpace) : head;
+  return `${word.replace(/[\s,;:.]+$/, '')}\u2026`;
 }
 
 /**

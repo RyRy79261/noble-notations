@@ -88,10 +88,19 @@ string, so a `redirect_uri` still in flight survives the rename.
 
 ## Scopes
 
-| Scope                   | Grants                                                                                                                                                             |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `noble-notations:read`  | Every read tool                                                                                                                                                    |
-| `noble-notations:write` | `create_recipe`, `revise_recipe`, `backfill_revision`, `add_note`, `add_mass_flow`, `describe_mechanism`, `upsert_ingredient`, `upsert_category`, `log_experiment` |
+| Scope                   | Grants                                                                                                                                                                                                                                                                                                                              |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `noble-notations:read`  | Every read tool, including `list_deleted`                                                                                                                                                                                                                                                                                           |
+| `noble-notations:write` | `create_recipe`, `create_variant`, `revise_recipe`, `backfill_revision`, `add_note`, `add_mass_flow`, `describe_mechanism`, `upsert_ingredient`, `upsert_category`, `log_experiment`, `reattach_note`, `update_recipe`, `update_revision`, `update_note`, `delete_record`, `restore_record`, `upload_image`, `request_image_upload` |
+
+**`list_deleted` is a read, and it is in the read scope.** It reports rows
+the public site does not show, which is why that looks wrong at first
+glance. Three things settle it: the read scope already grants a recipe whose
+status is `archived`; `ALLOWED_EMAILS` means a single administrator approves
+every connector, so there is no second audience to withhold it from; and the
+caller who most needs it is the read-only one that arrives after a delete
+and has to find out what is missing and whether it is recoverable. Behind
+write, that agent would see an absence and never learn it was reversible.
 
 `report_issue` is in neither scope. It needs authentication and nothing
 else, so a read-only connector can file a report — a read-only agent is
@@ -106,23 +115,208 @@ every tool call, not just at authorization.
 
 Read: `get_started`, `search_recipes`, `get_recipe`, `list_categories`,
 `list_ingredients`, `get_ingredient`, `list_experiments`, `get_experiment`,
-`build_shopping_list`, `get_repository_stats`.
+`search_notes`, `build_shopping_list`, `get_repository_stats`,
+`list_deleted`.
 
-Write: `create_recipe`, `revise_recipe`, `backfill_revision`, `add_note`,
-`add_mass_flow`, `describe_mechanism`, `upsert_ingredient`,
-`upsert_category`, `log_experiment`.
+Write: `create_recipe`, `create_variant`, `revise_recipe`,
+`backfill_revision`, `add_note`, `add_mass_flow`, `describe_mechanism`,
+`upsert_ingredient`, `upsert_category`, `log_experiment`, `reattach_note`,
+`update_recipe`, `update_revision`, `update_note`, `delete_record`,
+`restore_record`, `upload_image`, `request_image_upload`.
 
 Neither: `report_issue`.
 
-Twenty tools. `/connect` and `TOOLS` in `e2e/mcp-contract.spec.ts` name the
-same set; a tool that appears or disappears without all three moving is
-drift, and that test is the line that says so.
+**Three of those are conditional, and the count is therefore a range.**
+`report_issue` is registered only when `GITHUB_ISSUE_TOKEN` is set, and
+`upload_image` and `request_image_upload` only when `BLOB_READ_WRITE_TOKEN`
+is; both are set in
+Production and Preview and neither is on a developer's machine. A tool that
+is advertised and cannot work is worse than one that is absent, because an
+agent calls it, fails, and cannot tell a misconfiguration from a fault in
+its own arguments. The guide follows the same predicates — `get_started`
+describes the two image tools only where they exist, and the write-tool
+count in its `scopes` section is eighteen or sixteen accordingly.
+
+`list_experiments`, `get_experiment` and `log_experiment` speak of
+experiments; the website calls the same record a batch log and serves it at
+`/batch-logs`. The guide's `theWebsite` section teaches an agent the
+mapping, because one that knew only the tool word reported the page as
+missing.
+
+Thirty-one tools, fully configured. `/connect` and `TOOLS` in
+`e2e/mcp-contract.spec.ts` name the same set; a tool that appears or
+disappears without all three moving is drift, and that test is the line that
+says so. (`create_variant` reached the registry, `/connect` and that test
+without reaching the two lists above, which is exactly the drift this
+paragraph warns about; it is named in both now.)
 
 Tool descriptions are the only instructions the model gets, and they are
 written to push toward revising rather than duplicating — `create_recipe`
 says to search first and reach for `revise_recipe` if the dish exists.
 
-### The two tools that reach a stored record
+### Images, and why the stored address is ours
+
+`upload_image` is the answer to issue #54, and the shape of the answer is
+worth writing down because it is not the obvious one.
+
+Every image field in this repository — `recipes.hero_image_url`,
+`recipe_steps.image_url`, and the three added with this tool — takes an
+ADDRESS, and nothing in the connector could make one. An agent that had just
+been sent a photograph held bytes. It had no address for them and no way to
+mint one, so the field was reachable in theory and unreachable in practice:
+the person had to leave the conversation, host the file somewhere and come
+back with a link. Most pictures were therefore never added.
+
+The bytes go to Vercel Blob. The ROW goes in `images`, the seventh
+soft-deletable table, and what a recipe stores is `/images/<id>` — this
+site's own address, never the blob's.
+
+That last part is the decision everything else follows from. The reference
+from a recipe to a picture is a text column and not a foreign key, and it
+always was, because a recipe may legitimately point at a picture on somebody
+else's site. So deleting an image row can do nothing about the rows naming
+it. If the stored value were the blob address, a deleted picture would keep
+rendering on every page that referenced it, and the only fix would be a
+delete that rewrote rows across four tables and inside stored revisions — a
+cascade that edits versions people cooked from, in order to hide a
+photograph. Serving from `/images/[id]` instead makes that cascade
+unnecessary: the route reads `images_live`, so a deleted row is a 404
+everywhere at once and a restore brings every reference back whole.
+
+The address is stored RELATIVE, for the reason the guide keeps its own
+addresses relative: `NEXT_PUBLIC_SITE_URL` is set nowhere here, so an
+absolute address built at write time would name the production host and be
+wrong on every preview deployment — permanently, in a stored row.
+
+What this does not buy: a Vercel blob is public, the SDK has no other access
+mode, so somebody who kept the blob address can still fetch a deleted
+picture. The path carries a random suffix and the `images` row is the only
+place it is written down, so "deleted" here means the picture leaves the
+site and the tools, not that the bytes are destroyed. Nothing in this
+repository destroys bytes, and `restore_record` is exact because of it.
+
+**There is no `delete_image`, and the issue asked for one.** This repository
+has one delete and it is soft, so `image` is the seventh kind
+`delete_record` and `restore_record` take. A second delete verb would have
+needed a second undo beside it, and then two answers to "how do I get it
+back" — which is the confusion AGENTS.md § _It is not called archive_ spends
+a table avoiding. `upload_image` says so in its own description, and
+`e2e/auth-guide.spec.ts` carries `delete_image` in its `NOT_TOOLS` set so
+that sentence is allowed to name a tool that does not exist.
+
+Four smaller decisions, each of which the issue left open:
+
+- **Size.** Both, not either. Anything over 25 MB is refused and the
+  refusal names the limit; everything under it is resized to 2400 pixels on
+  the longest edge and re-encoded to WebP, without comment, with smaller
+  copies beside it (see _Getting a photograph in_ below). Refusing alone
+  puts the work back on the agent, which is the friction the issue was filed
+  about; resizing alone means an unbounded decode, so there is a pixel
+  ceiling as well as a byte one.
+- **Revisions.** A hero image is on the recipe and not on a version, so
+  setting one makes no version and moves no number. A step picture IS inside
+  a stored version, and writing one is a correction to it — allowed, because
+  a photograph is not a statement that the food changed, but it changes what
+  every reader of that version sees. Both tool descriptions say so.
+- **Replacement.** A second upload to a record replaces its picture; a
+  second upload to a run's gallery appends. `upload_image` is the one path
+  in the write layer that appends to a list rather than replacing it, and it
+  has to be: an agent holding one new photograph does not hold the other
+  four.
+- **De-duplication.** By the sha256 of the ENCODED result. A person sends
+  the same photograph twice in a conversation more often than not, and two
+  rows would mean two blobs, two bin entries and two ids for one picture.
+  The second call still attaches, and still updates the alt text: only the
+  bytes were already known.
+
+### Getting a photograph in without the model holding it
+
+Issues #56 and #58. `upload_image` shipped taking the picture as `data`, a
+base64 string, and that is correct for what an MCP call is: JSON, with no
+binary channel. The fault was who writes that string. **The model writes the
+tool call**, so every base64 character is a token the model emits. A phone
+photograph is two to five megabytes, which is three to seven million
+characters. No chat can send one, and trying fills the context window before
+it fails. One agent measured it: to get a 2.7 MB photograph under 100 000
+characters it had to shrink it to 640 pixels wide, and the server then
+stored a picture far smaller than the one it is built for.
+
+So the bytes must travel without the model. There are now three ways in,
+chosen by where the picture is:
+
+| The picture is               | The way in                          | What the model sends  |
+| ---------------------------- | ----------------------------------- | --------------------- |
+| a photograph the person has  | `request_image_upload`, then a link | a slug and a sentence |
+| on the public web            | `upload_image { sourceUrl }`        | an https address      |
+| small, and made by the agent | `upload_image { data, mimeType }`   | the base64 itself     |
+
+**`request_image_upload` returns a link.** The agent names the record in
+`attachTo` and gives the person the link; the person opens it on the phone
+that took the picture and picks the file. The model handles about a hundred
+characters, whatever the size of the photograph.
+
+- **The target is checked when the link is made.** `probeAttachTarget` runs
+  the real `attachImage` inside a savepoint and rolls it back, so every
+  refusal the finished upload could meet — no such recipe, a deleted run,
+  step 9 of six — is met in the tool call, where the agent can fix it. A
+  set of separate reads would be a second copy of those rules.
+- **The link is the credential.** Nobody signs in on the page. The token is
+  32 random bytes and only its sha256 is stored (`image_uploads`), it lasts
+  one hour, and the first picture to land spends it. Only a connector with
+  the write scope can mint one, and it names one record. The page is
+  `noindex` and sends no referrer.
+- **The page sends the photo to this site, not to the blob store.** It
+  PUTs the file to `/api/uploads/<token>`, the same route an agent with a
+  shell uses, and the server processes it exactly as `upload_image` would,
+  stores it and spends the link. A Vercel function refuses a request body
+  over 4.5 MB, so a file over 4 MB is first redrawn in the browser at 2400
+  pixels on its longest edge — the size of the largest copy the store keeps
+  — as a JPEG (`src/lib/images/shrink-in-browser.ts`). A file under 4 MB,
+  which is most phone photographs, is sent as taken.
+  `/api/uploads/<token>/token` and `/complete`, from the first design that
+  sent the file from the browser to Vercel Blob, still exist and are tested,
+  but the page no longer calls them.
+- **On Android, `accept` carries `application/x-noble-upload`.** Chrome on
+  Android 13+ opens the system Photo Picker whenever every accepted type
+  starts with `image/`. The picker gives Chrome a proxy file whose size comes
+  from a database; when it does not match the bytes, every read fails —
+  no preview, "Failed to fetch", `NotReadableError`. That is why every phone
+  upload failed, whichever way the page sent the file. One made-up non-image
+  type sends Chrome to its normal chooser (Files, filtered to images, with
+  Photos and Drive) instead. It is not `application/octet-stream`, which
+  would drop the filter. The page also reads the file the moment it is
+  picked, and offers a second chooser with no accept list if that fails.
+- **Spending the link and storing the picture are one transaction.** The
+  row is locked `FOR UPDATE`, so two tabs finishing at once store one
+  picture; the second is told the link is used.
+- **`accept` names four types and not `image/*`.** That is what makes
+  Safari on an iPhone hand over a JPEG instead of a HEIC, which `sharp`
+  cannot decode.
+- **An agent with a shell can use the same link.** The result carries
+  `putUrl`; an HTTP PUT with the file as the body stores it. That path is
+  bounded by the 4.5 MB body limit, and the description says to shrink to
+  2400 pixels first, which loses nothing because 2400 is the largest copy
+  kept.
+
+**`sourceUrl` is a request forgery surface, and `fetch-remote.ts` is guarded
+accordingly.** https only; no user info; at most three redirects, each
+re-checked; the body capped while it streams; a 15 second timeout. The
+address check runs on what the name RESOLVES to, inside the socket's own DNS
+lookup, against every private, loopback, link-local and reserved range in
+both families — checking the name and letting the socket resolve it again is
+the rebinding hole. A literal IP is checked separately, because Node does
+not call the lookup for one. The refusal names the address and says why.
+
+**Every picture now has smaller copies.** `sharp` makes 480, 960 and 1600
+pixel wide copies beside the 2400 pixel one, at upload, and stores them in
+`images.renditions`. `/images/<id>?w=960` redirects to the narrowest copy at
+least that wide, and the site's `<img>` tags carry a `srcset` naming them,
+so a phone fetches a small file and a 2× laptop a large one. They are made
+once rather than by the Next.js image optimiser on each cache miss, because
+the answer never changes. A picture stored before this has no copies and
+answers every width with its one file.
+
+### The three tools that reach a stored record
 
 `add_mass_flow` and `describe_mechanism` are the odd pair. Every other
 write tool makes a record or appends one; these two name a record that is
@@ -137,12 +331,71 @@ rather than filling columns on stored ones, and a revision whose only
 change is a diagram has no rationale and would move a number that is in
 URLs and in the `nn:checked:{slug}:{revision}` keys.
 
+`reattach_note` is the third, and a different shape: it moves a note from
+one record to another. Nothing a reader reads changes — the kind, title,
+body, conditions, sources and date are all left exactly as they were, and
+only which record holds the note is different. A note's TEXT being fixed
+does not make its LOCATION fixed, and the choice of parent is usually
+forced by what happens to exist yet: a note about a dish gets attached to a
+batch because no recipe for the dish has been written. Before this tool
+that note was stranded, and the only repair was to write it a second time
+on the recipe, which duplicates the text and lets the two copies drift.
+`log_experiment` has always re-homed a run the same way.
+
+A note pinned to one revision is refused rather than moved. That note is a
+statement about that version, and moving it would make a stored version say
+something it never said — which is the revision rule itself. `update_note`
+is the one way past that refusal, and it is the right one: it is the tool
+for a record that is WRONG, and a note filed against a version it was never
+about is wrong rather than moved.
+
+`update_note` therefore writes what a move writes. It sets `sort_at`, so a
+note written years ago does not land at the front of its new subject's list
+and renumber the mechanisms below it, and it appends the home the note is
+leaving to `previous_subjects` when that home has one of the three forms the
+column stores. Two tools can move a note and they leave the same trail
+behind; the difference between them is the question at the top of this file,
+not the bookkeeping.
+
+The move is recorded, not silent. `notes.previous_subjects` keeps every
+record the note has hung off, oldest first. The audit log cannot carry that
+fact: `runTool` builds its audit row from the arguments the tool was called
+with, so it can name where a note went and never where it came from. The
+concurrency answer is `describe_mechanism`'s — lock the row, then repeat
+the guard in the UPDATE's own WHERE, so two callers racing cannot both
+believe they moved it.
+
 Neither is an update path in the sense the revision rule forbids. Each
 fills a field that has never held a value, so it can only turn absent into
 present — and R-SCR-39 makes the figure optional, so a revision without one
 is already rendered correctly. Each refuses a second write, which is what
-keeps a measurement from being quietly replaced. The answer to a wrong
-condition is a note of kind `correction`, exactly as it is for a wrong note.
+keeps a measurement from being quietly replaced.
+
+**Their one-shot promise is now local to them, and their refusals had to
+move.** Both still refuse a second write, and that is still the point of
+their shape: neither of these two tools can replace a measurement. What
+changed is that the repository has a general correction path.
+`update_revision` replaces a stored mass flow figure and `update_note`
+replaces a stored set of conditions, so the old refusals — "this cannot be
+changed", "they cannot be changed" — became false in the one place a model
+has no way to check. They now name the tool that does it:
+
+- `writeMassFlow`: _"…This tool does not replace a figure: it records what a
+  batch weighed. To record a different batch, call revise_recipe and send the
+  figure with it. To correct a figure that is wrong, call update_revision."_
+- `describeMechanism`, on both the read guard and the `WHERE`-clause
+  backstop: _"…This tool does not replace them. To correct them, call
+  update_note. To leave the old claim readable, add a note of kind
+  'correction' that says so."_
+
+Both tools stay registered. They are the ergonomic path for filling one
+field on a stored record, and they are the only path an agent finds by name
+when that is what it wants to do.
+
+A note of kind `correction` is still a different act from correcting the
+note, and both are still right. The correction note leaves the old claim
+readable, which is what you want when somebody acted on it. `update_note` is
+the statement that the stored text was never true.
 
 **The two refusals are enforced differently, and the second one had to be.**
 `add_mass_flow` reads the stored row so the caller is told what is already
@@ -161,6 +414,41 @@ When a new record is being written, the fields ride along instead:
 `conditions` on any note. `massFlow` is deliberately **not** carried
 forward by `revise_recipe`, because it records what one batch weighed and
 copying it into a version nobody weighed would invent a measurement.
+
+## Documents
+
+A tool is something a model DOES. A resource is something it READS, and a
+client offers it as a document to load rather than as an action to take.
+The connector serves one:
+
+| URI                               | What it is                                  |
+| --------------------------------- | ------------------------------------------- |
+| `noble-notations://writing-style` | The writing rule, as a document of its own. |
+
+It is `text/markdown`, it is behind `noble-notations:read`, and it is the
+same text `get_started` returns as `howToWrite` with a title on it. The
+reason it exists as a resource as well as a field of the guide: an agent
+that wants the house style should not have to pull the whole eighteen-section
+guide back to get it, and a client that can pin a document can keep the rule
+in context for a whole session.
+
+**The read scope, not the write scope.** The agent that most needs the
+writing rule is the one about to be granted write access, and it reads this
+before that happens. A document stating how to write discloses nothing about
+the archive.
+
+**The text is in TypeScript, not read from `.claude/`.**
+`.claude/skills/writing-style/SKILL.md` states the same rule for a person
+working in the repository, and this connector does not read it. Next traces
+the files a route needs from its imports, and a path built at runtime traces
+nothing — `.claude/` would not be in the Vercel bundle, so a connector that
+read the skill file would fail in production while passing every local test.
+The two copies are held together by `e2e/writing-style.spec.ts`, which
+enumerates the rules and fails naming the one that drifted.
+
+Resources are not tools and they do not move the tool count: the registry
+still holds thirty-one. `resources/list` advertises this document and
+`resources/read` serves it.
 
 ## Reporting a fault
 

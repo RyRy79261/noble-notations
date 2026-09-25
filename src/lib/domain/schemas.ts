@@ -16,6 +16,51 @@ import { CANONICAL_UNITS, isKnownUnit } from '@/lib/domain/units';
 import { slugify } from '@/lib/domain/slug';
 
 /**
+ * Where a picture lives. Two forms, and the second one is new.
+ *
+ * Every image field in this contract used to be `z.url()`, which meant an
+ * absolute address on somebody else's server, because nothing here could
+ * store a picture. `upload_image` changed that, and what it hands back is an
+ * address on THIS site — `/images/<id>`, served by a route handler that
+ * reads `images_live`, so deleting the image makes every field naming it go
+ * dark at once. `src/db/schema.ts` § `images` argues that choice out.
+ *
+ * It is stored RELATIVE, and this is the same rule the agent guide follows
+ * for the addresses it prints. `NEXT_PUBLIC_SITE_URL` is set nowhere in this
+ * repository, so an absolute address built at write time would name the
+ * production host — and be wrong on every preview deployment and in every
+ * e2e run, permanently, in a stored row. A leading slash is correct
+ * everywhere and `<img src>` resolves it against whatever host served the
+ * page.
+ *
+ * The absolute form stays legal and unchanged. A recipe may point at a
+ * picture on a supplier's site, and taking that away to tidy up a type would
+ * break rows that are already stored.
+ */
+const UPLOADED_IMAGE_PATH = /^\/images\/[0-9a-fA-F-]{36}$/;
+
+export const imageAddressSchema = z
+  .string()
+  .max(2000)
+  .refine((v) => UPLOADED_IMAGE_PATH.test(v) || z.url().safeParse(v).success, {
+    message:
+      'Give a full web address, or the `/images/<id>` path that ' +
+      'upload_image returns.',
+  });
+
+/** True for an address this site serves itself. */
+export function isUploadedImagePath(value: string): boolean {
+  return UPLOADED_IMAGE_PATH.test(value);
+}
+
+/** The id inside `/images/<id>`, or null when this is somebody else's URL. */
+export function uploadedImageId(value: string): string | null {
+  return UPLOADED_IMAGE_PATH.test(value)
+    ? value.slice('/images/'.length)
+    : null;
+}
+
+/**
  * The kinds of category a tag can belong to.
  *
  * The database column is still named `facet`; only the words people and
@@ -258,9 +303,19 @@ export const INGREDIENT_CATEGORIES = [
   'other',
 ] as const;
 
+/**
+ * The four editorial edges. `variant_of` was the fifth until migration 0011
+ * and is now `variantOf` — a field of its own on the recipe, because being a
+ * variation is structural rather than editorial: at most one parent, no
+ * cycles, and a whole panel drawn from it. `src/db/schema.ts` argues it at
+ * `recipes.variantOfId`.
+ *
+ * A caller still sending `{ kind: 'variant_of' }` is not silently ignored.
+ * `recipeLinkSchema` names the field to use instead, because the sentence
+ * the caller meant is still sayable — it just has a better home.
+ */
 export const RECIPE_LINK_KINDS = [
   'derived_from',
-  'variant_of',
   'component_of',
   'pairs_with',
   'references',
@@ -370,8 +425,9 @@ export const noteSchema = z.object({
     .describe(
       'science = what is physically or chemically happening in the dish, ' +
         'and why a technique works; research = what was learned after ' +
-        'making it — alternatives, hacks, sourcing, background (give ' +
-        '`sources`); observation = what happened; substitution = what was ' +
+        'making it — alternatives, hacks, sourcing, background (must give ' +
+        'at least one entry in `sources`); observation = what happened; ' +
+        'substitution = what was ' +
         'swapped and why; warning = a trap; result = how it turned out; ' +
         'idea = untried; correction = fixes an earlier claim',
     ),
@@ -389,7 +445,9 @@ export const noteSchema = z.object({
     .max(100)
     .optional()
     .describe(
-      'Each source needs a `url`, a `title` or a `citation`. One of the ' +
+      'A `research` note must have at least one source. The other kinds do ' +
+        'not need a source, but they can have one. ' +
+        'Each source needs a `url`, a `title` or a `citation`. One of the ' +
         'three is enough. An `accessedAt` on its own is not a source.',
     ),
 });
@@ -432,6 +490,13 @@ export type NoteInput = z.infer<typeof noteSchema>;
  * from. Accepting one with no provenance produced exactly the thing the
  * kind was invented to prevent. Every other kind is a first-hand
  * observation and stays optional.
+ *
+ * The message says the other two kinds "need no source" rather than "take
+ * no sources", because the seven non-research kinds MAY carry one and the
+ * earlier wording read as a prohibition. `writeNotes` stores `sources` for
+ * any kind, `notes.tsx` renders them for any kind, and the study reader in
+ * `read.ts` records the standing counterexample: the Wellington's one
+ * source hangs off a `warning`. Only `research` is made to cite.
  */
 export function requireSourcesForResearch(
   value: { kind: string; sources?: unknown[] | null },
@@ -444,9 +509,9 @@ export function requireSourcesForResearch(
     path: ['sources'],
     message:
       'A research note must cite at least one source in `sources` — give a ' +
-      'url, or a title and citation. Research is the kind that records ' +
+      '`url`, a `title` or a `citation`. Research is the kind that records ' +
       'where something came from; without that it is an `observation` or ' +
-      'an `idea`, which take no sources.',
+      'an `idea`, which need no source.',
   });
 }
 
@@ -535,11 +600,11 @@ export const stepSchema = z.object({
         'serve: Glutinous rice". The tool refuses a name that fits two lines.',
     ),
   /**
-   * Optional picture of what this stage should look like. Images are
-   * referenced by URL rather than uploaded — the repository stores notes,
-   * not binaries, and a link survives being exported back out to Markdown.
+   * Optional picture of what this stage should look like. Either an address
+   * on the web, or the `/images/<id>` one `upload_image` returns — see
+   * `imageAddressSchema`.
    */
-  imageUrl: z.url().nullish(),
+  imageUrl: imageAddressSchema.nullish(),
   imageAlt: z.string().max(300).nullish(),
   note: z.string().max(2000).nullish(),
 });
@@ -717,11 +782,92 @@ function checkMassFlowStages(
 }
 
 export const recipeLinkSchema = z.object({
-  kind: z.enum(RECIPE_LINK_KINDS),
+  /**
+   * A retired kind gets a message that names its replacement, rather than
+   * zod's list of four. The enum stays four values wide, so
+   * `CreateRecipeInput['links']` cannot hold a `variant_of` the write layer
+   * would then have to refuse a second time.
+   */
+  kind: z.enum(RECIPE_LINK_KINDS, {
+    error: (issue) =>
+      issue.input === 'variant_of'
+        ? 'variant_of is not a link. A variation is a recipe of its own ' +
+          'with its own versions, so it is a field on the recipe, not an ' +
+          'edge between two: send `variantOf` with that slug instead, and ' +
+          '`variantNote` for what makes it different. create_variant does ' +
+          'both in one call.'
+        : undefined,
+  }),
   /** Slug of the other recipe. Must already exist. */
   slug: z.string().min(1).max(120),
   note: z.string().max(1000).optional(),
 });
+
+/**
+ * Where a variation hangs, and what makes it different.
+ *
+ * The two travel together and `checkVariantPair` refuses half of them. They
+ * are spread into `create_recipe`, `update_recipe` and `create_variant`
+ * rather than written three times, so the three tools cannot drift on what
+ * a variation is.
+ *
+ * **Nullable, and the null is the way out.** `variantOf: null` on
+ * `update_recipe` promotes a variation to a base dish — it is how a wrong
+ * parent is corrected and how a family is split. Absent means leave it
+ * alone, which is what every other field on that tool means. The write
+ * layer clears `variantNote` with it: a note saying "with shiitake instead
+ * of pork" on a recipe that varies nothing is a line with no subject.
+ */
+export const variantOfShape = {
+  variantOf: z
+    .string()
+    .min(1)
+    .max(120)
+    .nullish()
+    .describe(
+      'Slug of the recipe this one is a variation of. The two are then ' +
+        'siblings in one family, and each keeps its own versions. Send ' +
+        'null to make this a dish of its own again.',
+    ),
+  variantNote: z
+    .string()
+    .max(300)
+    .nullish()
+    .describe(
+      'What makes this variation different, in one line: "With shiitake ' +
+        'instead of pork". Shown beside the title wherever the family is ' +
+        'listed.',
+    ),
+};
+
+/**
+ * A note about a variation, on a recipe that varies nothing, is a line with
+ * no subject — and it is invisible until somebody makes that recipe a
+ * variation months later and a sentence nobody wrote appears beside it.
+ *
+ * Only refused when the note is set and the parent is explicitly cleared or
+ * absent on a create. On `update_recipe` an absent `variantOf` means "leave
+ * it alone", and a recipe that is ALREADY a variation may correct its note
+ * alone — so that case is checked at write time, where the stored parent is
+ * in hand, and not here.
+ */
+export function checkVariantPair(
+  value: { variantOf?: string | null; variantNote?: string | null },
+  ctx: z.RefinementCtx,
+  parentMayBeStored: boolean,
+): void {
+  if (value.variantNote == null) return;
+  if (value.variantOf != null) return;
+  if (parentMayBeStored && value.variantOf === undefined) return;
+  ctx.addIssue({
+    code: 'custom',
+    path: ['variantNote'],
+    message:
+      'variantNote says what makes a variation different, and this names ' +
+      'no recipe to vary. Give `variantOf` the slug of the dish this one ' +
+      'is a variation of, or drop the note.',
+  });
+}
 
 /**
  * Taxonomy as a record keyed by facet — the shape easiest to fill in.
@@ -755,6 +901,12 @@ export const upsertCategoryShape = {
    * rejected rather than silently ignored.
    */
   parentSlug: z.string().min(1).max(120).nullish(),
+  /**
+   * One picture for the tag's own page. A cuisine or a technique reads
+   * better with one, and a technique is often easier to show than to say.
+   */
+  heroImageUrl: imageAddressSchema.nullish(),
+  heroImageAlt: z.string().max(300).nullish(),
 };
 /**
  * The reserved-name rule sits here rather than on `label` or on `slug`,
@@ -876,7 +1028,7 @@ export const recipeBodyShape = {
     .optional(),
   links: z.array(recipeLinkSchema).max(50).optional(),
   originNote: z.string().max(2000).nullish(),
-  heroImageUrl: z.url().nullish(),
+  heroImageUrl: imageAddressSchema.nullish(),
   heroImageAlt: z.string().max(300).nullish(),
 };
 
@@ -1277,6 +1429,7 @@ export const createRecipeShape = {
     .optional(),
   /** Why this recipe exists at all — recorded on revision 1. */
   rationale: z.string().max(4000).optional(),
+  ...variantOfShape,
 };
 
 export const createRecipeSchema = z
@@ -1284,7 +1437,63 @@ export const createRecipeSchema = z
   .superRefine(checkStepReferences)
   .superRefine((value, ctx) =>
     checkMassFlowStages(value.massFlow?.stages, ctx, ['massFlow', 'stages']),
+  )
+  .superRefine((value, ctx) => checkVariantPair(value, ctx, false));
+
+// ─────────────────────────────────────────────────────────────────────────
+// Variations
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Create a recipe that is a VARIATION of one already stored.
+ *
+ * It creates a recipe, exactly as `create_recipe` does — its own slug, its
+ * own revision 1, its own history from there. The only difference is that
+ * `variantOf` is required rather than optional, and the reason it is a tool
+ * of its own rather than an argument is the same reason `revise_recipe` is
+ * not a flag on `update_recipe`: **the tool name is the question.**
+ *
+ * The question this one answers is the one the connector otherwise gets
+ * wrong. Dan dan noodles with shiitake instead of pork is not revision 4 of
+ * dan dan noodles — nothing was learned and the pork version was not
+ * superseded — but `revise_recipe` is the tool an agent reaches for, and it
+ * would move `current_revision_id` and take the original off the page. So
+ * the three sit beside each other and each states what it is for:
+ *
+ * | The dish                        | The tool         |
+ * | ------------------------------- | ---------------- |
+ * | got better                      | `revise_recipe`  |
+ * | went a different way            | `create_variant` |
+ * | is fine, the record is wrong    | `update_recipe`  |
+ *
+ * Nothing is carried forward from the parent. A variation states its own
+ * ingredients and its own steps, for the reason `backfill_revision` states
+ * its own: inheriting them would record a dish nobody cooked, and the whole
+ * point of a variation is the part that differs.
+ */
+export const createVariantShape = {
+  ...recipeBodyShape,
+  slug: createRecipeShape.slug,
+  rationale: createRecipeShape.rationale,
+  variantOf: z
+    .string()
+    .min(1)
+    .max(120)
+    .describe(
+      'Slug of the recipe this one is a variation of. Required — that is ' +
+        'what makes this create_variant and not create_recipe.',
+    ),
+  variantNote: variantOfShape.variantNote,
+};
+
+export const createVariantSchema = z
+  .object(createVariantShape)
+  .superRefine(checkStepReferences)
+  .superRefine((value, ctx) =>
+    checkMassFlowStages(value.massFlow?.stages, ctx, ['massFlow', 'stages']),
   );
+export type CreateVariantArgs = z.input<typeof createVariantSchema>;
+export type CreateVariantInput = z.infer<typeof createVariantSchema>;
 
 /**
  * `Input` is what a caller sends (defaults not yet applied); `CreateRecipeInput`
@@ -1529,6 +1738,54 @@ export const describeMechanismSchema = z.object(describeMechanismShape);
 export type DescribeMechanismArgs = z.input<typeof describeMechanismSchema>;
 export type DescribeMechanismInput = z.infer<typeof describeMechanismSchema>;
 
+/**
+ * Move a note to a different record.
+ *
+ * This is NOT an edit, and the distinction is the whole argument for the
+ * tool. A note's text is fixed — the answer to a wrong note is a
+ * `correction`, never a rewrite — but a note's LOCATION being fixed does
+ * not follow from that. Moving a note changes nothing about what it says or
+ * when it was written, and the choice of parent is frequently forced: a
+ * note about a dish gets attached to a batch because no recipe for the dish
+ * exists yet. `logExperiment` already re-homes a run the same way.
+ *
+ * No `revisionNumber`. A note pinned to one version is a statement about
+ * that version, and moving it would make the version say something it never
+ * said — that IS the immutability rule, so a revision note is refused
+ * rather than moved.
+ */
+export const reattachNoteShape = {
+  /** `z.guid()` for the same reason `describeMechanismShape` uses it. */
+  noteId: z
+    .guid()
+    .describe(
+      'The id of the note. get_recipe, get_ingredient and get_experiment ' +
+        'give it for every note they return, and so does search_notes.',
+    ),
+  recipeSlug: z.string().max(120).optional(),
+  ingredientSlug: z.string().max(120).optional(),
+  experimentSlug: z.string().max(120).optional(),
+};
+
+export const reattachNoteSchema = z
+  .object(reattachNoteShape)
+  .superRefine((value, ctx) => {
+    const targets = [
+      value.recipeSlug,
+      value.ingredientSlug,
+      value.experimentSlug,
+    ].filter(Boolean);
+    if (targets.length !== 1) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'Give exactly one of recipeSlug, ingredientSlug or experimentSlug.',
+      });
+    }
+  });
+export type ReattachNoteArgs = z.input<typeof reattachNoteSchema>;
+export type ReattachNoteInput = z.infer<typeof reattachNoteSchema>;
+
 export const upsertIngredientShape = {
   name: plainName(z.string().min(1).max(200), 'name'),
   slug: z.string().max(120).optional(),
@@ -1546,6 +1803,13 @@ export const upsertIngredientShape = {
     .max(50)
     .optional()
     .describe('Names of ingredients that can stand in for this one'),
+  /**
+   * A picture of the raw ingredient. This is the field that earns its place
+   * fastest of the three added with `upload_image`: two dried chillies have
+   * the same description and do not look alike.
+   */
+  heroImageUrl: imageAddressSchema.nullish(),
+  heroImageAlt: z.string().max(300).nullish(),
 };
 
 export const upsertIngredientSchema = z.object(upsertIngredientShape);
@@ -1631,6 +1895,33 @@ export const logExperimentShape = {
     .array(noteSchema.superRefine(requireSourcesForResearch))
     .max(100)
     .optional(),
+  /** The one picture that stands for the run, shown at the top of its page. */
+  heroImageUrl: imageAddressSchema.nullish(),
+  heroImageAlt: z.string().max(300).nullish(),
+  /**
+   * The rest of the run's pictures, in reading order.
+   *
+   * A run gets a LIST where every other record gets one picture, because a
+   * run is the record a photograph is worth most to — it is the account of
+   * what was actually seen — and one run produces several: the meat going
+   * in, the box on day three, the slice on day nine.
+   *
+   * It REPLACES, like every other list on this tool. `logExperiment` already
+   * replaces items and observations as a pair, and a caller that sends five
+   * pictures gets exactly those five. `upload_image` is the one path that
+   * appends instead, and it says so: an agent holding one new photograph
+   * does not hold the other four.
+   */
+  images: z
+    .array(
+      z.object({
+        url: imageAddressSchema,
+        alt: z.string().max(300).nullish(),
+        caption: z.string().max(500).nullish(),
+      }),
+    )
+    .max(50)
+    .optional(),
 };
 
 export const logExperimentSchema = z
@@ -1651,6 +1942,710 @@ export const logExperimentSchema = z
   });
 export type LogExperimentArgs = z.input<typeof logExperimentSchema>;
 export type LogExperimentInput = z.infer<typeof logExperimentSchema>;
+
+// ─────────────────────────────────────────────────────────────────────────
+// Putting a picture in
+//
+// Issue #54: `heroImageUrl` was typed as a URI and nothing in the connector
+// could make one. An agent in a chat session holds a photograph as BYTES, has
+// no address for it, and cannot mint one — so the field was reachable in
+// theory and unreachable in practice, and the person had to leave the
+// conversation, host the file somewhere and come back with a link. Most
+// pictures therefore never got added.
+//
+// `upload_image` is the door. It takes the bytes, stores them, and hands back
+// the address every image field on every other tool already accepts.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** What the store accepts. Everything is re-encoded to WebP on the way in. */
+export const IMAGE_MIME_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/avif',
+] as const;
+
+/**
+ * The base64 ceiling, and it is a guard rather than the real limit.
+ *
+ * The limit that counts is on the DECODED length and lives in
+ * `src/lib/images/process.ts`, which is where the refusal that names a
+ * number in megabytes is written. This one exists so a string far too large
+ * to be a photograph is refused by the schema before anything allocates a
+ * buffer for it. Base64 inflates by four bytes for every three, hence the
+ * ratio.
+ */
+const MAX_BASE64_LENGTH = Math.ceil((15 * 1024 * 1024 * 4) / 3) + 1024;
+
+/**
+ * Which record the picture goes on, if it goes on one at all.
+ *
+ * Shaped as the issue asked for it — a bare object naming a slug — rather
+ * than as a tagged union, because this is the shape an agent reaches for
+ * unprompted and the refusals below can say precisely what is wrong with any
+ * other one. Exactly one record may be named. A field that does not belong
+ * to the record named is REFUSED and not ignored, which is the rule
+ * `checkRecordAddress` already follows and for the same reason: a silently
+ * dropped argument is how "the tool said it worked and nothing happened"
+ * gets filed.
+ */
+export const attachToShape = {
+  recipeSlug: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe('Set the hero image of this recipe.'),
+  stepPosition: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe(
+      'With `recipeSlug`: set the picture of this step of the version ' +
+        'people currently read. The FIRST step is 1. Note that get_recipe ' +
+        "reports each step's `position` counting from 0, so add 1 to the " +
+        'number you read there.',
+    ),
+  ingredientSlug: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe('Set the hero image of this ingredient.'),
+  experimentSlug: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe('Set the hero image of this run (a batch log).'),
+  gallery: z
+    .boolean()
+    .optional()
+    .describe(
+      "With `experimentSlug`: add to the end of the run's list of " +
+        'pictures instead of replacing its hero image. A run takes several.',
+    ),
+  tagSlug: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe('With `categoryType`: set the hero image of this tag.'),
+  categoryType: z
+    .enum(CATEGORY_TYPES)
+    .optional()
+    .describe('With `tagSlug`. A tag slug is only unique inside its type.'),
+};
+
+export const attachToSchema = z
+  .object(attachToShape)
+  .superRefine((value, ctx) => {
+    const named = (
+      [
+        ['recipeSlug', value.recipeSlug],
+        ['ingredientSlug', value.ingredientSlug],
+        ['experimentSlug', value.experimentSlug],
+        ['tagSlug', value.tagSlug],
+      ] as const
+    ).filter(([, v]) => v != null);
+
+    const refuse = (message: string, path: string[]) =>
+      ctx.addIssue({ code: 'custom', path, message });
+
+    if (named.length === 0) {
+      refuse(
+        'This names no record. Give one of `recipeSlug`, `ingredientSlug`, ' +
+          '`experimentSlug`, or `tagSlug` with `categoryType`. Leave ' +
+          '`attachTo` out entirely to store the picture and attach it later.',
+        ['recipeSlug'],
+      );
+      return;
+    }
+    if (named.length > 1) {
+      refuse(
+        `A picture goes on one record. This names ${named
+          .map(([k]) => `\`${k}\``)
+          .join(' and ')}. Upload once, then send the address it returns to ` +
+          'the other record with its own tool.',
+        [named[1]![0]],
+      );
+      return;
+    }
+
+    if (value.stepPosition != null && value.recipeSlug == null) {
+      refuse('`stepPosition` only applies together with `recipeSlug`.', [
+        'stepPosition',
+      ]);
+    }
+    if (value.gallery != null && value.experimentSlug == null) {
+      refuse('`gallery` only applies together with `experimentSlug`.', [
+        'gallery',
+      ]);
+    }
+    if (value.tagSlug != null && value.categoryType == null) {
+      refuse('A tag slug is only unique inside its category type.', [
+        'categoryType',
+      ]);
+    }
+    if (value.categoryType != null && value.tagSlug == null) {
+      refuse('`categoryType` only applies together with `tagSlug`.', [
+        'tagSlug',
+      ]);
+    }
+  });
+export type AttachToInput = z.infer<typeof attachToSchema>;
+
+export const uploadImageShape = {
+  /**
+   * OPTIONAL NOW, and the description says what it costs. Issues #56 and
+   * #58: the model writes the tool call, so every base64 character is a
+   * token the model emits. A phone photograph is millions of them and no
+   * chat can send one. `data` stays right for a small picture the agent
+   * made itself; a photograph goes through `request_image_upload`, and a
+   * picture already on the web through `sourceUrl`.
+   */
+  data: z
+    .string()
+    .min(1)
+    .max(MAX_BASE64_LENGTH)
+    .optional()
+    .describe(
+      'The image itself, base64 encoded. A data URL works too. For a SMALL ' +
+        'image only — one you made, or a thumbnail. You write every ' +
+        'character of it yourself, so a photograph is millions of ' +
+        'characters and will not fit. For a photograph the person has, call ' +
+        'request_image_upload instead. Give `data` or `sourceUrl`, not both.',
+    ),
+  sourceUrl: z
+    .string()
+    .url()
+    .max(2000)
+    .optional()
+    .describe(
+      'An https address of a picture on the public web. The server fetches ' +
+        'it, so no bytes pass through you. It must open the picture itself, ' +
+        'not a page about it. A private or local address is refused. Give ' +
+        '`data` or `sourceUrl`, not both.',
+    ),
+  mimeType: z
+    .enum(IMAGE_MIME_TYPES)
+    .optional()
+    .describe(
+      'With `data`: what the bytes are. It is checked against them, not ' +
+        'trusted, and a disagreement is refused. Not needed with ' +
+        '`sourceUrl`.',
+    ),
+  /**
+   * REQUIRED, and this is the one place the contract is stricter than the
+   * field it fills. `recipes.hero_image_alt` is nullable because rows
+   * predate this tool. `images.alt` is not null, because a column that
+   * allows null collects nulls and the guide has always said to write alt
+   * text. The cost of asking is one sentence; the cost of not asking is a
+   * site nobody can read with a screen reader.
+   */
+  alt: z
+    .string()
+    .min(1)
+    .max(300)
+    .describe(
+      'What the picture shows, for a reader who cannot see it. Required. ' +
+        'Describe the food, not the photograph: "Sliced biltong, dark red ' +
+        'with a white fat seam", not "a photo of biltong".',
+    ),
+  caption: z
+    .string()
+    .max(500)
+    .nullish()
+    .describe('Shown under the picture. Optional.'),
+  attachTo: z
+    .object(attachToShape)
+    .optional()
+    .describe(
+      'Which record to put it on. Leave it out to store the picture and ' +
+        'get the address back without changing anything.',
+    ),
+};
+
+export const uploadImageSchema = z
+  .object({
+    ...uploadImageShape,
+    attachTo: attachToSchema.optional(),
+  })
+  .superRefine((value, ctx) => {
+    const has = (v: unknown) => v !== undefined && v !== null;
+    if (has(value.data) === has(value.sourceUrl)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['data'],
+        message:
+          'Give the picture one way: `data` (base64, for a small image) or ' +
+          '`sourceUrl` (an https address). For a photograph the person has, ' +
+          'call request_image_upload instead.',
+      });
+    }
+    if (has(value.data) && !has(value.mimeType)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['mimeType'],
+        message: '`data` needs `mimeType`, so the bytes can be checked.',
+      });
+    }
+  });
+export type UploadImageArgs = z.input<typeof uploadImageSchema>;
+export type UploadImageInput = z.infer<typeof uploadImageSchema>;
+
+// ─────────────────────────────────────────────────────────────────────────
+// Correcting a record, and taking one out
+//
+// One question separates these tools from `revise_recipe`, and it is written
+// into every description that touches them: DID THE FOOD CHANGE, OR IS THE
+// RECORD WRONG? A dish that changed gets a revision — a new version, the old
+// one kept, a rationale saying why. A record that is wrong gets a correction
+// — no new version, no number moved, no reason required, because a rationale
+// is the record of why the dish changed and an update is the statement that
+// it did not.
+//
+// The third case is the one that made this branch: two chats writing the same
+// revision twice. That duplicate is not a version. It is a data-entry
+// accident, and a rule that preserves it is protecting a mistake.
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * The seven records that can be deleted and restored.
+ *
+ * `image` is the newest, and it is here rather than behind a `delete_image`
+ * tool of its own on purpose. Issue #54 asked for that tool, and a second
+ * delete verb is the thing this repository has most carefully avoided: the
+ * word "delete" means one act here — the row stays, it stops being visible,
+ * `restore_record` brings it back — and `src/db/schema.ts` spends a table on
+ * why a fourth meaning of "archive" would make all four unreadable. A
+ * `delete_image` that behaved the same way would need a `restore_image`
+ * beside it, and then two answers to "how do I get it back". An image is a
+ * record like any other, so it deletes like one.
+ *
+ * Every record an agent can create is here. The CHILDREN are deliberately not:
+ * an ingredient line, a step, a note source, a mass flow stage, an experiment
+ * item and an observation have no delete of their own and no `deleted_at`
+ * column. A caller removes one by sending the parent's list without it, which
+ * is already the only shape the write layer has — `writeRevisionBody` takes
+ * whole lists, `applyTaxonomy` and `applyLinks` delete and rewrite, and
+ * `logExperiment` replaces items and observations as a pair. Two more reasons
+ * are in `src/db/schema.ts`: a child's `position` is an ordinal under a unique
+ * index, so removing line 3 of 6 either leaves a hole or renumbers rows nobody
+ * addressed; and `checkStepReferences` and `checkCarriedUses` both decide a
+ * step's binding by counting how many lines answer to a name, so a per-line
+ * delete would silently re-point a step at the survivor — the 400 g/40 g
+ * defect, reopened.
+ */
+export const DELETABLE_KINDS = [
+  'recipe',
+  'revision',
+  'note',
+  'experiment',
+  'ingredient',
+  'tag',
+  'image',
+] as const;
+export type DeletableKind = (typeof DELETABLE_KINDS)[number];
+
+/** How each kind may be addressed, in the words the refusal uses. */
+const RECORD_ADDRESS_FORMS: Record<DeletableKind, string> = {
+  recipe: 'an `id`, or a `slug`',
+  revision: 'an `id`, or a `slug` with a `revisionNumber`',
+  note: 'an `id`',
+  experiment: 'an `id`, or a `slug`',
+  ingredient: 'an `id`, or a `slug`',
+  tag: 'an `id`, or a `slug` with a `categoryType`',
+  image: 'an `id`',
+};
+
+/** The kinds that have no slug and are addressed by `id` and nothing else. */
+const ID_ONLY_KINDS: readonly DeletableKind[] = ['note', 'image'];
+
+/**
+ * How a caller names one record. Shared by `delete_record` and
+ * `restore_record`, so the two are addressed the same way and a row out of
+ * `list_deleted` can be sent straight back to the restore.
+ */
+export const recordAddressShape = {
+  kind: z
+    .enum(DELETABLE_KINDS)
+    .describe('Which kind of record this is. Then say which one.'),
+  /**
+   * `z.guid()` and not `z.uuid()`, for the reason `describeMechanismShape`
+   * gives: the strict form also checks the version and variant nibbles, and
+   * this is an id that was READ from the repository rather than invented by
+   * the caller. Refusing a value the database handed out would be a fault in
+   * the tool, not in the caller.
+   */
+  id: z
+    .guid()
+    .optional()
+    .describe('The id of the record. Works for every kind.'),
+  slug: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe('The slug of a recipe, a run or an ingredient, or of a tag.'),
+  revisionNumber: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe('With `slug`, for a version.'),
+  categoryType: z
+    .enum(CATEGORY_TYPES)
+    .optional()
+    .describe('With `slug`, for a tag.'),
+};
+
+/**
+ * The address table in §8, enforced at run time.
+ *
+ * A field that does not belong to the kind is refused rather than ignored.
+ * Dropping it silently is how "the argument was discarded" reports get
+ * filed — `upsertCategory` has one already — and here the cost of guessing
+ * is a caller who thinks it deleted revision 3 and deleted the recipe.
+ */
+function checkRecordAddress(
+  value: {
+    kind: DeletableKind;
+    id?: string;
+    slug?: string;
+    revisionNumber?: number;
+    categoryType?: CategoryType;
+  },
+  ctx: z.RefinementCtx,
+): void {
+  const form = RECORD_ADDRESS_FORMS[value.kind];
+  const refuse = (message: string, path?: string[]) =>
+    ctx.addIssue({
+      code: 'custom',
+      ...(path ? { path } : {}),
+      message: `${message} Name a ${value.kind} by ${form}.`,
+    });
+
+  const needsNumber = value.kind === 'revision';
+  const needsType = value.kind === 'tag';
+
+  if (value.id) {
+    if (value.slug) {
+      refuse('Give an `id` or a `slug`, not both.', ['slug']);
+      return;
+    }
+    // An id is the whole address. A qualifier beside it either agrees with
+    // the row, in which case it says nothing, or disagrees with it, in which
+    // case one of the two is the caller's real intent and nothing here can
+    // tell which.
+    if (value.revisionNumber != null) {
+      refuse('`revisionNumber` does not go with an `id`.', ['revisionNumber']);
+    }
+    if (value.categoryType) {
+      refuse('`categoryType` does not go with an `id`.', ['categoryType']);
+    }
+    return;
+  }
+
+  if (!value.slug) {
+    refuse('This names no record.', ['id']);
+    return;
+  }
+
+  if (ID_ONLY_KINDS.includes(value.kind)) {
+    refuse(`A ${value.kind} has no slug.`, ['slug']);
+    return;
+  }
+
+  if (needsNumber && value.revisionNumber == null) {
+    refuse('A `slug` alone does not say which version.', ['revisionNumber']);
+  }
+  if (!needsNumber && value.revisionNumber != null) {
+    refuse(`A ${value.kind} takes no \`revisionNumber\`.`, ['revisionNumber']);
+  }
+  if (needsType && !value.categoryType) {
+    refuse('A tag slug is only unique inside its category type.', [
+      'categoryType',
+    ]);
+  }
+  if (!needsType && value.categoryType) {
+    refuse(`A ${value.kind} takes no \`categoryType\`.`, ['categoryType']);
+  }
+}
+
+export const deleteRecordShape = {
+  ...recordAddressShape,
+  /**
+   * Optional, and stored. A delete here is reversible, so demanding a reason
+   * would be the same friction the owner refused on the update tools, for a
+   * smaller payoff — but `list_deleted` prints it, and it is the only thing
+   * that tells the next reader why a record went.
+   */
+  reason: z
+    .string()
+    .max(500)
+    .nullish()
+    .describe(
+      'Why this record went. The bin shows it. Give one: it is the only ' +
+        'thing that tells the next reader why.',
+    ),
+};
+
+export const deleteRecordSchema = z
+  .object(deleteRecordShape)
+  .superRefine(checkRecordAddress);
+export type DeleteRecordArgs = z.input<typeof deleteRecordSchema>;
+export type DeleteRecordInput = z.infer<typeof deleteRecordSchema>;
+
+export const restoreRecordShape = { ...recordAddressShape };
+
+export const restoreRecordSchema = z
+  .object(restoreRecordShape)
+  .superRefine(checkRecordAddress);
+export type RestoreRecordArgs = z.input<typeof restoreRecordSchema>;
+export type RestoreRecordInput = z.infer<typeof restoreRecordSchema>;
+
+export const listDeletedShape = {
+  kind: z.enum(DELETABLE_KINDS).optional().describe('Show one kind only.'),
+  limit: z.number().int().min(1).max(200).optional(),
+  offset: z.number().int().min(0).optional(),
+};
+export const listDeletedSchema = z.object(listDeletedShape);
+export type ListDeletedArgs = z.input<typeof listDeletedSchema>;
+export type ListDeletedInput = z.infer<typeof listDeletedSchema>;
+
+/**
+ * Correct the record of a recipe. Touches no version and makes none.
+ *
+ * **`kind` and `status` are declared fresh rather than taken from
+ * `recipeBodyShape`.** Those two carry `.default('recipe')` and
+ * `.default('active')`, which is right on a create and would be a silent
+ * write here: a call correcting a typo in the title would also set the kind
+ * back to `recipe` and un-archive the recipe. Every field on this tool has to
+ * mean "leave it alone" when it is absent.
+ *
+ * **The slug is not in the list, and that is not immutability.** It is the
+ * public address of the recipe, there is no redirect table, and the nine
+ * redirects in `next.config.ts` are hand-written. Renaming it would 404 every
+ * external link to the recipe, silently.
+ */
+export const updateRecipeShape = {
+  slug: z
+    .string()
+    .min(1)
+    .max(120)
+    .describe(
+      'Which recipe to correct. The slug itself cannot be changed: it is ' +
+        'the public address of the recipe.',
+    ),
+  title: recipeBodyShape.title.optional(),
+  subtitle: recipeBodyShape.subtitle,
+  summary: recipeBodyShape.summary,
+  kind: z.enum(RECIPE_KINDS).optional(),
+  status: z
+    .enum(RECIPE_STATUSES)
+    .optional()
+    .describe(
+      'draft hides it from listings; archived keeps the URL but retires it',
+    ),
+  categories: recipeBodyShape.categories,
+  links: recipeBodyShape.links,
+  ...variantOfShape,
+  originNote: recipeBodyShape.originNote,
+  heroImageUrl: recipeBodyShape.heroImageUrl,
+  heroImageAlt: recipeBodyShape.heroImageAlt,
+  /**
+   * Move the recipe to another stored version. Every version stays; this
+   * decides which one people read.
+   *
+   * It is here because a restore deliberately does not move the pointer back:
+   * restoring a version returns it to the history, and what people read is a
+   * separate decision that somebody has to state.
+   */
+  currentRevisionNumber: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe(
+      'Move the recipe to this stored version. People then read it. Every ' +
+        'version stays.',
+    ),
+};
+
+/** The fields of `update_recipe` that are not the address. */
+const UPDATE_RECIPE_FIELDS = Object.keys(updateRecipeShape).filter(
+  (key) => key !== 'slug',
+);
+
+export const updateRecipeSchema = z
+  .object(updateRecipeShape)
+  .superRefine((value, ctx) => {
+    requireSomethingToDo(value, UPDATE_RECIPE_FIELDS, ctx, 'recipe');
+    // `true`: an absent `variantOf` here means "leave it alone", so a recipe
+    // that is already a variation may correct its note on its own. The
+    // write layer makes that call, holding the stored parent.
+    checkVariantPair(value, ctx, true);
+  });
+export type UpdateRecipeArgs = z.input<typeof updateRecipeSchema>;
+export type UpdateRecipeInput = z.infer<typeof updateRecipeSchema>;
+
+/**
+ * An update that names no field is a call that meant something else.
+ *
+ * Accepting it would write `updated_at` and report success, and the caller
+ * would read that as "the correction landed". The refusal names the tool that
+ * does what an empty update usually meant.
+ */
+function requireSomethingToDo(
+  value: Record<string, unknown>,
+  fields: string[],
+  ctx: z.RefinementCtx,
+  what: string,
+): void {
+  if (fields.some((field) => value[field] !== undefined)) return;
+  ctx.addIssue({
+    code: 'custom',
+    message:
+      `This names a ${what} and no field to correct, so it would change ` +
+      `nothing. Give at least one field. If the dish changed rather than ` +
+      'the record being wrong, call revise_recipe.',
+  });
+}
+
+/**
+ * Correct a version that is already stored, in place.
+ *
+ * `occurredAt` is editable here and carries none of `backfill_revision`'s
+ * "earlier than everything stored" rule. That rule exists to stop a backfill
+ * being used as a revise — it mints a version and must not be able to mint a
+ * current one. This creates nothing and moves no pointer, so it cannot do
+ * that, and a backfill dated wrong is exactly the data-entry accident this
+ * tool is for. The history re-orders, and the description says so.
+ */
+export const updateRevisionShape = {
+  slug: z.string().min(1).max(120).describe('Which recipe.'),
+  revisionNumber: z
+    .number()
+    .int()
+    .positive()
+    .describe('Which version of it. This number never changes.'),
+  title: recipeBodyShape.title.optional(),
+  summary: recipeBodyShape.summary,
+  rationale: z
+    .string()
+    .max(4000)
+    .nullish()
+    .describe('Why the version exists. Correct it; you need not give one.'),
+  yieldQuantity: recipeBodyShape.yieldQuantity,
+  yieldUnit: recipeBodyShape.yieldUnit,
+  servings: recipeBodyShape.servings,
+  totalTimeMinutes: recipeBodyShape.totalTimeMinutes,
+  activeTimeMinutes: recipeBodyShape.activeTimeMinutes,
+  occurredAt: z
+    .string()
+    .nullish()
+    .describe(
+      'When this version existed, as an ISO 8601 date or date-time. The ' +
+        'history is ordered by it, so it re-orders. A date before the day ' +
+        'the version was written down also marks the version "Recorded ' +
+        'later" on the recipe page. Send null to say the version existed ' +
+        'when it was written.',
+    ),
+  ingredients: recipeBodyShape.ingredients,
+  steps: recipeBodyShape.steps,
+  /** An explicit `null` removes the figure. Omitted leaves it alone. */
+  massFlow: massFlowSchema
+    .nullish()
+    .describe('Replaces the stored figure. Send null to remove it.'),
+};
+
+const UPDATE_REVISION_FIELDS = Object.keys(updateRevisionShape).filter(
+  (key) => key !== 'slug' && key !== 'revisionNumber',
+);
+
+export const updateRevisionSchema = z
+  .object(updateRevisionShape)
+  .superRefine((value, ctx) => {
+    requireSomethingToDo(value, UPDATE_REVISION_FIELDS, ctx, 'version');
+    if (
+      value.occurredAt != null &&
+      Number.isNaN(Date.parse(value.occurredAt))
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['occurredAt'],
+        message: `"${value.occurredAt}" is not a date this can read. Use ISO 8601, such as 2024-03-17.`,
+      });
+    }
+    // The same rule, in the same place, for the same reason `reviseRecipe`
+    // states it: only a call that sends BOTH lists can be cross-checked here.
+    // A call that replaces one list and leaves the other is checked at write
+    // time by `checkCarriedUses`, which has the stored half in hand.
+    if (value.ingredients && value.steps) checkStepReferences(value, ctx);
+    if (value.massFlow) {
+      checkMassFlowStages(value.massFlow.stages, ctx, ['massFlow', 'stages']);
+    }
+  });
+export type UpdateRevisionArgs = z.input<typeof updateRevisionSchema>;
+export type UpdateRevisionInput = z.infer<typeof updateRevisionSchema>;
+
+/**
+ * Correct a note that is already stored.
+ *
+ * The four subject fields move the note to another subject. They follow
+ * `addNoteShape`'s rule — at most one, and `revisionNumber` only beside
+ * `recipeSlug` — because `note_has_exactly_one_subject` is a check constraint
+ * and a violation of it reaches the caller as a database error rather than as
+ * a sentence it can act on.
+ */
+export const updateNoteShape = {
+  noteId: z
+    .guid()
+    .describe('The id of the note. get_recipe gives it for every note.'),
+  kind: noteSchema.shape.kind.optional(),
+  title: noteSchema.shape.title.nullish(),
+  body: noteSchema.shape.body.optional(),
+  conditions: noteSchema.shape.conditions,
+  sources: noteSchema.shape.sources,
+  recipeSlug: z.string().max(120).optional(),
+  ingredientSlug: z.string().max(120).optional(),
+  experimentSlug: z.string().max(120).optional(),
+  revisionNumber: z.number().int().positive().optional(),
+};
+
+const UPDATE_NOTE_FIELDS = Object.keys(updateNoteShape).filter(
+  (key) => key !== 'noteId',
+);
+
+export const updateNoteSchema = z
+  .object(updateNoteShape)
+  .superRefine((value, ctx) => {
+    requireSomethingToDo(value, UPDATE_NOTE_FIELDS, ctx, 'note');
+    const subjects = [
+      value.recipeSlug,
+      value.ingredientSlug,
+      value.experimentSlug,
+    ].filter(Boolean);
+    if (subjects.length > 1) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'A note hangs off one subject. Give at most one of recipeSlug, ' +
+          'ingredientSlug or experimentSlug.',
+      });
+    }
+    if (value.revisionNumber != null && !value.recipeSlug) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['revisionNumber'],
+        message: 'revisionNumber only applies together with recipeSlug.',
+      });
+    }
+  });
+export type UpdateNoteArgs = z.input<typeof updateNoteSchema>;
+export type UpdateNoteInput = z.infer<typeof updateNoteSchema>;
 
 // ─────────────────────────────────────────────────────────────────────────
 // Search
@@ -1675,6 +2670,79 @@ export const searchRecipesShape = {
 
 export const searchRecipesSchema = z.object(searchRecipesShape);
 export type SearchRecipesInput = z.infer<typeof searchRecipesSchema>;
+
+/**
+ * Finding a note.
+ *
+ * THE SLUGS ARE NOT `plainName()`. They look like the write-side fields and
+ * they must not borrow their validation. `plainName` appends a rule about
+ * how a name may be minted and, through `RESERVED_TAG_SLUGS`, refuses
+ * 'null', 'undefined' and 'none'. `search_recipes` once shared the write's
+ * category schema and so refused a query that named a reserved tag —
+ * blocking the only tool that could have found the junk tag in the first
+ * place. `e2e/mcp-boundary.spec.ts` records it. A filter is a lookup key,
+ * not a name being minted.
+ *
+ * `query` is optional, so the tool degrades to plain enumeration. That is
+ * deliberate: a second `list_notes` would be one more name to learn for a
+ * strictly smaller behaviour.
+ */
+export const searchNotesShape = {
+  query: z
+    .string()
+    .max(300)
+    .optional()
+    .describe(
+      'Free text. It matches the title and the body of a note. Leave it ' +
+        'out to list notes without searching.',
+    ),
+  kind: z
+    .enum(NOTE_KINDS)
+    .optional()
+    .describe('Return only notes of this kind.'),
+  recipeSlug: z
+    .string()
+    .max(120)
+    .optional()
+    .describe(
+      'Return only notes on this recipe. This includes notes on every ' +
+        'version of it, not only the current one. It does not include ' +
+        'notes on a run of it.',
+    ),
+  ingredientSlug: z
+    .string()
+    .max(120)
+    .optional()
+    .describe('Return only notes on this ingredient.'),
+  experimentSlug: z
+    .string()
+    .max(120)
+    .optional()
+    .describe('Return only notes on this run.'),
+  limit: z.number().int().min(1).max(100).default(20),
+  offset: z.number().int().min(0).max(10000).default(0),
+};
+
+export const searchNotesSchema = z
+  .object(searchNotesShape)
+  .superRefine((value, ctx) => {
+    const targets = [
+      value.recipeSlug,
+      value.ingredientSlug,
+      value.experimentSlug,
+    ].filter(Boolean);
+    /* `> 1`, not `!== 1`: none is the common case and means "everywhere". */
+    if (targets.length > 1) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'Give at most one of `recipeSlug`, `ingredientSlug` or ' +
+          '`experimentSlug`. A note hangs off one record, so two filters ' +
+          'can never both hold. Leave all three out to search everywhere.',
+      });
+    }
+  });
+export type SearchNotesInput = z.infer<typeof searchNotesSchema>;
 
 // ─────────────────────────────────────────────────────────────────────────
 // Reporting a fault in the connector
@@ -1822,3 +2890,49 @@ export const reportIssueSchema = z
   });
 export type ReportIssueArgs = z.input<typeof reportIssueSchema>;
 export type ReportIssueInput = z.infer<typeof reportIssueSchema>;
+
+// ─────────────────────────────────────────────────────────────────────────
+// request_image_upload — issues #56 and #58
+//
+// The way a photograph gets in from a chat. The agent names the record and
+// gets back a link; the person opens it and picks the file; the browser
+// sends the file to the blob store. The model handles the link and nothing
+// else, whatever the size of the photograph.
+// ─────────────────────────────────────────────────────────────────────────
+
+export const requestImageUploadShape = {
+  /**
+   * REQUIRED, unlike on `upload_image`. With `upload_image` the result
+   * carries the address back to the agent. With a link the picture lands
+   * after the tool call has returned, so the record named here is the only
+   * place the agent can find it again — through the read tool of that record.
+   */
+  attachTo: z
+    .object(attachToShape)
+    .describe(
+      'Which record the picture goes on. The same object upload_image ' +
+        'takes. It is checked now, so a link is never made for a record ' +
+        'that is not there.',
+    ),
+  alt: z
+    .string()
+    .min(1)
+    .max(300)
+    .optional()
+    .describe(
+      'What the picture shows, if you have seen it. The page shows it to ' +
+        'the person, who can correct it. Leave it out if you have not seen ' +
+        'the picture; the page then asks the person to write it.',
+    ),
+  caption: z
+    .string()
+    .max(500)
+    .nullish()
+    .describe('Shown under the picture. Optional.'),
+};
+
+export const requestImageUploadSchema = z.object({
+  ...requestImageUploadShape,
+  attachTo: attachToSchema,
+});
+export type RequestImageUploadInput = z.infer<typeof requestImageUploadSchema>;

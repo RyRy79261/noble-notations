@@ -15,6 +15,7 @@ import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { NextResponse } from 'next/server';
 import { lookupAccessToken } from '@/lib/mcp/oauth';
 import { registerTools } from '@/lib/mcp/tools';
+import { registerResources } from '@/lib/mcp/resources';
 import { serverInstructions } from '@/lib/mcp/guide';
 import { withCors } from '@/lib/mcp/cors';
 
@@ -24,6 +25,10 @@ export const dynamic = 'force-dynamic';
 const baseHandler = createMcpHandler(
   (server) => {
     registerTools(server);
+    // The readable documents. `resources/list` advertises them and
+    // `resources/read` serves them; a client offers them as something to
+    // load rather than as an action to take. See `src/lib/mcp/resources.ts`.
+    registerResources(server);
   },
   {
     serverInfo: { name: 'noble-notations', version: '1.0.0' },
