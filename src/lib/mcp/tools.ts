@@ -1851,7 +1851,9 @@ export function registerTools(server: McpServer): void {
           '3. When they say it is done, call the read tool of that record ' +
           '(get_recipe, get_ingredient, get_experiment or list_categories) ' +
           'to see the picture.\n\n' +
-          'If YOU hold the file on disk and can run a shell, send it to ' +
+          'IF YOU HOLD THE FILE ON DISK AND CAN RUN CODE, DO NOT SEND THE ' +
+          'PERSON THE LINK. A file the person attached in the Claude app is ' +
+          'usually in /mnt/user-data/uploads/. Send it to ' +
           '`putUrl` instead: an HTTP PUT with the file as the body, its type ' +
           'in Content-Type, and `?alt=` when you gave no alt here. The body ' +
           'limit there is 4.5 MB, so shrink a larger file to 2400 pixels on ' +
@@ -1910,7 +1912,13 @@ export function registerTools(server: McpServer): void {
               target: created.target,
               expiresAt: created.expiresAt.toISOString(),
               message:
-                `Give the person this link: ${link} — it puts one picture ` +
+                'If you hold the file on disk and can run code, send it ' +
+                'yourself and do not ask the person to do anything: PUT the ' +
+                'file as the body to putUrl, with its Content-Type. Send the ' +
+                'original when it is 4 MB or less; if it is larger, first ' +
+                'shrink it to 2400 pixels on its longest edge (the limit is ' +
+                '4.5 MB). The picture is then on the record. Otherwise, ' +
+                `give the person this link: ${link} — it puts one picture ` +
                 `on ${created.target}. They open it on the device that has ` +
                 'the photograph and pick the file. It lasts ' +
                 `${UPLOAD_LINK_MINUTES} minutes and takes one picture. When ` +
