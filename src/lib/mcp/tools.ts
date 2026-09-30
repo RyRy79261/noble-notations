@@ -1914,9 +1914,10 @@ export function registerTools(server: McpServer): void {
               message:
                 'If you hold the file on disk and can run code, send it ' +
                 'yourself and do not ask the person to do anything: PUT the ' +
-                'file as the body to putUrl, with its Content-Type, after ' +
-                'shrinking it to 2400 pixels on its longest edge (the limit ' +
-                'is 4.5 MB). The picture is then on the record. Otherwise, ' +
+                'file as the body to putUrl, with its Content-Type. Send the ' +
+                'original when it is 4 MB or less; if it is larger, first ' +
+                'shrink it to 2400 pixels on its longest edge (the limit is ' +
+                '4.5 MB). The picture is then on the record. Otherwise, ' +
                 `give the person this link: ${link} — it puts one picture ` +
                 `on ${created.target}. They open it on the device that has ` +
                 'the photograph and pick the file. It lasts ' +
