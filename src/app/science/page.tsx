@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
-import { listScienceIndex } from '@/lib/queries/read';
+import { listScienceIndex } from '@/lib/queries/cached';
 import { safeRead } from '@/lib/safe';
 import { KIND_LABELS, site } from '@/lib/site';
 import { cn } from '@/lib/utils';

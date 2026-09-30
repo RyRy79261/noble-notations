@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { listExperiments } from '@/lib/queries/read';
+import { listExperiments } from '@/lib/queries/cached';
 import { safeRead } from '@/lib/safe';
 import { DatabaseNotice } from '@/components/database-notice';
 import { Breadcrumb } from '@/components/f/breadcrumb';

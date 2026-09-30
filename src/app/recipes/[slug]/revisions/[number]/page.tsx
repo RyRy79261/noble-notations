@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { getRecipeBySlug } from '@/lib/queries/read';
+import { getRecipeBySlug } from '@/lib/queries/cached';
 import { safeRead } from '@/lib/safe';
 import { RecipeDetail } from '@/components/recipe-detail';
 import { DatabaseNotice } from '@/components/database-notice';

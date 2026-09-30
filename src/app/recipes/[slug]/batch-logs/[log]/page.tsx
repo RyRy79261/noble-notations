@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { getExperiment } from '@/lib/queries/read';
+import { getExperiment } from '@/lib/queries/cached';
 import { safeRead } from '@/lib/safe';
 import { DatabaseNotice } from '@/components/database-notice';
 import { Breadcrumb } from '@/components/f/breadcrumb';

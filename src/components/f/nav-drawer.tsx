@@ -215,6 +215,11 @@ export function Navigation() {
           <Link
             key={item.href}
             href={item.href}
+            /* No prefetch. Every page behind these nine links reads the
+               database, and a prefetch of all nine on every page view was
+               nine renders nobody asked for — see
+               `src/lib/queries/cached.ts`. A click still loads the page. */
+            prefetch={false}
             aria-current={current ? 'page' : undefined}
             className={cn(
               'flex w-fit shrink-0 flex-row items-center px-2.25 py-1.5 text-10 leading-normal font-mono tracking-label whitespace-nowrap uppercase no-underline',
@@ -341,6 +346,8 @@ export function Contents360({ brand }: { brand: ReactNode }) {
               <SheetClose asChild key={item.href}>
                 <Link
                   href={item.href}
+                  /* No prefetch, as in `Navigation` above. */
+                  prefetch={false}
                   /* Radix's `DialogClose` sets `type="button"` on its own
                      primitive and `Slot` merges it onto whatever it wraps.
                      On an `<a>`, `type` is a MIME-type hint, so `"button"`

@@ -276,6 +276,9 @@ export async function refreshAccessToken(
     )
     .returning();
 
+  // The access token this row held is dead now. See `lookupCache`.
+  lookupCache.clear();
+
   const row = updated[0];
   if (!row) {
     return {
@@ -296,13 +299,43 @@ export async function refreshAccessToken(
   };
 }
 
-export async function lookupAccessToken(accessTokenPlain: string): Promise<{
+/**
+ * Verified tokens, per warm instance, for `LOOKUP_CACHE_MS`.
+ *
+ * Every MCP request is authorised, and claude.ai opens a connector in every
+ * conversation with an `initialize` and a `tools/list` that read nothing
+ * else. So without this, opening a chat woke the Neon compute just to
+ * check a token, and a compute stays awake five minutes after its last
+ * query. The only thing that makes a stored token stop working before it
+ * expires is a refresh, which rotates the hash; `refreshAccessToken` clears
+ * this map. A different warm instance can still accept the old token for up
+ * to a minute — the cost of not asking the database on every call.
+ */
+const LOOKUP_CACHE_MS = 60_000;
+const LOOKUP_CACHE_MAX = 500;
+
+/** How stale `last_used_at` may get before a request writes it again. */
+const LAST_USED_RESOLUTION_MS = 60 * 60_000;
+
+type TokenLookup = {
   userId: string;
   clientId: string;
   scope: string;
   expiresAt: number;
-} | null> {
+};
+
+const lookupCache = new Map<string, { value: TokenLookup; until: number }>();
+
+export async function lookupAccessToken(
+  accessTokenPlain: string,
+): Promise<TokenLookup | null> {
   const hash = hashToken(accessTokenPlain);
+  const now = Date.now();
+
+  const hit = lookupCache.get(hash);
+  if (hit && hit.until > now) return hit.value;
+  lookupCache.delete(hash);
+
   const rows = await db
     .select({
       userId: mcpAccessTokens.userId,
@@ -310,27 +343,41 @@ export async function lookupAccessToken(accessTokenPlain: string): Promise<{
       scope: mcpAccessTokens.scope,
       expiresAt: mcpAccessTokens.expiresAt,
       revokedAt: mcpAccessTokens.revokedAt,
+      lastUsedAt: mcpAccessTokens.lastUsedAt,
     })
     .from(mcpAccessTokens)
     .where(eq(mcpAccessTokens.tokenHash, hash))
     .limit(1);
 
   const row = rows[0];
-  if (!row || row.revokedAt || row.expiresAt < Date.now()) return null;
+  if (!row || row.revokedAt || row.expiresAt < now) return null;
 
   // Best-effort last-used touch; a failure here must not fail the tool call.
-  void db
-    .update(mcpAccessTokens)
-    .set({ lastUsedAt: Date.now() })
-    .where(eq(mcpAccessTokens.tokenHash, hash))
-    .catch(() => {});
+  // An hour's resolution is enough to say whether a connector is in use, and
+  // a write on every call kept the compute awake for nothing.
+  if (
+    row.lastUsedAt == null ||
+    now - row.lastUsedAt > LAST_USED_RESOLUTION_MS
+  ) {
+    void db
+      .update(mcpAccessTokens)
+      .set({ lastUsedAt: now })
+      .where(eq(mcpAccessTokens.tokenHash, hash))
+      .catch(() => {});
+  }
 
-  return {
+  const value: TokenLookup = {
     userId: row.userId,
     clientId: row.clientId,
     scope: row.scope,
     expiresAt: row.expiresAt,
   };
+  if (lookupCache.size >= LOOKUP_CACHE_MAX) lookupCache.clear();
+  lookupCache.set(hash, {
+    value,
+    until: Math.min(now + LOOKUP_CACHE_MS, row.expiresAt),
+  });
+  return value;
 }
 
 /**

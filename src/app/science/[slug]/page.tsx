@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
 
-import { getScienceStudy } from '@/lib/queries/read';
+import { getScienceStudy } from '@/lib/queries/cached';
 import { safeRead } from '@/lib/safe';
 import { KIND_LABELS, revisionOrdinal } from '@/lib/site';
 import { Band, numberWord } from '@/components/f/band';

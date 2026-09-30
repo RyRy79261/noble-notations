@@ -20,7 +20,7 @@ import {
   listCategories,
   listIngredients,
   listRecipes,
-} from '@/lib/queries/read';
+} from '@/lib/queries/cached';
 import { safeRead } from '@/lib/safe';
 
 export const dynamic = 'force-dynamic';

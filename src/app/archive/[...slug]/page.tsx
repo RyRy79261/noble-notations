@@ -9,7 +9,7 @@ import { SectionHead } from '@/components/f/section-label';
 import { Measure } from '@/components/f/stat';
 import { getArchiveDocument, listArchive, SECTION_LABELS } from '@/lib/archive';
 import { formatQuantity } from '@/lib/domain/units';
-import { getRecipeBySlug } from '@/lib/queries/read';
+import { getRecipeBySlug } from '@/lib/queries/cached';
 import { safeRead } from '@/lib/safe';
 import { cardinal, revisionOrdinal } from '@/lib/site';
 import { cn } from '@/lib/utils';

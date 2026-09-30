@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { getIngredient, listIngredients } from '@/lib/queries/read';
+import { getIngredient, listIngredients } from '@/lib/queries/cached';
 import { safeRead } from '@/lib/safe';
 import { NoteList } from '@/components/notes';
 import { DatabaseNotice } from '@/components/database-notice';

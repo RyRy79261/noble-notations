@@ -22,6 +22,7 @@ import 'server-only';
  * build time long before a query runs.
  */
 import { neon, neonConfig, Pool as NeonPool } from '@neondatabase/serverless';
+import { revalidateTag } from 'next/cache';
 import { drizzle as drizzleHttp } from 'drizzle-orm/neon-http';
 import { drizzle as drizzleNeonPool } from 'drizzle-orm/neon-serverless';
 import { drizzle as drizzleNodePg } from 'drizzle-orm/node-postgres';
@@ -116,7 +117,36 @@ export async function withTransaction<T>(
   const client = isNeon(url)
     ? (drizzleNeonPool(neonWritePool(), { schema }) as unknown as Database)
     : (drizzleNodePg(nodePool(), { schema }) as unknown as Database);
-  return client.transaction(fn as (tx: TransactionClient) => Promise<T>);
+  const result = await client.transaction(
+    fn as (tx: TransactionClient) => Promise<T>,
+  );
+  expireSiteData();
+  return result;
+}
+
+/**
+ * The tag on every read the site caches — `src/lib/queries/cached.ts`.
+ * Defined here, beside the one place that expires it, so that module can
+ * import it without an import cycle.
+ */
+export const SITE_DATA_TAG = 'site-data';
+
+/**
+ * Expire the site's cached reads after a committed write.
+ *
+ * Every write is a `withTransaction`, so this is the one place a write can
+ * reach. `expire: 0` rather than `'max'`: the next page load must show the
+ * write, not serve the old page once and refresh behind it. Outside a
+ * Next.js request — a script such as `pnpm ingest` — there is no cache to
+ * expire and `revalidateTag` throws; that write reaches the site through
+ * the backstop described in `cached.ts`.
+ */
+function expireSiteData(): void {
+  try {
+    revalidateTag(SITE_DATA_TAG, { expire: 0 });
+  } catch {
+    // Not in a request. See above.
+  }
 }
 
 /** True when a database is configured, so pages can degrade instead of crash. */
