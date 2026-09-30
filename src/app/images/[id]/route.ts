@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { isDatabaseConfigured } from '@/db/client';
-import { getImage } from '@/lib/queries/read';
+import { getImage } from '@/lib/queries/cached';
 
 /**
  * The address every picture this repository stores is written down as.

@@ -16,7 +16,7 @@ import {
   searchExperiments,
   searchNotes,
   searchRecipes,
-} from '@/lib/queries/read';
+} from '@/lib/queries/cached';
 import { safeRead } from '@/lib/safe';
 import {
   batchLogPath,

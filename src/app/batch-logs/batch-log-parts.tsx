@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { BatchLine, BatchSource } from '@/components/f/batch-line';
 import { citationDate } from '@/components/f/citation';
 import { ListMark } from '@/components/f/list-row';
-import type { ExperimentSummary } from '@/lib/queries/read';
+import type { ExperimentSummary } from '@/lib/queries/cached';
 import { batchLogPath, revisionOrdinal } from '@/lib/site';
 import { cn } from '@/lib/utils';
 

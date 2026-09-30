@@ -83,7 +83,8 @@ src/
                           and ESLint refuses it the base tables), write.ts,
                           live.ts (the six views, plus the one aliased base
                           table), deleted.ts (the bin, and the one read
-                          module that sees deleted rows)
+                          module that sees deleted rows), cached.ts
+                          (read.ts behind the data cache, for the site)
     mcp/                  tools, OAuth primitives, admin session
     utils.ts              cn(), the class merger shadcn/ui expects
 components.json           shadcn/ui configuration (css: src/app/theme.css)
@@ -141,6 +142,14 @@ And two relationships between recipes: **links**, four editorial edges in
 - **All writes go through `withTransaction`.** A recipe whose revision landed
   but whose ingredients did not is worse than no recipe, because the site
   renders it as an empty dish.
+- **The site reads through `cached.ts`; the connector reads through
+  `read.ts`.** Neon bills for the time its compute is awake, so pages and
+  route handlers take their data from the Next.js data cache, and a
+  committed `withTransaction` expires it. An MCP tool reads back what it
+  just wrote, so it asks the database. A write from a script, such as
+  `pnpm ingest`, runs outside a request and cannot expire the cache: it
+  reaches the site within a day or at the next deploy. The cache is on
+  only on Vercel; set `NOBLE_READ_CACHE=on` or `off` to change that.
 - **Adding a revision is how a dish changes. Correcting a record is a
   different act, and the connector has both.** `revise_recipe` when the food
   changed; `update_recipe`, `update_revision`, `update_note` when the record

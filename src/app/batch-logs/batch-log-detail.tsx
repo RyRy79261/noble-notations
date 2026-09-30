@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { ExperimentView } from '@/lib/queries/read';
+import type { ExperimentView } from '@/lib/queries/cached';
 import { NoteList } from '@/components/notes';
 import { Markdown } from '@/components/markdown';
 import { FOCUS_RING } from '@/components/f/button';

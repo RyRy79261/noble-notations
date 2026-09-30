@@ -13,7 +13,7 @@ import { Stat } from '@/components/f/stat';
 import { DatabaseNotice } from '@/components/database-notice';
 import { TermHierarchy } from '@/components/term-hierarchy';
 import { TermTag } from '@/components/tags';
-import { getTerm, type RecipeSummaryView } from '@/lib/queries/read';
+import { getTerm, type RecipeSummaryView } from '@/lib/queries/cached';
 import { safeRead } from '@/lib/safe';
 import {
   cardSummary,

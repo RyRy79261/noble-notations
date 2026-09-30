@@ -18,7 +18,7 @@ import {
   listCategories,
   type RecipeSummaryView,
   type TermView,
-} from '@/lib/queries/read';
+} from '@/lib/queries/cached';
 import { safeRead } from '@/lib/safe';
 import {
   CATEGORY_TYPE_LABELS,

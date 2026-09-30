@@ -12,7 +12,7 @@
  * crawlers out of it. It exists so a reader that only wants the recipe
  * does not have to parse a layout to find it.
  */
-import { getRecipeBySlug } from '@/lib/queries/read';
+import { getRecipeBySlug } from '@/lib/queries/cached';
 import { safeRead } from '@/lib/safe';
 import { recipeToMarkdown } from '@/lib/markdown/recipe';
 import { site } from '@/lib/site';

@@ -1,5 +1,5 @@
 import { PageFoot } from '@/components/f/page-foot';
-import { getRecipeIdentity } from '@/lib/queries/read';
+import { getRecipeIdentity } from '@/lib/queries/cached';
 import { safeRead } from '@/lib/safe';
 import { revisionOrdinal } from '@/lib/site';
 

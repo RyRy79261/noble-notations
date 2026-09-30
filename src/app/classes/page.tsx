@@ -9,7 +9,7 @@ import { Stat } from '@/components/f/stat';
 import { DatabaseNotice } from '@/components/database-notice';
 import { FilterableGroups } from '@/components/filterable-groups';
 import { TermTag } from '@/components/tags';
-import { listCategories, type TermWithCount } from '@/lib/queries/read';
+import { listCategories, type TermWithCount } from '@/lib/queries/cached';
 import { safeRead } from '@/lib/safe';
 import { CATEGORY_TYPE_LABELS, cardinal, roman } from '@/lib/site';
 import { cn } from '@/lib/utils';

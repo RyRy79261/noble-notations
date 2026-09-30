@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { listIngredients } from '@/lib/queries/read';
+import { listIngredients } from '@/lib/queries/cached';
 import { safeRead } from '@/lib/safe';
 import { DatabaseNotice } from '@/components/database-notice';
 import { FilterableGroups } from '@/components/filterable-groups';

@@ -9,7 +9,7 @@ import { SectionHead } from '@/components/f/section-label';
 import { Stat } from '@/components/f/stat';
 import { DatabaseNotice } from '@/components/database-notice';
 import { FilterableGroups } from '@/components/filterable-groups';
-import { listCategories } from '@/lib/queries/read';
+import { listCategories } from '@/lib/queries/cached';
 import { safeRead } from '@/lib/safe';
 import { cardinal, roman } from '@/lib/site';
 import { cn } from '@/lib/utils';

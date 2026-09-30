@@ -1,5 +1,5 @@
 import { ImageResponse } from 'next/og';
-import { getRecipeBySlug } from '@/lib/queries/read';
+import { getRecipeBySlug } from '@/lib/queries/cached';
 import { safeRead } from '@/lib/safe';
 import { revisionOrdinal, site } from '@/lib/site';
 

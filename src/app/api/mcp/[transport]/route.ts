@@ -87,8 +87,29 @@ async function handle(request: Request) {
   );
 }
 
+/**
+ * A POST carries one tool call, and its answer is read to the end before
+ * this handler returns.
+ *
+ * mcp-handler answers with a stream and runs the tool while that stream is
+ * read, which is after a plain `handle` has returned. Next.js applies the
+ * cache expiry a write asks for (`withTransaction` → `revalidateTag`) when
+ * the handler returns, so an expiry that came later was dropped, and the
+ * site went on showing the page from before the write. Reading the body
+ * here keeps the tool inside the handler. A POST answer is one JSON-RPC
+ * message, so nothing is lost by holding it; GET, the long-lived stream, is
+ * left alone.
+ */
+async function handlePost(request: Request) {
+  const res = await authedHandler(request);
+  const body = res.body ? await res.arrayBuffer() : null;
+  return withCors(
+    new NextResponse(body, { status: res.status, headers: res.headers }),
+  );
+}
+
 export const GET = handle;
-export const POST = handle;
+export const POST = handlePost;
 export const DELETE = handle;
 
 export function OPTIONS() {

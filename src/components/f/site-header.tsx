@@ -30,6 +30,8 @@ export function Brand() {
   return (
     <Link
       href="/"
+      /* No prefetch, as in the nav — `nav-drawer.tsx` says why. */
+      prefetch={false}
       className={cn(
         /* `min-h-6` is not in the drawing. The brand lockup is 194.4 × 24 at
            1280 and 159 × 21 at 360, and 21 is under the 24px WCAG 2.5.8
