@@ -82,9 +82,9 @@
       "sharp"
     ],
     "overrides": {
-      "brace-expansion@<1.1.20": "^1.1.20",
-      "brace-expansion@>=4.0.0 <5.0.11": "^5.0.11",
-      "fast-uri@<3.1.7": "^3.1.7"
+      "fast-uri": ">=3.1.7",
+      "brace-expansion@<1.1.20": "1.1.20",
+      "brace-expansion@>=4.0.0 <5.0.11": "5.0.11"
     }
   }
 }
