@@ -88,6 +88,13 @@ import { cn } from '@/lib/utils';
 import { IngredientChecklist } from './ingredient-checklist';
 import { Markdown } from './markdown';
 import { RecipeTabs } from './recipe-tabs';
+import {
+  CookingModeButton,
+  CookingProvider,
+  CookingStep,
+  StepProgress,
+  StepTimer,
+} from './cooking';
 import { BatchControl, ScaleProvider, ScaledAmount } from './scale';
 import { AddToBasket } from './shopping-basket';
 import { StepIngredients } from './step-ingredients';
@@ -300,24 +307,17 @@ function Step({
     step.equipment.length > 0;
 
   return (
-    <li className="flex w-full shrink-0 list-none flex-row items-start gap-4 recipe:gap-5">
-      {/* `No` — a 46px column holding a 26/26 Newsreader number over the
-          phase letter. The same width as the ingredient row's quantity, so
-          the steps and the amounts share one rhythm. */}
-      <span className="flex w-8 shrink-0 flex-col items-start gap-1 recipe:w-11.5">
-        <span className="text-21 leading-100 font-serif font-medium tabular-nums text-ink recipe:text-26 recipe:leading-100">
-          {number}
-        </span>{' '}
-        {letter ? (
-          <span className="text-08 font-mono tracking-label uppercase text-ink-3">
-            {letter}
-          </span>
-        ) : null}
-      </span>{' '}
+    /* The `<li>` and the step number are `CookingStep`: a tap crosses the
+       step out, and that is client state. Everything inside stays here. */
+    <CookingStep stepId={step.id} number={number} letter={letter}>
       <div className="flex min-w-0 flex-1 basis-0 flex-col items-start gap-3">
         {/* 16px over 29px — `leading-180`, the same body role the rationale
             takes, and the only primary-ink prose on the screen. */}
-        <p className="m-0 w-full text-15 leading-180 font-sans text-ink recipe:text-16 recipe:leading-180">
+        <p
+          data-instruction=""
+          data-step-prose=""
+          className="m-0 w-full text-15 leading-180 font-sans text-ink recipe:text-16 recipe:leading-180"
+        >
           {step.instruction}
         </p>
 
@@ -327,7 +327,10 @@ function Step({
             to point at, so the prose is set in the note body role: 14/24
             Geist in the secondary ink, under a 16px primary instruction. */}
         {step.note ? (
-          <p className="m-0 w-full text-14 leading-170 font-sans text-ink-2">
+          <p
+            data-step-prose=""
+            className="m-0 w-full text-14 leading-170 font-sans text-ink-2"
+          >
             {step.note}
           </p>
         ) : null}
@@ -379,6 +382,15 @@ function Step({
         {hasMeta ? (
           <div className="flex w-full flex-row flex-wrap items-center gap-x-6 gap-y-2 pt-0.5">
             {duration ? <Measure label="Time" value={duration} /> : null}
+            {/* Any length, a cure of two days included. A range runs to
+                its lower end, the first time to check the food. */}
+            {step.durationMinutes != null && step.durationMinutes > 0 ? (
+              <StepTimer
+                stepId={step.id}
+                minutes={step.durationMinutes}
+                label={`Step ${number}`}
+              />
+            ) : null}
             {step.temperatureC != null ? (
               <Measure label="Temp" value={`${step.temperatureC} °C`} />
             ) : null}
@@ -401,7 +413,7 @@ function Step({
           </div>
         ) : null}
       </div>
-    </li>
+    </CookingStep>
   );
 }
 
@@ -534,30 +546,31 @@ export function RecipeDetail({
     // the yield in "At a glance", the ingredient list and the step chips
     // cannot disagree (R-CMP-11).
     <ScaleProvider servings={rev.servings}>
-      <PageHead
-        left={`Recipes · ${recipe.title}`}
-        leftNarrow={recipe.title}
-        right={headRight}
-        /* `f-warn` on a superseded revision and `f-ink-3` otherwise. The
+      <CookingProvider slug={recipe.slug} revisionNumber={rev.revisionNumber}>
+        <PageHead
+          left={`Recipes · ${recipe.title}`}
+          leftNarrow={recipe.title}
+          right={headRight}
+          /* `f-warn` on a superseded revision and `f-ink-3` otherwise. The
            design draws the kicker in the warn red on that screen only
            (`recipe-revision-1280.html:195`), against the `f-ink-3` of the
            slot beside it — the one colour signal this band ever carries. */
-        rightTone={isHistorical ? 'warn' : 'quiet'}
-        /* `undefined` on a current revision, so F/Page head draws ONE
+          rightTone={isHistorical ? 'warn' : 'quiet'}
+          /* `undefined` on a current revision, so F/Page head draws ONE
            element rather than a visible pair with one of them hidden. */
-        rightNarrow={
-          headRightNarrow ? (
-            <span className="uppercase tabular-nums">{headRightNarrow}</span>
-          ) : undefined
-        }
-      />
+          rightNarrow={
+            headRightNarrow ? (
+              <span className="uppercase tabular-nums">{headRightNarrow}</span>
+            ) : undefined
+          }
+        />
 
-      <div
-        className={cn(
-          'flex w-full min-w-0 flex-col items-start gap-7',
-          'px-4 pt-5.5 pb-12',
-          'recipe:gap-11',
-          /* The gutter, and the ONE thing on this screen that reads
+        <div
+          className={cn(
+            'flex w-full min-w-0 flex-col items-start gap-7',
+            'px-4 pt-5.5 pb-12',
+            'recipe:gap-11',
+            /* The gutter, and the ONE thing on this screen that reads
              `shell:`. It has to agree with the site header, whose own
              padding switches at 1080 — a 60px content gutter under a 16px
              header rule is a visible seam at every width between them.
@@ -574,79 +587,79 @@ export function RecipeDetail({
              `f/revision.tsx` and `f/recipe-card.tsx` to the layout that
              contains them; those five are on every screen, so it belongs to
              M6 or M7 and not to this file. */
-          'shell:px-15 shell:pt-8.5 shell:pb-18',
-        )}
-      >
-        {/* The design draws no breadcrumb at 360: the drawer carries the
+            'shell:px-15 shell:pt-8.5 shell:pb-18',
+          )}
+        >
+          {/* The design draws no breadcrumb at 360: the drawer carries the
             whole navigation there, and the trail is the third mono
             micro-label in a 328px column. */}
-        <Breadcrumb
-          className="hidden recipe:block"
-          items={[
-            { label: 'Recipes', href: '/recipes' },
-            ...(isHistorical
-              ? [
-                  { label: recipe.title, href: `/recipes/${recipe.slug}` },
-                  { label: ordinal },
-                ]
-              : [{ label: recipe.title }]),
-          ]}
-        />
+          <Breadcrumb
+            className="hidden recipe:block"
+            items={[
+              { label: 'Recipes', href: '/recipes' },
+              ...(isHistorical
+                ? [
+                    { label: recipe.title, href: `/recipes/${recipe.slug}` },
+                    { label: ordinal },
+                  ]
+                : [{ label: recipe.title }]),
+            ]}
+          />
 
-        {/* ── The hero, §10.2.1 ─────────────────────────────────────────── */}
-        <header className="flex w-full shrink-0 flex-col items-start gap-3 recipe:gap-5">
-          {/* Items 1, 2 and 3. `flex-wrap` and not the design's `Gap`
+          {/* ── The hero, §10.2.1 ─────────────────────────────────────────── */}
+          <header className="flex w-full shrink-0 flex-col items-start gap-3 recipe:gap-5">
+            {/* Items 1, 2 and 3. `flex-wrap` and not the design's `Gap`
               spacer: the source badge is kept at 360, where the design
               drops it, because which hand wrote a revision is a fact about
               the record and not a luxury of screen width. */}
-          <div className="flex w-full shrink-0 flex-row flex-wrap items-center gap-2 recipe:gap-3">
-            <Mark kind={recipe.kind} />
-            <MarkQuiet tone={isHistorical ? 'warn' : 'neutral'}>
-              {ordinal}
-            </MarkQuiet>
-            {recipe.variantOf ? <MarkQuiet>Variation</MarkQuiet> : null}
-            {rev.source !== 'human' ? (
-              <MarkQuiet tone="faint">Via {rev.source}</MarkQuiet>
-            ) : null}
-          </div>
+            <div className="flex w-full shrink-0 flex-row flex-wrap items-center gap-2 recipe:gap-3">
+              <Mark kind={recipe.kind} />
+              <MarkQuiet tone={isHistorical ? 'warn' : 'neutral'}>
+                {ordinal}
+              </MarkQuiet>
+              {recipe.variantOf ? <MarkQuiet>Variation</MarkQuiet> : null}
+              {rev.source !== 'human' ? (
+                <MarkQuiet tone="faint">Via {rev.source}</MarkQuiet>
+              ) : null}
+            </div>
 
-          {/* Item 9, and R-SCR-16. The design puts it here — hero child 2,
+            {/* Item 9, and R-SCR-16. The design puts it here — hero child 2,
               ABOVE the title — and not at the foot of the hero where
               §10.2.1 lists it: a reader who has started the title has
               already started reading the wrong revision. The link is a
               phrase inside the sentence, which is the shape D-10 settled
               for a body link, and it is what R-SCR-16's "MUST link" needs. */}
-          {isHistorical ? (
-            <Notice
-              tone="warn"
-              title={`You are reading revision ${rev.revisionNumber} of ${recipe.revisions.length}`}
-            >
-              Revision {currentRevisionNumber} is current. This one is kept
-              because a record that discards a revision is not a record.{' '}
-              <Link href={`/recipes/${recipe.slug}`} className={PROSE_LINK}>
-                Go to the current revision
-              </Link>
-              .
-            </Notice>
-          ) : null}
+            {isHistorical ? (
+              <Notice
+                tone="warn"
+                title={`You are reading revision ${rev.revisionNumber} of ${recipe.revisions.length}`}
+              >
+                Revision {currentRevisionNumber} is current. This one is kept
+                because a record that discards a revision is not a record.{' '}
+                <Link href={`/recipes/${recipe.slug}`} className={PROSE_LINK}>
+                  Go to the current revision
+                </Link>
+                .
+              </Notice>
+            ) : null}
 
-          {/* Item 4. 72/72 at 1280 and 40/42 at 360. The design's
+            {/* Item 4. 72/72 at 1280 and 40/42 at 360. The design's
               `white-space: nowrap` is an export artefact and is not
               shipped — a long title has to wrap (R-STA-09). Size and
               leading travel together in one argument, or tailwind-merge
               drops the leading (TOKEN-MAP §4.3). */}
-          <h1 className="m-0 w-full text-40 leading-105 font-serif font-medium tracking-display text-ink recipe:text-72 recipe:leading-100">
-            {recipe.title}
-          </h1>
+            <h1 className="m-0 w-full text-40 leading-105 font-serif font-medium tracking-display text-ink recipe:text-72 recipe:leading-100">
+              {recipe.title}
+            </h1>
 
-          {/* Item 5. */}
-          {recipe.subtitle ? (
-            <p className="m-0 w-full text-16 leading-150 font-serif italic text-ink-2 recipe:text-21 recipe:leading-normal">
-              {recipe.subtitle}
-            </p>
-          ) : null}
+            {/* Item 5. */}
+            {recipe.subtitle ? (
+              <p className="m-0 w-full text-16 leading-150 font-serif italic text-ink-2 recipe:text-21 recipe:leading-normal">
+                {recipe.subtitle}
+              </p>
+            ) : null}
 
-          {/* Where a variation came from, said once, where a reader is
+            {/* Where a variation came from, said once, where a reader is
               already looking.
 
               A sentence with the link inside it, which is D-10's shape for a
@@ -654,65 +667,65 @@ export function RecipeDetail({
               is wrong or surprising, and being a variation is neither. The
               badge above says what this is and this says what it varies; the
               Variations panel holds the rest of the family. */}
-          {recipe.variantOf ? (
-            <p className="m-0 w-full text-15 leading-170 font-sans text-ink-2">
-              A variation of{' '}
-              <Link
-                href={`/recipes/${recipe.variantOf.slug}`}
-                className={PROSE_LINK}
-              >
-                {recipe.variantOf.title}
-              </Link>
-              {recipe.variantOf.note ? `. ${recipe.variantOf.note}` : '.'}
-            </p>
-          ) : null}
+            {recipe.variantOf ? (
+              <p className="m-0 w-full text-15 leading-170 font-sans text-ink-2">
+                A variation of{' '}
+                <Link
+                  href={`/recipes/${recipe.variantOf.slug}`}
+                  className={PROSE_LINK}
+                >
+                  {recipe.variantOf.title}
+                </Link>
+                {recipe.variantOf.note ? `. ${recipe.variantOf.note}` : '.'}
+              </p>
+            ) : null}
 
-          {/* Item 6. `w-180` is the design's fixed 720px measure, and it is
+            {/* Item 6. `w-180` is the design's fixed 720px measure, and it is
               a maximum here rather than a width: the band is 904px at 1024
               and 328px at 360. */}
-          {recipe.summary ? (
-            <p className="m-0 w-full max-w-180 text-15 leading-170 font-sans text-ink-2 recipe:text-17 recipe:leading-180">
-              {recipe.summary}
-            </p>
-          ) : null}
+            {recipe.summary ? (
+              <p className="m-0 w-full max-w-180 text-15 leading-170 font-sans text-ink-2 recipe:text-17 recipe:leading-180">
+                {recipe.summary}
+              </p>
+            ) : null}
 
-          {/* Item 7. The design draws no image on this screen — zero <img>
+            {/* Item 7. The design draws no image on this screen — zero <img>
               and zero <svg> across all four recipe exports — so the caption
               takes the nearest drawn annotation, the ingredient row's serif
               italic `Prep`. */}
-          {recipe.heroImageUrl ? (
-            /* `data-hero-image` is a SELECTOR, not a style:
+            {recipe.heroImageUrl ? (
+              /* `data-hero-image` is a SELECTOR, not a style:
                `e2e/mcp-lifecycle.spec.ts` needs it. It replaced the
                `recipe-hero-image` class at M7, and every reset that stood
                beside that class — here and on the `<img>` — went with the
                `globals.css` rules they cancelled. */
-            <figure
-              data-hero-image=""
-              className="flex w-full flex-col items-start gap-2"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={recipe.heroImageUrl}
-                srcSet={storedImageSrcSet(recipe.heroImageUrl)}
-                sizes={
-                  storedImageSrcSet(recipe.heroImageUrl)
-                    ? RECORD_IMAGE_SIZES
-                    : undefined
-                }
-                alt={recipe.heroImageAlt ?? ''}
-                loading="lazy"
-                decoding="async"
-                className="h-auto w-full"
-              />
-              {recipe.heroImageAlt ? (
-                <figcaption className="m-0 text-13 leading-150 font-serif italic text-ink-3">
-                  {recipe.heroImageAlt}
-                </figcaption>
-              ) : null}
-            </figure>
-          ) : null}
+              <figure
+                data-hero-image=""
+                className="flex w-full flex-col items-start gap-2"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={recipe.heroImageUrl}
+                  srcSet={storedImageSrcSet(recipe.heroImageUrl)}
+                  sizes={
+                    storedImageSrcSet(recipe.heroImageUrl)
+                      ? RECORD_IMAGE_SIZES
+                      : undefined
+                  }
+                  alt={recipe.heroImageAlt ?? ''}
+                  loading="lazy"
+                  decoding="async"
+                  className="h-auto w-full"
+                />
+                {recipe.heroImageAlt ? (
+                  <figcaption className="m-0 text-13 leading-150 font-serif italic text-ink-3">
+                    {recipe.heroImageAlt}
+                  </figcaption>
+                ) : null}
+              </figure>
+            ) : null}
 
-          {/* Item 8. The design draws 24px between terms at 1280 and, at 360,
+            {/* Item 8. The design draws 24px between terms at 1280 and, at 360,
               a COLUMN of rows: `flex-col gap-[ 8px ]` holding `flex-row
               gap-[ 20px ]`. One wrapping row gives both — 20px across and 8px
               down at 360, 24px both ways at 1280 — and it is 64px of hero
@@ -720,14 +733,14 @@ export function RecipeDetail({
               between the add-to-list control clearing the fold on a small
               phone and not. F/Tag itself has no ground, no border and no
               padding: the gaps are the whole separation. */}
-          <TermList
-            terms={recipe.terms}
-            showFacet
-            className="gap-x-5 gap-y-2 recipe:gap-x-6 recipe:gap-y-4"
-          />
-        </header>
+            <TermList
+              terms={recipe.terms}
+              showFacet
+              className="gap-x-5 gap-y-2 recipe:gap-x-6 recipe:gap-y-4"
+            />
+          </header>
 
-        {/* ── FIG. 1 — MASS FLOW, §10.2 and R-SCR-39 ────────────────────
+          {/* ── FIG. 1 — MASS FLOW, §10.2 and R-SCR-39 ────────────────────
             Band 3 at 1280, between the hero and the control bar, which is
             the order `recipe-1280.html` draws its children of `Main` in:
             Breadcrumb (:205), Hero (:228), Figure 1 (:393), Control bar
@@ -741,167 +754,175 @@ export function RecipeDetail({
             recipe: batch five was 8.2 kg and batch six is 10 kg, and this
             same component renders `/recipes/[slug]/revisions/3`, which must
             not show batch six's masses. */}
-        {rev.massFlow ? (
-          <MassFlow
-            data-mass-flow=""
-            stages={rev.massFlow}
-            summary={rev.massFlowSummary}
-          />
-        ) : null}
+          {rev.massFlow ? (
+            <MassFlow
+              data-mass-flow=""
+              stages={rev.massFlow}
+              summary={rev.massFlowSummary}
+            />
+          ) : null}
 
-        {/* ── The control bar, §10.2.5 and R-SCR-03 ─────────────────────
+          {/* ── The control bar, §10.2.5 and R-SCR-03 ─────────────────────
             Band 4 at 1280 and band 2 at 360, and the one place on the page
             with the `f-desk` ground. It switches axis at `recipe:` because
             `BatchControl` does; the two have to agree or the bar is a row
             holding a column. */}
-        {hasAside || recipe.ingredients.length > 0 ? (
-          <div className="flex w-full shrink-0 flex-col items-stretch gap-3 bg-desk p-3.5 recipe:flex-row recipe:items-center recipe:justify-between recipe:gap-4 recipe:px-4.5 recipe:py-4">
-            <BatchControl
-              yieldQuantity={rev.yieldQuantity}
-              yieldUnit={rev.yieldUnit}
-            />
+          {hasAside ||
+          recipe.ingredients.length > 0 ||
+          recipe.steps.length > 0 ? (
+            <div className="flex w-full shrink-0 flex-col items-stretch gap-3 bg-desk p-3.5 recipe:flex-row recipe:items-center recipe:justify-between recipe:gap-4 recipe:px-4.5 recipe:py-4">
+              <BatchControl
+                yieldQuantity={rev.yieldQuantity}
+                yieldUnit={rev.yieldUnit}
+              />
 
-            {/*
-             * C-18 is `src/components/shopping-basket.tsx`, which is not in
-             * M5's scope, and it draws no treatment of its own at all. The
-             * design's ADD TO LIST is F/Button primary — square, 11/18, a
-             * 10px mono label at 1.5px tracking — so the treatment is applied
-             * from the wrapper, and the component itself is untouched
-             * (R-CMP-13 and R-CON-04 still hold: it is in the served HTML and
-             * corrects its own label after the page loads).
-             *
-             * The "in list" state takes F/Button's `quiet` variant, which is
-             * the only second button shape the design draws. Until M7 that
-             * state was read off `globals.css`'s `.button-secondary`, which
-             * was a style and a state marker at once. The class went with
-             * that file; `data-in-basket` carries the state and nothing else.
-             *
-             * `m-0`, `rounded-none` and `border-0` also went: the preflight
-             * zeroes a `<button>`'s margin, radius and border since M7.
-             */}
-            {recipe.ingredients.length > 0 ? (
-              <div
-                className={cn(
-                  'w-full recipe:w-fit recipe:shrink-0',
-                  '[&>button]:inline-flex [&>button]:w-full [&>button]:items-center [&>button]:justify-center',
-                  '[&>button]:cursor-pointer [&>button]:appearance-none',
-                  '[&>button]:px-4.5 [&>button]:py-2.75',
-                  '[&>button]:text-10 [&>button]:leading-normal [&>button]:font-mono [&>button]:font-normal',
-                  '[&>button]:tracking-spine [&>button]:uppercase [&>button]:whitespace-nowrap',
-                  '[&>button]:bg-accent [&>button]:text-on-accent',
-                  'recipe:[&>button]:w-fit',
-                  '[&>[data-in-basket]]:bg-transparent [&>[data-in-basket]]:text-ink',
-                  '[&>[data-in-basket]]:outline-1 [&>[data-in-basket]]:-outline-offset-1 [&>[data-in-basket]]:outline-hair',
-                  '[&>button:focus-visible]:outline-2 [&>button:focus-visible]:outline-offset-2 [&>button:focus-visible]:outline-ring',
-                )}
-              >
-                <AddToBasket slug={recipe.slug} title={recipe.title} />
-              </div>
-            ) : null}
-          </div>
-        ) : null}
+              {/* Cooking mode: the screen stays on and the steps read
+                larger. With no steps there is nothing to cook from. Its
+                auto margin takes the free space, so it sits beside ADD TO
+                LIST at the right, not in the middle of the bar. */}
+              {recipe.steps.length > 0 ? <CookingModeButton /> : null}
 
-        <RecipeTabs
-          /* ── Ingredients: At a glance · Ingredients ─────────────────── */
-          ingredients={
-            hasAside ? (
-              <>
-                {hasGlance ? (
-                  <Section360
-                    data-glance=""
-                    label="At a glance"
-                    className="gap-3 recipe:gap-6"
-                  >
-                    {/* Two columns, not the design's three-across row: it
+              {/*
+               * C-18 is `src/components/shopping-basket.tsx`, which is not in
+               * M5's scope, and it draws no treatment of its own at all. The
+               * design's ADD TO LIST is F/Button primary — square, 11/18, a
+               * 10px mono label at 1.5px tracking — so the treatment is applied
+               * from the wrapper, and the component itself is untouched
+               * (R-CMP-13 and R-CON-04 still hold: it is in the served HTML and
+               * corrects its own label after the page loads).
+               *
+               * The "in list" state takes F/Button's `quiet` variant, which is
+               * the only second button shape the design draws. Until M7 that
+               * state was read off `globals.css`'s `.button-secondary`, which
+               * was a style and a state marker at once. The class went with
+               * that file; `data-in-basket` carries the state and nothing else.
+               *
+               * `m-0`, `rounded-none` and `border-0` also went: the preflight
+               * zeroes a `<button>`'s margin, radius and border since M7.
+               */}
+              {recipe.ingredients.length > 0 ? (
+                <div
+                  className={cn(
+                    'w-full recipe:w-fit recipe:shrink-0',
+                    '[&>button]:inline-flex [&>button]:w-full [&>button]:items-center [&>button]:justify-center',
+                    '[&>button]:cursor-pointer [&>button]:appearance-none',
+                    '[&>button]:px-4.5 [&>button]:py-2.75',
+                    '[&>button]:text-10 [&>button]:leading-normal [&>button]:font-mono [&>button]:font-normal',
+                    '[&>button]:tracking-spine [&>button]:uppercase [&>button]:whitespace-nowrap',
+                    '[&>button]:bg-accent [&>button]:text-on-accent',
+                    'recipe:[&>button]:w-fit',
+                    '[&>[data-in-basket]]:bg-transparent [&>[data-in-basket]]:text-ink',
+                    '[&>[data-in-basket]]:outline-1 [&>[data-in-basket]]:-outline-offset-1 [&>[data-in-basket]]:outline-hair',
+                    '[&>button:focus-visible]:outline-2 [&>button:focus-visible]:outline-offset-2 [&>button:focus-visible]:outline-ring',
+                  )}
+                >
+                  <AddToBasket slug={recipe.slug} title={recipe.title} />
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          <RecipeTabs
+            /* ── Ingredients: At a glance · Ingredients ─────────────────── */
+            ingredients={
+              hasAside ? (
+                <>
+                  {hasGlance ? (
+                    <Section360
+                      data-glance=""
+                      label="At a glance"
+                      className="gap-3 recipe:gap-6"
+                    >
+                      {/* Two columns, not the design's three-across row: it
                         draws YIELD/TOTAL/ACTIVE and §10.2.3 asks for a
                         fourth, and four 9px labels in a 340px aside is 85px
                         each — `ACTIVE TIME` alone is wider than that. */}
-                    <div className="grid w-full grid-cols-2 gap-x-5 gap-y-4 recipe:gap-x-7">
-                      {rev.yieldQuantity ? (
-                        <Stat
-                          data-stat="yield"
-                          size="md"
-                          label="Yield"
-                          /* R-SCR-05 — the SCALED yield. */
-                          value={
-                            <ScaledAmount
-                              value={rev.yieldQuantity}
-                              unit={rev.yieldUnit}
-                            />
-                          }
-                        />
-                      ) : null}
-                      {rev.servings ? (
-                        <Stat
-                          data-stat="servings"
-                          size="md"
-                          label="Servings"
-                          value={<ScaledAmount value={rev.servings} />}
-                        />
-                      ) : null}
-                      {rev.totalTimeMinutes ? (
-                        <Stat
-                          data-stat="total-time"
-                          size="md"
-                          label="Total time"
-                          /* R-SCR-06 — a time does not scale. */
-                          value={formatDuration(rev.totalTimeMinutes, null)}
-                        />
-                      ) : null}
-                      {rev.activeTimeMinutes ? (
-                        <Stat
-                          data-stat="active-time"
-                          size="md"
-                          label="Active time"
-                          value={formatDuration(rev.activeTimeMinutes, null)}
-                        />
-                      ) : null}
-                    </div>
-                  </Section360>
-                ) : null}
+                      <div className="grid w-full grid-cols-2 gap-x-5 gap-y-4 recipe:gap-x-7">
+                        {rev.yieldQuantity ? (
+                          <Stat
+                            data-stat="yield"
+                            size="md"
+                            label="Yield"
+                            /* R-SCR-05 — the SCALED yield. */
+                            value={
+                              <ScaledAmount
+                                value={rev.yieldQuantity}
+                                unit={rev.yieldUnit}
+                              />
+                            }
+                          />
+                        ) : null}
+                        {rev.servings ? (
+                          <Stat
+                            data-stat="servings"
+                            size="md"
+                            label="Servings"
+                            value={<ScaledAmount value={rev.servings} />}
+                          />
+                        ) : null}
+                        {rev.totalTimeMinutes ? (
+                          <Stat
+                            data-stat="total-time"
+                            size="md"
+                            label="Total time"
+                            /* R-SCR-06 — a time does not scale. */
+                            value={formatDuration(rev.totalTimeMinutes, null)}
+                          />
+                        ) : null}
+                        {rev.activeTimeMinutes ? (
+                          <Stat
+                            data-stat="active-time"
+                            size="md"
+                            label="Active time"
+                            value={formatDuration(rev.activeTimeMinutes, null)}
+                          />
+                        ) : null}
+                      </div>
+                    </Section360>
+                  ) : null}
 
-                {recipe.ingredients.length > 0 ? (
-                  /* C-14 draws its own F/Section 360 head, because the
+                  {recipe.ingredients.length > 0 ? (
+                    /* C-14 draws its own F/Section 360 head, because the
                      `3 / 16` tally in it is client state and R-CON-02
                      forbids handing a function back across the boundary. */
-                  <IngredientChecklist
-                    slug={recipe.slug}
-                    revisionNumber={rev.revisionNumber}
-                    lines={recipe.ingredients}
-                  />
-                ) : null}
-              </>
-            ) : undefined
-          }
-          /* ── Method: Why this revision · Method · Notes · Provenance ·
+                    <IngredientChecklist
+                      slug={recipe.slug}
+                      revisionNumber={rev.revisionNumber}
+                      lines={recipe.ingredients}
+                    />
+                  ) : null}
+                </>
+              ) : undefined
+            }
+            /* ── Method: Why this revision · Method · Notes · Provenance ·
                  Related · Literature ─────────────────────────────────── */
-          method={
-            hasMethod ? (
-              <>
-                {rev.rationale ? (
-                  /* `Reason for change` — the one block in the design that
+            method={
+              hasMethod ? (
+                <>
+                  {rev.rationale ? (
+                    /* `Reason for change` — the one block in the design that
                      carries a 3px accent rule and an inset. The `S6` marker
                      that sits in that inset belongs to the change
                      apparatus; see the file header. */
-                  <div className="flex w-full shrink-0 flex-col items-start gap-3 border-l-accent py-0.75 pl-4 [border-style:solid] [border-width:0px_0px_0px_3px] recipe:pl-7">
-                    <div className="flex w-full flex-row flex-wrap items-center gap-3">
-                      <h2 className="m-0 text-10 leading-normal font-mono font-normal tracking-spine uppercase text-accent">
-                        Why the {ordinal.toLowerCase()}
-                      </h2>
-                      {rev.revisionNumber > 1 ? (
-                        <span className="text-09 font-mono tracking-label uppercase text-ink-3">
-                          {revisionOrdinal(rev.revisionNumber - 1)} →{' '}
-                          {ordinal.toLowerCase()}
-                        </span>
-                      ) : null}
+                    <div className="flex w-full shrink-0 flex-col items-start gap-3 border-l-accent py-0.75 pl-4 [border-style:solid] [border-width:0px_0px_0px_3px] recipe:pl-7">
+                      <div className="flex w-full flex-row flex-wrap items-center gap-3">
+                        <h2 className="m-0 text-10 leading-normal font-mono font-normal tracking-spine uppercase text-accent">
+                          Why the {ordinal.toLowerCase()}
+                        </h2>
+                        {rev.revisionNumber > 1 ? (
+                          <span className="text-09 font-mono tracking-label uppercase text-ink-3">
+                            {revisionOrdinal(rev.revisionNumber - 1)} →{' '}
+                            {ordinal.toLowerCase()}
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="w-full text-15 leading-180 font-sans text-ink recipe:text-16 recipe:leading-180">
+                        <Markdown tone="inherit">{rev.rationale}</Markdown>
+                      </div>
                     </div>
-                    <div className="w-full text-15 leading-180 font-sans text-ink recipe:text-16 recipe:leading-180">
-                      <Markdown tone="inherit">{rev.rationale}</Markdown>
-                    </div>
-                  </div>
-                ) : null}
+                  ) : null}
 
-                {/* No wrapper around the phases. `recipe-1280.html:1910`
+                  {/* No wrapper around the phases. `recipe-1280.html:1910`
                     draws `Phase Prep` (`:1958`), `Phase Cure` (`:2319`) and
                     `Phase Hang` (`:2877`) as DIRECT children of
                     `Panel — Method`, which is `gap-[ 40px ]` — the same 40px
@@ -910,67 +931,75 @@ export function RecipeDetail({
                     design's gap INSIDE a phase (each `Phase` is itself
                     `gap-[ 28px ]`) and is already written on the phase and on
                     its step list below. */}
-                {phases.length > 0
-                  ? phases.map((group, index) => {
-                      /* R-SCR-09 — the numbering runs continuously across
+                  {recipe.steps.length > 0 ? (
+                    <StepProgress total={recipe.steps.length} />
+                  ) : null}
+
+                  {phases.length > 0
+                    ? phases.map((group, index) => {
+                        /* R-SCR-09 — the numbering runs continuously across
                          the phases, so "step five" is unambiguous. */
-                      const before = phases
-                        .slice(0, index)
-                        .reduce((total, g) => total + g.steps.length, 0);
-                      return (
-                        <div
-                          key={`${group.phase}-${index}`}
-                          className="flex w-full shrink-0 flex-col items-start gap-5 recipe:gap-7"
-                        >
-                          {/* The phase head: a 24px serif italic title, a
+                        const before = phases
+                          .slice(0, index)
+                          .reduce((total, g) => total + g.steps.length, 0);
+                        return (
+                          <div
+                            key={`${group.phase}-${index}`}
+                            className="flex w-full shrink-0 flex-col items-start gap-5 recipe:gap-7"
+                          >
+                            {/* The phase head: a 24px serif italic title, a
                               hairline that fills the row, and a mono count.
                               Absent when the revision declares no phase
                               (R-STA-05). */}
-                          {group.phase ? (
-                            <div className="flex w-full flex-row items-center gap-4">
-                              <h3 className="m-0 text-21 leading-normal font-serif font-medium tracking-flat text-ink italic recipe:text-24">
-                                {group.phase}
-                              </h3>
-                              <span
-                                aria-hidden="true"
-                                className="h-px flex-1 bg-hair"
-                              />
-                              <span className="text-09 font-mono tabular-nums tracking-label uppercase text-ink-3">
-                                {group.steps.length}{' '}
-                                {group.steps.length === 1 ? 'step' : 'steps'}
-                              </span>
-                            </div>
-                          ) : null}
-                          <ol className="m-0 flex w-full list-none flex-col items-start gap-5 p-0 recipe:gap-7">
-                            {group.steps.map((step, stepIndex) => (
-                              <Step
-                                key={step.id}
-                                step={step}
-                                number={before + stepIndex + 1}
-                                letter={
-                                  group.phase
-                                    ? (PHASE_LETTERS[index] ?? null)
-                                    : null
-                                }
-                                lines={recipe.ingredients}
-                              />
-                            ))}
-                          </ol>
-                        </div>
-                      );
-                    })
-                  : null}
+                            {group.phase ? (
+                              <div className="flex w-full flex-row items-center gap-4">
+                                <h3 className="m-0 text-21 leading-normal font-serif font-medium tracking-flat text-ink italic recipe:text-24">
+                                  {group.phase}
+                                </h3>
+                                <span
+                                  aria-hidden="true"
+                                  className="h-px flex-1 bg-hair"
+                                />
+                                <span className="text-09 font-mono tabular-nums tracking-label uppercase text-ink-3">
+                                  {group.steps.length}{' '}
+                                  {group.steps.length === 1 ? 'step' : 'steps'}
+                                </span>
+                              </div>
+                            ) : null}
+                            <ol className="m-0 flex w-full list-none flex-col items-start gap-5 p-0 recipe:gap-7">
+                              {group.steps.map((step, stepIndex) => (
+                                <Step
+                                  key={step.id}
+                                  step={step}
+                                  number={before + stepIndex + 1}
+                                  letter={
+                                    group.phase
+                                      ? (PHASE_LETTERS[index] ?? null)
+                                      : null
+                                  }
+                                  lines={recipe.ingredients}
+                                />
+                              ))}
+                            </ol>
+                          </div>
+                        );
+                      })
+                    : null}
 
-                {otherNotes.length > 0 ? (
-                  <Band label="Notes" meta={String(otherNotes.length)}>
-                    {otherNotes.map((note, index) => (
-                      <NoteEntry key={note.id} note={note} number={index + 1} />
-                    ))}
-                  </Band>
-                ) : null}
+                  {otherNotes.length > 0 ? (
+                    <Band label="Notes" meta={String(otherNotes.length)}>
+                      {otherNotes.map((note, index) => (
+                        <NoteEntry
+                          key={note.id}
+                          note={note}
+                          number={index + 1}
+                        />
+                      ))}
+                    </Band>
+                  ) : null}
 
-                {recipe.originNote ? (
-                  /* WHY THIS IS NOT `F/Provenance line`, which M4 built for
+                  {recipe.originNote ? (
+                    /* WHY THIS IS NOT `F/Provenance line`, which M4 built for
                      this screen and which therefore has no call site.
 
                      The blocking reason is the markup, not the missing date:
@@ -990,244 +1019,245 @@ export function RecipeDetail({
                      The body role is identical either way — 14/24 Geist in
                      the primary ink, `f/provenance.tsx:45`. What is lost is
                      the gutter and the 9px row padding. M7 owns both. */
-                  <Band label="Provenance">
-                    <div className="w-full text-14 leading-170 font-sans text-ink">
-                      <Markdown tone="inherit">{recipe.originNote}</Markdown>
-                    </div>
-                  </Band>
-                ) : null}
+                    <Band label="Provenance">
+                      <div className="w-full text-14 leading-170 font-sans text-ink">
+                        <Markdown tone="inherit">{recipe.originNote}</Markdown>
+                      </div>
+                    </Band>
+                  ) : null}
 
-                {related.length > 0 ? (
-                  <Band label="Related" meta={String(related.length)}>
-                    <CardGrid columns={2}>
-                      {related.map((link) => (
-                        <RecipeCard
-                          key={link.key}
-                          kind={link.recipe.kind}
-                          code={link.label}
-                          title={link.recipe.title}
-                          href={`/recipes/${link.recipe.slug}`}
-                          subtitle={link.recipe.subtitle}
-                          summary={cardSummary(
-                            link.note ?? link.recipe.summary,
-                          )}
+                  {related.length > 0 ? (
+                    <Band label="Related" meta={String(related.length)}>
+                      <CardGrid columns={2}>
+                        {related.map((link) => (
+                          <RecipeCard
+                            key={link.key}
+                            kind={link.recipe.kind}
+                            code={link.label}
+                            title={link.recipe.title}
+                            href={`/recipes/${link.recipe.slug}`}
+                            subtitle={link.recipe.subtitle}
+                            summary={cardSummary(
+                              link.note ?? link.recipe.summary,
+                            )}
+                          />
+                        ))}
+                      </CardGrid>
+                    </Band>
+                  ) : null}
+
+                  {/* R-SCR-38 — absent when the recipe cites nothing, which is
+                    most recipes. */}
+                  {citations.length > 0 ? (
+                    <Band
+                      label="Literature"
+                      meta={String(citations.length)}
+                      bodyClassName="gap-5"
+                    >
+                      {citations.map((source, index) => (
+                        <Citation
+                          key={index}
+                          code={`[${index + 1}]`}
+                          work={source.title}
+                          part={source.citation}
+                          accessedAt={source.accessedAt}
+                          url={source.url}
                         />
                       ))}
-                    </CardGrid>
-                  </Band>
-                ) : null}
-
-                {/* R-SCR-38 — absent when the recipe cites nothing, which is
-                    most recipes. */}
-                {citations.length > 0 ? (
-                  <Band
-                    label="Literature"
-                    meta={String(citations.length)}
-                    bodyClassName="gap-5"
-                  >
-                    {citations.map((source, index) => (
-                      <Citation
-                        key={index}
-                        code={`[${index + 1}]`}
-                        work={source.title}
-                        part={source.citation}
-                        accessedAt={source.accessedAt}
-                        url={source.url}
-                      />
-                    ))}
-                  </Band>
-                ) : null}
-              </>
-            ) : (
-              /* R-STA-03. `method` is the one panel §10.2.2 says is always
+                    </Band>
+                  ) : null}
+                </>
+              ) : (
+                /* R-STA-03. `method` is the one panel §10.2.2 says is always
                  present, so it states its emptiness rather than opening
                  blank. */
-              <Empty>No method recorded for this revision yet.</Empty>
-            )
-          }
-          /* ── Science: Batch logs · The science ──────────────────────── */
-          science={
-            hasScience ? (
-              <>
-                {recipe.experiments.length > 0 ? (
-                  <Band
-                    label="Batch logs"
-                    meta={String(recipe.experiments.length)}
-                    bodyClassName="gap-0"
-                  >
-                    {recipe.experiments.map((experiment) => (
-                      <BatchLine
-                        key={experiment.slug}
-                        lead={stamp(experiment.startedAt)}
-                        title={experiment.title}
-                        /* The nested address, not the top level one. We are
+                <Empty>No method recorded for this revision yet.</Empty>
+              )
+            }
+            /* ── Science: Batch logs · The science ──────────────────────── */
+            science={
+              hasScience ? (
+                <>
+                  {recipe.experiments.length > 0 ? (
+                    <Band
+                      label="Batch logs"
+                      meta={String(recipe.experiments.length)}
+                      bodyClassName="gap-0"
+                    >
+                      {recipe.experiments.map((experiment) => (
+                        <BatchLine
+                          key={experiment.slug}
+                          lead={stamp(experiment.startedAt)}
+                          title={experiment.title}
+                          /* The nested address, not the top level one. We are
                            inside the recipe, so the recipe slug is in hand
                            and this is the run's own canonical address. See
                            D-01. */
-                        href={`/recipes/${recipe.slug}/batch-logs/${experiment.slug}`}
-                      />
-                    ))}
-                  </Band>
-                ) : null}
+                          href={`/recipes/${recipe.slug}/batch-logs/${experiment.slug}`}
+                        />
+                      ))}
+                    </Band>
+                  ) : null}
 
-                {science.length > 0 ? (
-                  /* R-SCR-11 — five differences from a note at once: an
+                  {science.length > 0 ? (
+                    /* R-SCR-11 — five differences from a note at once: an
                      accent code in the gutter, a Newsreader claim at weight
                      400 rather than 500, a body set in the SERIF rather
                      than the sans, a trailing conditions row, and 32px
                      between entries rather than 16. F/Mechanism carries all
                      five; nothing here restates them. */
-                  <Band
-                    data-science=""
-                    label="The science"
-                    meta={String(science.length)}
-                    bodyClassName="gap-8"
-                  >
-                    <p className="m-0 w-full text-15 leading-170 font-sans text-ink-2">
-                      What is actually happening in the dish, and why the
-                      techniques work.
-                    </p>
-                    {science.map((note, index) => (
-                      <Mechanism
-                        key={note.id}
-                        data-kind={note.kind}
-                        code={`M${index + 1}`}
-                        name={note.title}
-                        /* R-SCR-41 — the conditions the mechanism holds
+                    <Band
+                      data-science=""
+                      label="The science"
+                      meta={String(science.length)}
+                      bodyClassName="gap-8"
+                    >
+                      <p className="m-0 w-full text-15 leading-170 font-sans text-ink-2">
+                        What is actually happening in the dish, and why the
+                        techniques work.
+                      </p>
+                      {science.map((note, index) => (
+                        <Mechanism
+                          key={note.id}
+                          data-kind={note.kind}
+                          code={`M${index + 1}`}
+                          name={note.title}
+                          /* R-SCR-41 — the conditions the mechanism holds
                            under, as separate values. `notes.conditions` is
                            the column D-02 added; it is empty on every kind
                            but science and on a science note nobody has
                            described, and F/Mechanism then draws no row. */
-                        conditions={note.conditions}
-                      >
-                        <Markdown tone="inherit">{note.body}</Markdown>
-                      </Mechanism>
-                    ))}
-                  </Band>
-                ) : null}
-              </>
-            ) : undefined
-          }
-          /* ── Revisions: the timeline ────────────────────────────────── */
-          revisions={
-            recipe.revisions.length > 1 ? (
-              <Band
-                data-timeline=""
-                label="Revisions"
-                meta={String(recipe.revisions.length)}
-                bodyClassName="gap-0"
-              >
-                <p className="m-0 w-full max-w-155 text-15 leading-170 font-sans text-ink-2">
-                  A revision is written when the dish changes, and the version
-                  it replaces is kept. Beside each is a sentence describing what
-                  the dish became — the part a cook can act on.
-                </p>
-                {recipe.revisions.map((entry) => {
-                  const viewing = entry.revisionNumber === rev.revisionNumber;
-                  const current =
-                    entry.revisionNumber === currentRevisionNumber;
-                  return (
-                    <Revision
-                      key={entry.revisionNumber}
-                      data-revision={entry.revisionNumber}
-                      revisionNumber={entry.revisionNumber}
-                      /* R-SCR-08: `occurredAt` is when the version EXISTED
+                          conditions={note.conditions}
+                        >
+                          <Markdown tone="inherit">{note.body}</Markdown>
+                        </Mechanism>
+                      ))}
+                    </Band>
+                  ) : null}
+                </>
+              ) : undefined
+            }
+            /* ── Revisions: the timeline ────────────────────────────────── */
+            revisions={
+              recipe.revisions.length > 1 ? (
+                <Band
+                  data-timeline=""
+                  label="Revisions"
+                  meta={String(recipe.revisions.length)}
+                  bodyClassName="gap-0"
+                >
+                  <p className="m-0 w-full max-w-155 text-15 leading-170 font-sans text-ink-2">
+                    A revision is written when the dish changes, and the version
+                    it replaces is kept. Beside each is a sentence describing
+                    what the dish became — the part a cook can act on.
+                  </p>
+                  {recipe.revisions.map((entry) => {
+                    const viewing = entry.revisionNumber === rev.revisionNumber;
+                    const current =
+                      entry.revisionNumber === currentRevisionNumber;
+                    return (
+                      <Revision
+                        key={entry.revisionNumber}
+                        data-revision={entry.revisionNumber}
+                        revisionNumber={entry.revisionNumber}
+                        /* R-SCR-08: `occurredAt` is when the version EXISTED
                          and `createdAt` is when it was written down. A
                          backfilled entry says both. */
-                      date={stamp(entry.occurredAt ?? entry.createdAt)}
-                      /* No link on the entry a reader is already on. The
+                        date={stamp(entry.occurredAt ?? entry.createdAt)}
+                        /* No link on the entry a reader is already on. The
                          design gives the timeline no "you are here" state
                          at all; the absent link is the one cue that costs
                          nothing and cannot be misread. */
-                      href={
-                        viewing
-                          ? undefined
-                          : current
-                            ? `/recipes/${recipe.slug}`
-                            : `/recipes/${recipe.slug}/revisions/${entry.revisionNumber}`
+                        href={
+                          viewing
+                            ? undefined
+                            : current
+                              ? `/recipes/${recipe.slug}`
+                              : `/recipes/${recipe.slug}/revisions/${entry.revisionNumber}`
+                        }
+                        /* R-SCR-07. */
+                        current={current}
+                        /* R-SCR-08. */
+                        backfilled={entry.backfilled}
+                        backfilledNote={
+                          entry.backfilled && entry.occurredAt
+                            ? `written down ${citationDate(entry.createdAt)}`
+                            : undefined
+                        }
+                      >
+                        {entry.rationale ?? (
+                          <span className="text-ink-3">
+                            No rationale recorded.
+                          </span>
+                        )}
+                      </Revision>
+                    );
+                  })}
+                </Band>
+              ) : undefined
+            }
+            /* ── Variations: the family ─────────────────────────────────── */
+            variations={
+              recipe.variantFamily.length > 0 ? (
+                <Band
+                  data-family=""
+                  label="Variations"
+                  meta={String(recipe.variantFamily.length)}
+                  bodyClassName="gap-0"
+                >
+                  <p className="m-0 w-full max-w-155 text-15 leading-170 font-sans text-ink-2">
+                    A variation is the same dish taken a different way. Each one
+                    keeps its own versions, and none of them replaces another.
+                    The first is the dish the rest came from.
+                  </p>
+                  {recipe.variantFamily.map((member) => (
+                    <Revision
+                      key={member.slug}
+                      data-variant={member.slug}
+                      data-depth={member.depth}
+                      className={
+                        FAMILY_INDENT[
+                          Math.min(member.depth, FAMILY_INDENT.length - 1)
+                        ]
                       }
-                      /* R-SCR-07. */
-                      current={current}
-                      /* R-SCR-08. */
-                      backfilled={entry.backfilled}
-                      backfilledNote={
-                        entry.backfilled && entry.occurredAt
-                          ? `written down ${citationDate(entry.createdAt)}`
-                          : undefined
-                      }
-                    >
-                      {entry.rationale ?? (
-                        <span className="text-ink-3">
-                          No rationale recorded.
-                        </span>
-                      )}
-                    </Revision>
-                  );
-                })}
-              </Band>
-            ) : undefined
-          }
-          /* ── Variations: the family ─────────────────────────────────── */
-          variations={
-            recipe.variantFamily.length > 0 ? (
-              <Band
-                data-family=""
-                label="Variations"
-                meta={String(recipe.variantFamily.length)}
-                bodyClassName="gap-0"
-              >
-                <p className="m-0 w-full max-w-155 text-15 leading-170 font-sans text-ink-2">
-                  A variation is the same dish taken a different way. Each one
-                  keeps its own versions, and none of them replaces another. The
-                  first is the dish the rest came from.
-                </p>
-                {recipe.variantFamily.map((member) => (
-                  <Revision
-                    key={member.slug}
-                    data-variant={member.slug}
-                    data-depth={member.depth}
-                    className={
-                      FAMILY_INDENT[
-                        Math.min(member.depth, FAMILY_INDENT.length - 1)
-                      ]
-                    }
-                    /* The title, in place of `First revision`. The slot is
+                      /* The title, in place of `First revision`. The slot is
                        the design's 21px serif lead and the entries are the
                        same shape as the timeline's on purpose: a reader who
                        has learnt to read one panel can read the other. */
-                    ordinal={member.title}
-                    /* The DATE slot, which is 9px mono and tabular. What a
+                      ordinal={member.title}
+                      /* The DATE slot, which is 9px mono and tabular. What a
                        reader wants here is not a date — every member has a
                        different history — but how much history there is. */
-                    date={
-                      member.revisionCount === 1
-                        ? '1 version'
-                        : `${member.revisionCount} versions`
-                    }
-                    /* No link on the entry a reader is already on, which is
+                      date={
+                        member.revisionCount === 1
+                          ? '1 version'
+                          : `${member.revisionCount} versions`
+                      }
+                      /* No link on the entry a reader is already on, which is
                        the rule the revision timeline above uses and the one
                        cue the design gives for "you are here". */
-                    href={member.self ? undefined : `/recipes/${member.slug}`}
-                    current={member.self}
-                    currentLabel="You are here"
-                  >
-                    {member.variantNote ??
-                      (member.depth === 0 ? (
-                        <span className="text-ink-3">
-                          The dish the others came from.
-                        </span>
-                      ) : (
-                        <span className="text-ink-3">
-                          No difference recorded.
-                        </span>
-                      ))}
-                  </Revision>
-                ))}
-              </Band>
-            ) : undefined
-          }
-        />
-      </div>
+                      href={member.self ? undefined : `/recipes/${member.slug}`}
+                      current={member.self}
+                      currentLabel="You are here"
+                    >
+                      {member.variantNote ??
+                        (member.depth === 0 ? (
+                          <span className="text-ink-3">
+                            The dish the others came from.
+                          </span>
+                        ) : (
+                          <span className="text-ink-3">
+                            No difference recorded.
+                          </span>
+                        ))}
+                    </Revision>
+                  ))}
+                </Band>
+              ) : undefined
+            }
+          />
+        </div>
+      </CookingProvider>
     </ScaleProvider>
   );
 }
