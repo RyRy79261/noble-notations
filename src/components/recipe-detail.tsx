@@ -179,6 +179,9 @@ function stamp(value: string | null | undefined): string | undefined {
   return citationDate(value);
 }
 
+/** The hero is at most 26rem wide from the recipe breakpoint up. */
+const HERO_IMAGE_SIZES = '(min-width: 901px) 416px, 100vw';
+
 /* ── The band head ────────────────────────────────────────────────────────
  *
  * `recipe-1280.html` draws NOTES, REVISIONS, PROVENANCE, BATCH LOGS and
@@ -607,59 +610,75 @@ export function RecipeDetail({
           />
 
           {/* ── The hero, §10.2.1 ─────────────────────────────────────────── */}
-          <header className="flex w-full shrink-0 flex-col items-start gap-3 recipe:gap-5">
-            {/* Items 1, 2 and 3. `flex-wrap` and not the design's `Gap`
+          {/* With a picture, the hero is two columns from the recipe
+            breakpoint up: the text, and the picture beside it at no more
+            than 26rem. It used to sit inside the text column at the full
+            band width, which drew it 1,300px wide on a desktop and pushed
+            the method below the fold. Below the breakpoint the grid is one
+            column and the picture follows the terms, as it did before.
+            Without a picture the wrapper is `contents` and the header is a
+            direct child of the band, exactly as the design draws it. */}
+          <div
+            className={cn(
+              'w-full',
+              recipe.heroImageUrl
+                ? 'grid grid-cols-1 items-start gap-6 recipe:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] recipe:gap-12'
+                : 'contents',
+            )}
+          >
+            <header className="flex w-full shrink-0 flex-col items-start gap-3 recipe:gap-5">
+              {/* Items 1, 2 and 3. `flex-wrap` and not the design's `Gap`
               spacer: the source badge is kept at 360, where the design
               drops it, because which hand wrote a revision is a fact about
               the record and not a luxury of screen width. */}
-            <div className="flex w-full shrink-0 flex-row flex-wrap items-center gap-2 recipe:gap-3">
-              <Mark kind={recipe.kind} />
-              <MarkQuiet tone={isHistorical ? 'warn' : 'neutral'}>
-                {ordinal}
-              </MarkQuiet>
-              {recipe.variantOf ? <MarkQuiet>Variation</MarkQuiet> : null}
-              {rev.source !== 'human' ? (
-                <MarkQuiet tone="faint">Via {rev.source}</MarkQuiet>
-              ) : null}
-            </div>
+              <div className="flex w-full shrink-0 flex-row flex-wrap items-center gap-2 recipe:gap-3">
+                <Mark kind={recipe.kind} />
+                <MarkQuiet tone={isHistorical ? 'warn' : 'neutral'}>
+                  {ordinal}
+                </MarkQuiet>
+                {recipe.variantOf ? <MarkQuiet>Variation</MarkQuiet> : null}
+                {rev.source !== 'human' ? (
+                  <MarkQuiet tone="faint">Via {rev.source}</MarkQuiet>
+                ) : null}
+              </div>
 
-            {/* Item 9, and R-SCR-16. The design puts it here — hero child 2,
+              {/* Item 9, and R-SCR-16. The design puts it here — hero child 2,
               ABOVE the title — and not at the foot of the hero where
               §10.2.1 lists it: a reader who has started the title has
               already started reading the wrong revision. The link is a
               phrase inside the sentence, which is the shape D-10 settled
               for a body link, and it is what R-SCR-16's "MUST link" needs. */}
-            {isHistorical ? (
-              <Notice
-                tone="warn"
-                title={`You are reading revision ${rev.revisionNumber} of ${recipe.revisions.length}`}
-              >
-                Revision {currentRevisionNumber} is current. This one is kept
-                because a record that discards a revision is not a record.{' '}
-                <Link href={`/recipes/${recipe.slug}`} className={PROSE_LINK}>
-                  Go to the current revision
-                </Link>
-                .
-              </Notice>
-            ) : null}
+              {isHistorical ? (
+                <Notice
+                  tone="warn"
+                  title={`You are reading revision ${rev.revisionNumber} of ${recipe.revisions.length}`}
+                >
+                  Revision {currentRevisionNumber} is current. This one is kept
+                  because a record that discards a revision is not a record.{' '}
+                  <Link href={`/recipes/${recipe.slug}`} className={PROSE_LINK}>
+                    Go to the current revision
+                  </Link>
+                  .
+                </Notice>
+              ) : null}
 
-            {/* Item 4. 72/72 at 1280 and 40/42 at 360. The design's
+              {/* Item 4. 72/72 at 1280 and 40/42 at 360. The design's
               `white-space: nowrap` is an export artefact and is not
               shipped — a long title has to wrap (R-STA-09). Size and
               leading travel together in one argument, or tailwind-merge
               drops the leading (TOKEN-MAP §4.3). */}
-            <h1 className="m-0 w-full text-40 leading-105 font-serif font-medium tracking-display text-ink recipe:text-72 recipe:leading-100">
-              {recipe.title}
-            </h1>
+              <h1 className="m-0 w-full text-40 leading-105 font-serif font-medium tracking-display text-ink recipe:text-72 recipe:leading-100">
+                {recipe.title}
+              </h1>
 
-            {/* Item 5. */}
-            {recipe.subtitle ? (
-              <p className="m-0 w-full text-16 leading-150 font-serif italic text-ink-2 recipe:text-21 recipe:leading-normal">
-                {recipe.subtitle}
-              </p>
-            ) : null}
+              {/* Item 5. */}
+              {recipe.subtitle ? (
+                <p className="m-0 w-full text-16 leading-150 font-serif italic text-ink-2 recipe:text-21 recipe:leading-normal">
+                  {recipe.subtitle}
+                </p>
+              ) : null}
 
-            {/* Where a variation came from, said once, where a reader is
+              {/* Where a variation came from, said once, where a reader is
               already looking.
 
               A sentence with the link inside it, which is D-10's shape for a
@@ -667,32 +686,50 @@ export function RecipeDetail({
               is wrong or surprising, and being a variation is neither. The
               badge above says what this is and this says what it varies; the
               Variations panel holds the rest of the family. */}
-            {recipe.variantOf ? (
-              <p className="m-0 w-full text-15 leading-170 font-sans text-ink-2">
-                A variation of{' '}
-                <Link
-                  href={`/recipes/${recipe.variantOf.slug}`}
-                  className={PROSE_LINK}
-                >
-                  {recipe.variantOf.title}
-                </Link>
-                {recipe.variantOf.note ? `. ${recipe.variantOf.note}` : '.'}
-              </p>
-            ) : null}
+              {recipe.variantOf ? (
+                <p className="m-0 w-full text-15 leading-170 font-sans text-ink-2">
+                  A variation of{' '}
+                  <Link
+                    href={`/recipes/${recipe.variantOf.slug}`}
+                    className={PROSE_LINK}
+                  >
+                    {recipe.variantOf.title}
+                  </Link>
+                  {recipe.variantOf.note ? `. ${recipe.variantOf.note}` : '.'}
+                </p>
+              ) : null}
 
-            {/* Item 6. `w-180` is the design's fixed 720px measure, and it is
+              {/* Item 6. `w-180` is the design's fixed 720px measure, and it is
               a maximum here rather than a width: the band is 904px at 1024
               and 328px at 360. */}
-            {recipe.summary ? (
-              <p className="m-0 w-full max-w-180 text-15 leading-170 font-sans text-ink-2 recipe:text-17 recipe:leading-180">
-                {recipe.summary}
-              </p>
-            ) : null}
+              {recipe.summary ? (
+                <p className="m-0 w-full max-w-180 text-15 leading-170 font-sans text-ink-2 recipe:text-17 recipe:leading-180">
+                  {recipe.summary}
+                </p>
+              ) : null}
+
+              {/* Item 8. The design draws 24px between terms at 1280 and, at 360,
+              a COLUMN of rows: `flex-col gap-[ 8px ]` holding `flex-row
+              gap-[ 20px ]`. One wrapping row gives both — 20px across and 8px
+              down at 360, 24px both ways at 1280 — and it is 64px of hero
+              height at 360 against a uniform 24px, which is the difference
+              between the add-to-list control clearing the fold on a small
+              phone and not. F/Tag itself has no ground, no border and no
+              padding: the gaps are the whole separation. */}
+              <TermList
+                terms={recipe.terms}
+                showFacet
+                className="gap-x-5 gap-y-2 recipe:gap-x-6 recipe:gap-y-4"
+              />
+            </header>
 
             {/* Item 7. The design draws no image on this screen — zero <img>
-              and zero <svg> across all four recipe exports — so the caption
-              takes the nearest drawn annotation, the ingredient row's serif
-              italic `Prep`. */}
+            and zero <svg> across all four recipe exports — so the caption
+            takes the nearest drawn annotation, the ingredient row's serif
+            italic `Prep`. The crop is 4:3 so a tall phone photograph does
+            not make the hero taller than its text; `pt-10` at the
+            breakpoint drops the picture to the title's line, below the
+            badges. */}
             {recipe.heroImageUrl ? (
               /* `data-hero-image` is a SELECTOR, not a style:
                `e2e/mcp-lifecycle.spec.ts` needs it. It replaced the
@@ -701,7 +738,7 @@ export function RecipeDetail({
                `globals.css` rules they cancelled. */
               <figure
                 data-hero-image=""
-                className="flex w-full flex-col items-start gap-2"
+                className="m-0 flex w-full flex-col items-start gap-2 recipe:pt-10"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
@@ -709,13 +746,13 @@ export function RecipeDetail({
                   srcSet={storedImageSrcSet(recipe.heroImageUrl)}
                   sizes={
                     storedImageSrcSet(recipe.heroImageUrl)
-                      ? RECORD_IMAGE_SIZES
+                      ? HERO_IMAGE_SIZES
                       : undefined
                   }
                   alt={recipe.heroImageAlt ?? ''}
                   loading="lazy"
                   decoding="async"
-                  className="h-auto w-full"
+                  className="aspect-[4/3] h-auto w-full object-cover"
                 />
                 {recipe.heroImageAlt ? (
                   <figcaption className="m-0 text-13 leading-150 font-serif italic text-ink-3">
@@ -724,21 +761,7 @@ export function RecipeDetail({
                 ) : null}
               </figure>
             ) : null}
-
-            {/* Item 8. The design draws 24px between terms at 1280 and, at 360,
-              a COLUMN of rows: `flex-col gap-[ 8px ]` holding `flex-row
-              gap-[ 20px ]`. One wrapping row gives both — 20px across and 8px
-              down at 360, 24px both ways at 1280 — and it is 64px of hero
-              height at 360 against a uniform 24px, which is the difference
-              between the add-to-list control clearing the fold on a small
-              phone and not. F/Tag itself has no ground, no border and no
-              padding: the gaps are the whole separation. */}
-            <TermList
-              terms={recipe.terms}
-              showFacet
-              className="gap-x-5 gap-y-2 recipe:gap-x-6 recipe:gap-y-4"
-            />
-          </header>
+          </div>
 
           {/* ── FIG. 1 — MASS FLOW, §10.2 and R-SCR-39 ────────────────────
             Band 3 at 1280, between the hero and the control bar, which is

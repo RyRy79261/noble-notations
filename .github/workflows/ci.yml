@@ -212,6 +212,16 @@ jobs:
   # cannot be actioned (an unfixed transitive pin, say), add its GHSA to
   # `pnpm.auditConfig.ignoreGhsas` in package.json with a comment saying why,
   # rather than lowering --audit-level.
+  #
+  # package.json is JSON and cannot hold that comment, so the reasons live
+  # here, one per ignored GHSA:
+  #
+  #   GHSA-vfj7-8cjw-p6xm — braces <=3.0.3, stack exhaustion on a crafted
+  #     pattern. No fixed release exists (3.0.3 is the latest). The one path
+  #     is @next/eslint-plugin-next > fast-glob > micromatch > braces: a
+  #     devDependency that runs at lint time on this repository's own glob
+  #     patterns, and ships nothing. Remove this entry when braces publishes
+  #     a fix.
   supply-chain:
     name: Supply chain audit
     runs-on: ubuntu-latest

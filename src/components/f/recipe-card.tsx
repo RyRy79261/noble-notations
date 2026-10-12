@@ -61,6 +61,7 @@ import {
   type ReactNode,
 } from 'react';
 
+import { storedImageSrcSet } from '@/lib/images/widths';
 import { cn } from '@/lib/utils';
 
 import { FOCUS_RING } from './button';
@@ -179,6 +180,12 @@ export type RecipeCardProps = Omit<HTMLAttributes<HTMLElement>, 'title'> & {
   terms?: ReactNode;
   /** The heading level. A card under a section `h2` is an `h3`. */
   as?: ElementType;
+  /**
+   * The record's hero picture, drawn as an 80px square beside the badge
+   * and the title. Absent on a record with none, and then the title takes
+   * the whole width as it always has.
+   */
+  image?: { url: string; alt: string | null };
 };
 
 /**
@@ -200,6 +207,7 @@ export function RecipeCard({
   summary,
   terms,
   as: Heading = 'h3',
+  image,
   className,
   ...props
 }: RecipeCardProps) {
@@ -213,31 +221,57 @@ export function RecipeCard({
       )}
       {...props}
     >
-      {hasTop ? (
-        /* The design draws a plain `flex-row` here. `flex-wrap` is this
-           build's: at 360 the design stacks the badge above the code in a
-           column, and a wrapping row is the same result at whichever width
-           the two stop fitting, with one class instead of a variant.
-           The axes are split because the design draws two gaps, not one:
-           12px between the badge and the code on one line
-           (`m360-core.html:347`) and 8px once the code takes a line of its
-           own (`m360-batch-search-list.html:5191`, the `/search` card, where
-           `Top` is a `flex-col gap-[ 8px ]`). */
-        <div className="flex h-fit w-full shrink-0 flex-row flex-wrap items-center gap-x-3 gap-y-2">
-          <Mark kind={kind} />
-          {absent(code) ? null : <span className={CARD_CODE}>{code}</span>}
-        </div>
-      ) : null}
+      {/* The picture is a thumbnail BESIDE the badge and the title, not a
+          banner above them. A banner the width of the card drew a 1,200px
+          photograph on a card that is alone in its row, and a row where one
+          card has a picture and its neighbour has none no longer lined up.
+          80px square fits beside a title in every column the grid draws. */}
+      <div className="flex w-full flex-row items-start gap-4">
+        <div className="flex min-w-0 flex-1 flex-col items-start gap-3">
+          {hasTop ? (
+            /* The design draws a plain `flex-row` here. `flex-wrap` is this
+               build's: at 360 the design stacks the badge above the code in a
+               column, and a wrapping row is the same result at whichever width
+               the two stop fitting, with one class instead of a variant.
+               The axes are split because the design draws two gaps, not one:
+               12px between the badge and the code on one line
+               (`m360-core.html:347`) and 8px once the code takes a line of its
+               own (`m360-batch-search-list.html:5191`, the `/search` card, where
+               `Top` is a `flex-col gap-[ 8px ]`). */
+            <div className="flex h-fit w-full shrink-0 flex-row flex-wrap items-center gap-x-3 gap-y-2">
+              <Mark kind={kind} />
+              {absent(code) ? null : <span className={CARD_CODE}>{code}</span>}
+            </div>
+          ) : null}
 
-      <Heading className={CARD_TITLE}>
-        {href ? (
-          <Link href={href} className={CARD_LINK}>
-            {title}
-          </Link>
-        ) : (
-          title
-        )}
-      </Heading>
+          <Heading className={CARD_TITLE}>
+            {href ? (
+              <Link href={href} className={CARD_LINK}>
+                {title}
+              </Link>
+            ) : (
+              title
+            )}
+          </Heading>
+        </div>
+        {image ? (
+          /* `tabIndex={-1}` and `aria-hidden`: the title is the card's one
+             link for a keyboard and a screen reader, and this is a second
+             way to the same place for a pointer. */
+          <ImageLink href={href}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={image.url}
+              srcSet={storedImageSrcSet(image.url)}
+              sizes={storedImageSrcSet(image.url) ? '80px' : undefined}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              className="block size-20 max-w-none object-cover"
+            />
+          </ImageLink>
+        ) : null}
+      </div>
 
       {absent(subtitle) ? null : <p className={CARD_SUBTITLE}>{subtitle}</p>}
       {absent(summary) ? null : <p className={CARD_BODY}>{summary}</p>}
@@ -251,6 +285,15 @@ export function RecipeCard({
         </div>
       )}
     </article>
+  );
+}
+
+function ImageLink({ href, children }: { href?: string; children: ReactNode }) {
+  if (!href) return <div className="shrink-0">{children}</div>;
+  return (
+    <Link href={href} tabIndex={-1} aria-hidden className="block shrink-0">
+      {children}
+    </Link>
   );
 }
 

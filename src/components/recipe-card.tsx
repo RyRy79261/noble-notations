@@ -118,6 +118,11 @@ export function RecipeCard({ recipe }: { recipe: RecipeSummaryView }) {
       terms={terms.map((term) => (
         <TermTag key={term.id} term={term} />
       ))}
+      image={
+        recipe.heroImageUrl
+          ? { url: recipe.heroImageUrl, alt: recipe.heroImageAlt }
+          : undefined
+      }
     />
   );
 }
