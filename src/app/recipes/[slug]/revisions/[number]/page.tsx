@@ -6,8 +6,11 @@ import { RecipeDetail } from '@/components/recipe-detail';
 import { DatabaseNotice } from '@/components/database-notice';
 import { PageHead } from '@/components/f/page-head';
 import { revisionOrdinal } from '@/lib/site';
+import { cacheablePage } from '@/lib/page-cache';
 
-export const dynamic = 'force-dynamic';
+// Cached until a write expires it. See src/lib/page-cache.ts.
+export const revalidate = 86400;
+export { generateStaticParams } from '@/lib/page-cache';
 
 type Params = { params: Promise<{ slug: string; number: string }> };
 
@@ -26,6 +29,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 }
 
 export default async function RevisionPage({ params }: Params) {
+  await cacheablePage();
   const { slug, number } = await params;
   const revisionNumber = Number(number);
   if (!Number.isInteger(revisionNumber) || revisionNumber < 1) notFound();

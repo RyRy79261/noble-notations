@@ -9,13 +9,16 @@ import {
   listScienceIndex,
 } from '@/lib/queries/cached';
 import { safeRead } from '@/lib/safe';
+import { cacheableRoute } from '@/lib/page-cache';
 
-export const dynamic = 'force-dynamic';
+// Cached until a write expires it. See src/lib/page-cache.ts.
+export const revalidate = 86400;
 
 /**
- * The sitemap is generated per request rather than at build time: recipes
- * arrive through the MCP connector between deploys, and a build-time sitemap
- * would go stale the moment one did.
+ * The sitemap is not fixed at build time: recipes arrive through the MCP
+ * connector between deploys, and a build-time sitemap would go stale the
+ * moment one did. It is kept in the page cache instead, and the write that
+ * adds a recipe expires it with the pages.
  *
  * `/connect` is deliberately absent. It is noindex — only one address can
  * approve a connector, so a search result for it leads to a 403 for
@@ -23,6 +26,7 @@ export const dynamic = 'force-dynamic';
  * contradiction that crawlers report as an error.
  */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  const cached = await cacheableRoute();
   const [recipes, taxonomy, ingredients, experiments, science, archive] =
     await Promise.all([
       safeRead(() => listRecipes({ limit: 5000 }), []),
@@ -36,6 +40,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       }),
       listArchive(),
     ]);
+
+  // A sitemap with the recipes missing would be kept for a day.
+  const reads = [recipes, taxonomy, ingredients, experiments, science];
+  if (cached && reads.some((read) => read.failed)) {
+    throw new Error('sitemap: a database read failed');
+  }
 
   // The recipes that have at least one run, so `/recipes/<slug>/batch-logs`
   // is listed only where it holds something. A run with no recipe has no

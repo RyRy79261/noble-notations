@@ -13,8 +13,10 @@ import { listCategories } from '@/lib/queries/cached';
 import { safeRead } from '@/lib/safe';
 import { cardinal, roman } from '@/lib/site';
 import { cn } from '@/lib/utils';
+import { cacheablePage } from '@/lib/page-cache';
 
-export const dynamic = 'force-dynamic';
+// Cached until a write expires it. See src/lib/page-cache.ts.
+export const revalidate = 86400;
 
 export const metadata: Metadata = {
   title: 'Cuisines',
@@ -99,6 +101,7 @@ const CELL = cn(
 );
 
 export default async function CuisinesPage() {
+  await cacheablePage();
   const { data, configured, failed } = await safeRead(
     () => listCategories('cuisine'),
     [],

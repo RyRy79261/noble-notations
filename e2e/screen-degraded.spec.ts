@@ -23,9 +23,10 @@ import path from 'node:path';
  * really has no `DATABASE_URL`. A second `webServer` entry would impose a
  * fixed port on every run of the suite and start a process even for the
  * files that do not need one; a child started and stopped by this file
- * costs nothing anywhere else. It runs the SAME BUILD: every page that
- * reads the database is `force-dynamic`, so the notice is decided per
- * request and no rebuild is needed. (`/archive` and `/connect` are the two
+ * costs nothing anywhere else. It runs the SAME BUILD: the suite builds
+ * with the page cache off (`src/lib/page-cache.ts`), so every page that
+ * reads the database renders per request, the notice is decided per
+ * request, and no rebuild is needed. (`/archive` and `/connect` are the two
  * that are not, and neither reads the database — which is the point of
  * R-SCR-25.)
  *

@@ -22,8 +22,11 @@ import {
   site,
 } from '@/lib/site';
 import { cn } from '@/lib/utils';
+import { cacheablePage } from '@/lib/page-cache';
 
-export const dynamic = 'force-dynamic';
+// Cached until a write expires it. See src/lib/page-cache.ts.
+export const revalidate = 86400;
+export { generateStaticParams } from '@/lib/page-cache';
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -90,6 +93,7 @@ const ROW_LABEL = cn(
 );
 
 export default async function IngredientPage({ params }: Params) {
+  await cacheablePage();
   const { slug } = await params;
 
   /* Two reads in one `safeRead`. The record is the page; the list is only

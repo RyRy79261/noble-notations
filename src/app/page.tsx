@@ -65,8 +65,10 @@ import { listScienceIndex } from '@/lib/queries/cached';
 import { safeRead } from '@/lib/safe';
 import { CATEGORY_TYPE_LABELS, site } from '@/lib/site';
 import { cn } from '@/lib/utils';
+import { cacheablePage } from '@/lib/page-cache';
 
-export const dynamic = 'force-dynamic';
+// Cached until a write expires it. See src/lib/page-cache.ts.
+export const revalidate = 86400;
 
 /* The design's `Main`: 40/60/72/60 at 1280 with 44px between the bands,
    22/16/48/16 at 360 with 28px. There is no breadcrumb on this screen, so
@@ -83,6 +85,7 @@ const LEDE = 'shell:max-w-195';
 const TERMS_IN_A_FACET = 14;
 
 export default async function HomePage() {
+  await cacheablePage();
   const [stats, recent, categories, science] = await Promise.all([
     safeRead(getStats, {
       recipes: 0,

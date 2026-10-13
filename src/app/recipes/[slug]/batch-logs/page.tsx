@@ -18,8 +18,11 @@ import {
   spent,
 } from '@/app/batch-logs/batch-log-parts';
 import { monthYear, runSpan } from '@/app/batch-logs/run-dates';
+import { cacheablePage } from '@/lib/page-cache';
 
-export const dynamic = 'force-dynamic';
+// Cached until a write expires it. See src/lib/page-cache.ts.
+export const revalidate = 86400;
+export { generateStaticParams } from '@/lib/page-cache';
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -55,6 +58,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 }
 
 export default async function RecipeBatchLogsPage({ params }: Params) {
+  await cacheablePage();
   const { slug } = await params;
 
   // Two reads in one `safeRead`, because a recipe with no runs must still

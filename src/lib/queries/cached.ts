@@ -9,15 +9,19 @@ import * as read from './read';
  *
  * WHY THIS EXISTS. Neon bills for the time a compute is awake, and a compute
  * stays awake for five minutes after its last query. Every page on this site
- * is `force-dynamic`, and the header prefetches nine of them, so one reader
- * opening one page woke the database for five minutes, and a crawler that
- * came back every few minutes kept it awake all day. The data changes only
- * when somebody writes, so a page does not need to ask the database again
- * until then.
+ * was once `force-dynamic`, and the header prefetched nine of them, so one
+ * reader opening one page woke the database for five minutes, and a crawler
+ * that came back every few minutes kept it awake all day. The data changes
+ * only when somebody writes, so a page does not need to ask the database
+ * again until then. The public pages are now also kept whole in the page
+ * cache (`src/lib/page-cache.ts`), so most requests do not reach this file
+ * at all. These reads still serve the pages that read the request, such as
+ * `/search` and `/list`, and every page the first time after a write.
  *
  * WHAT CLEARS IT. Every write goes through `withTransaction`, and a
  * committed transaction expires `SITE_DATA_TAG` at once — see
- * `src/db/client.ts`. `revalidate` below is only the backstop for a write
+ * `src/db/client.ts`. The tag also expires each cached page that read
+ * through here. `revalidate` below is only the backstop for a write
  * that does not pass through a Next.js request, such as `pnpm ingest` from a
  * terminal: that one reaches the site within a day, or at the next deploy.
  *
@@ -30,7 +34,8 @@ import * as read from './read';
  * Anywhere else only with `NOBLE_READ_CACHE=on`. The e2e suite writes to its
  * database directly as well as through the connector, and `pnpm dev` is
  * used next to `pnpm ingest`; both expect the next page load to show what
- * the database holds.
+ * the database holds. The same switch turns the page cache on, but for the
+ * page cache it is read at BUILD time — see `src/lib/page-cache.ts`.
  *
  * The key carries the deployment, so a deploy — which may have migrated the
  * schema and changed the shape of a result — never reads an entry an older
