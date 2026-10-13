@@ -99,6 +99,13 @@
       "when": 1790155102727,
       "tag": "0013_image_uploads",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791891305493,
+      "tag": "0014_core_pattern",
+      "breakpoints": true
     }
   ]
 }

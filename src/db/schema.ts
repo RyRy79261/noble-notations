@@ -137,6 +137,7 @@ export const taxonomyFacet = pgEnum('taxonomy_facet', [
   'preservation',
   'texture',
   'ingredient_class',
+  'pattern',
 ]);
 
 export const recipeStatus = pgEnum('recipe_status', [
@@ -818,6 +819,110 @@ export const recipeMassFlowStages = pgTable(
           OR (${t.durationMinutes} IS NOT NULL
               AND ${t.durationMaxMinutes} >= ${t.durationMinutes})`,
     ),
+  ],
+);
+
+/**
+ * The core pattern of a dish: the plain structure it is built on, under the
+ * research and the precision. Dan dan noodles are "a nut-paste sauce +
+ * noodles + crisp fried mince"; laab is "lightly cooked mince + a sour-salty
+ * dressing + herbs". The page draws it as its own tab, for a reader who
+ * wants to cook the idea tonight with what is in the cupboard.
+ *
+ * It hangs off the RECIPE, not the revision, and that is the opposite answer
+ * to `recipe_mass_flows` for the opposite reason. A mass flow records what
+ * one batch weighed, so batch six must not draw on revision three. The
+ * pattern records what the dish IS, and a revision that moves the salt from
+ * 3.5 % to 3.6 % has not changed it. One per recipe, so a new version never
+ * owes a new pattern.
+ *
+ * A variation with no pattern of its own reads its parent's — `read.ts`
+ * climbs `variant_of_id` — so shiitake dan dan does not repeat the whole
+ * pattern to say one role changed. It may still store its own.
+ *
+ * The family name ("dressed noodles", "warm meat salad") is NOT a column
+ * here. It is a tag of the `pattern` category type, so a reader can browse
+ * every dish that shares one on `/classes` with nothing new to build.
+ *
+ * `UNIQUE (recipe_id)` makes `add_core_pattern` add-once in the database,
+ * the guarantee `uq_mass_flow_revision` gives its tool. `update_recipe`
+ * replaces it whole, roles and swaps with it: they are children and have no
+ * write of their own.
+ */
+export const recipeCorePatterns = pgTable(
+  'recipe_core_patterns',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    recipeId: uuid('recipe_id')
+      .notNull()
+      .references(() => recipes.id, { onDelete: 'cascade' }),
+    /** One line: "sauce + noodles + crisp mince". */
+    formula: text('formula').notNull(),
+    /** The bare method, 2 to 8 short steps, for the pattern and not the dish. */
+    method: text('method').array().notNull(),
+    /** What the full recipe adds on top of the pattern, and why it matters. */
+    fullRecipeAdds: text('full_recipe_adds'),
+    createdAt: now(),
+    updatedAt: touched(),
+  },
+  (t) => [uniqueIndex('uq_core_pattern_recipe').on(t.recipeId)],
+);
+
+/**
+ * One role in a pattern — the sauce, the starch, the acid — with what this
+ * dish uses for it and why the role is there.
+ *
+ * Swaps hang off the ROLE and not off an ingredient line, and the dry run
+ * over all 26 records is why. Most real swaps replace several lines at once
+ * (water and demi-glace become cider), many are a change of method (cold
+ * brine for warm), and some are "leave it out". An ingredient line can hold
+ * none of those. `uses` is therefore prose, not a foreign key.
+ */
+export const recipeCorePatternRoles = pgTable(
+  'recipe_core_pattern_roles',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    patternId: uuid('pattern_id')
+      .notNull()
+      .references(() => recipeCorePatterns.id, { onDelete: 'cascade' }),
+    position: integer('position').notNull(),
+    role: text('role').notNull(),
+    uses: text('uses').notNull(),
+    purpose: text('purpose').notNull(),
+    /** Take it away and the dish is a different dish. */
+    essential: boolean('essential').default(true).notNull(),
+    createdAt: now(),
+  },
+  (t) => [
+    index('idx_core_pattern_roles_pattern').on(t.patternId),
+    uniqueIndex('uq_core_pattern_role_position').on(t.patternId, t.position),
+  ],
+);
+
+/** Something a cook can use in a role's place, and what it costs them. */
+export const recipeCorePatternSwaps = pgTable(
+  'recipe_core_pattern_swaps',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    roleId: uuid('role_id')
+      .notNull()
+      .references(() => recipeCorePatternRoles.id, { onDelete: 'cascade' }),
+    position: integer('position').notNull(),
+    use: text('use').notNull(),
+    tradeoff: text('tradeoff').notNull(),
+    /**
+     * The swap touches food safety — a cure, an acid share, a salt rate,
+     * bottle pressure, raw meat. The page draws it as a caution. The dry
+     * run is why this is a column: a nitrite swap written "one for one"
+     * with no product named is a safe dose with one product and six times
+     * the dose with another.
+     */
+    safety: boolean('safety').default(false).notNull(),
+    createdAt: now(),
+  },
+  (t) => [
+    index('idx_core_pattern_swaps_role').on(t.roleId),
+    uniqueIndex('uq_core_pattern_swap_position').on(t.roleId, t.position),
   ],
 );
 

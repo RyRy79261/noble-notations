@@ -215,6 +215,138 @@ const HERO_IMAGE_SIZES = '(min-width: 901px) 416px, 100vw';
  * mechanisms, 20px between citations, 0 between ruled rows), and because the
  * head takes `recipe:pt-2` for the 1280 form the aside also uses.
  */
+/**
+ * The Core tab: the plain idea under the dish, for a reader who finds the
+ * full recipe too much. The formula, then each role with what a cook can
+ * swap into it, then the bare method, then what the full recipe adds.
+ *
+ * A swap marked `safety` is drawn as a warning and not as a line in the
+ * list. The dry run over the store is why: a cure swap written as a plain
+ * line reads as interchangeable, and with the wrong product it is six times
+ * the dose.
+ */
+function CorePanel({
+  pattern,
+  family,
+}: {
+  pattern: NonNullable<RecipeView['corePattern']>;
+  family: { slug: string; label: string } | null;
+}) {
+  return (
+    <>
+      <Band
+        data-core=""
+        label="The pattern"
+        meta={family ? family.label : undefined}
+        bodyClassName="gap-5"
+      >
+        <p className="m-0 w-full max-w-155 text-15 leading-170 font-sans text-ink-2">
+          The plain idea under this dish. Cook it with what you have. The full
+          recipe is on the Method tab.
+        </p>
+        {pattern.inheritedFrom ? (
+          <p
+            data-core-inherited=""
+            className="m-0 w-full text-15 leading-170 font-sans text-ink-2"
+          >
+            This is the pattern of{' '}
+            <Link
+              href={`/recipes/${pattern.inheritedFrom.slug}`}
+              className={PROSE_LINK}
+            >
+              {pattern.inheritedFrom.title}
+            </Link>
+            , the dish this one varies.
+          </p>
+        ) : null}
+        <p
+          data-core-formula=""
+          className="m-0 w-full text-21 leading-130 font-serif font-medium text-ink"
+        >
+          {pattern.formula}
+        </p>
+        {family ? (
+          <p className="m-0 w-full text-14 leading-170 font-sans text-ink-2">
+            Other dishes with this pattern:{' '}
+            <Link
+              href={`/classes/pattern/${family.slug}`}
+              className={PROSE_LINK}
+            >
+              {family.label}
+            </Link>
+            .
+          </p>
+        ) : null}
+      </Band>
+
+      <Band
+        label="The parts"
+        meta={String(pattern.roles.length)}
+        bodyClassName="gap-8"
+      >
+        {pattern.roles.map((role, index) => (
+          <div
+            key={index}
+            data-core-role={role.role}
+            className="flex w-full flex-col items-start gap-2"
+          >
+            <span className="flex flex-row items-center gap-3 text-09 font-mono tracking-spine uppercase text-accent">
+              {role.role}
+              {role.essential ? null : (
+                <span className="text-ink-3">Optional</span>
+              )}
+            </span>
+            <p className="m-0 w-full text-16 leading-150 font-sans text-ink">
+              {role.uses}
+            </p>
+            <p className="m-0 w-full text-14 leading-170 font-sans text-ink-2">
+              {role.purpose}
+            </p>
+            {role.swaps.length > 0 ? (
+              <ul className="m-0 flex w-full list-none flex-col gap-2 p-0">
+                {role.swaps.map((swap, swapIndex) =>
+                  swap.safety ? (
+                    <li key={swapIndex} data-core-swap="safety">
+                      <Warning kind="SAFETY" title={`Swap: ${swap.use}`}>
+                        {swap.tradeoff}
+                      </Warning>
+                    </li>
+                  ) : (
+                    <li
+                      key={swapIndex}
+                      data-core-swap=""
+                      className="w-full text-14 leading-170 font-sans text-ink"
+                    >
+                      <span className="font-medium">Swap: {swap.use}.</span>{' '}
+                      <span className="text-ink-2">{swap.tradeoff}</span>
+                    </li>
+                  ),
+                )}
+              </ul>
+            ) : null}
+          </div>
+        ))}
+      </Band>
+
+      <Band label="The basic method" meta={String(pattern.method.length)}>
+        <ol className="m-0 flex w-full flex-col gap-3 pl-5 text-15 leading-170 font-sans text-ink">
+          {pattern.method.map((step, index) => (
+            <li key={index}>{step}</li>
+          ))}
+        </ol>
+      </Band>
+
+      {pattern.fullRecipeAdds ? (
+        <Band label="What the full recipe adds">
+          <p className="m-0 w-full max-w-155 text-15 leading-170 font-sans text-ink">
+            {pattern.fullRecipeAdds}
+          </p>
+        </Band>
+      ) : null}
+    </>
+  );
+}
+
 function Band({
   label,
   meta,
@@ -1096,6 +1228,19 @@ export function RecipeDetail({
                  blank. */
                 <Empty>No method recorded for this revision yet.</Empty>
               )
+            }
+            /* ── Core: the plain pattern under the dish ─────────────────── */
+            core={
+              recipe.corePattern ? (
+                <CorePanel
+                  pattern={recipe.corePattern}
+                  family={
+                    recipe.terms.find(
+                      (term) => term.categoryType === 'pattern',
+                    ) ?? null
+                  }
+                />
+              ) : undefined
             }
             /* ── Science: Batch logs · The science ──────────────────────── */
             science={

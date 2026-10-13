@@ -88,10 +88,10 @@ string, so a `redirect_uri` still in flight survives the rename.
 
 ## Scopes
 
-| Scope                   | Grants                                                                                                                                                                                                                                                                                                                              |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `noble-notations:read`  | Every read tool, including `list_deleted`                                                                                                                                                                                                                                                                                           |
-| `noble-notations:write` | `create_recipe`, `create_variant`, `revise_recipe`, `backfill_revision`, `add_note`, `add_mass_flow`, `describe_mechanism`, `upsert_ingredient`, `upsert_category`, `log_experiment`, `reattach_note`, `update_recipe`, `update_revision`, `update_note`, `delete_record`, `restore_record`, `upload_image`, `request_image_upload` |
+| Scope                   | Grants                                                                                                                                                                                                                                                                                                                                                  |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `noble-notations:read`  | Every read tool, including `list_deleted`                                                                                                                                                                                                                                                                                                               |
+| `noble-notations:write` | `create_recipe`, `create_variant`, `revise_recipe`, `backfill_revision`, `add_note`, `add_mass_flow`, `describe_mechanism`, `add_core_pattern`, `upsert_ingredient`, `upsert_category`, `log_experiment`, `reattach_note`, `update_recipe`, `update_revision`, `update_note`, `delete_record`, `restore_record`, `upload_image`, `request_image_upload` |
 
 **`list_deleted` is a read, and it is in the read scope.** It reports rows
 the public site does not show, which is why that looks wrong at first
@@ -120,7 +120,7 @@ Read: `get_started`, `search_recipes`, `get_recipe`, `list_categories`,
 
 Write: `create_recipe`, `create_variant`, `revise_recipe`,
 `backfill_revision`, `add_note`, `add_mass_flow`, `describe_mechanism`,
-`upsert_ingredient`, `upsert_category`, `log_experiment`, `reattach_note`,
+`add_core_pattern`, `upsert_ingredient`, `upsert_category`, `log_experiment`, `reattach_note`,
 `update_recipe`, `update_revision`, `update_note`, `delete_record`,
 `restore_record`, `upload_image`, `request_image_upload`.
 
@@ -135,7 +135,7 @@ is advertised and cannot work is worse than one that is absent, because an
 agent calls it, fails, and cannot tell a misconfiguration from a fault in
 its own arguments. The guide follows the same predicates — `get_started`
 describes the two image tools only where they exist, and the write-tool
-count in its `scopes` section is eighteen or sixteen accordingly.
+count in its `scopes` section is nineteen or seventeen accordingly.
 
 `list_experiments`, `get_experiment` and `log_experiment` speak of
 experiments; the website calls the same record a batch log and serves it at
@@ -143,7 +143,7 @@ experiments; the website calls the same record a batch log and serves it at
 mapping, because one that knew only the tool word reported the page as
 missing.
 
-Thirty-one tools, fully configured. `/connect` and `TOOLS` in
+Thirty-two tools, fully configured. `/connect` and `TOOLS` in
 `e2e/mcp-contract.spec.ts` name the same set; a tool that appears or
 disappears without all three moving is drift, and that test is the line that
 says so. (`create_variant` reached the registry, `/connect` and that test
@@ -316,6 +316,23 @@ once rather than by the Next.js image optimiser on each cache miss, because
 the answer never changes. A picture stored before this has no copies and
 answers every width with its one file.
 
+### `add_core_pattern`
+
+The core pattern is the plain idea under a dish — "nut-paste sauce +
+noodles + crisp fried mince" — drawn on the recipe's Core tab for a reader
+who finds the full recipe too much. It arrived after the store was full, so
+it has the fill-once shape of the two tools below: it names a stored recipe,
+adds the pattern, and refuses a second one. `update_recipe { corePattern }`
+replaces it whole (`null` removes it).
+
+It hangs off the recipe, not a revision: a new version of a dish does not
+change what the dish is. A variation with no pattern of its own shows its
+parent's, and the tab says so. Swaps belong to a role, not an ingredient
+line, because most real swaps replace several lines or change the method. A
+swap marked `safety` draws as a warning. The family is a tag of the
+`pattern` category type; the tool adds that one tag and touches no other,
+so a sweep over every recipe cannot drop a tag by echoing a list wrongly.
+
 ### The three tools that reach a stored record
 
 `add_mass_flow` and `describe_mechanism` are the odd pair. Every other
@@ -447,7 +464,7 @@ The two copies are held together by `e2e/writing-style.spec.ts`, which
 enumerates the rules and fails naming the one that drifted.
 
 Resources are not tools and they do not move the tool count: the registry
-still holds thirty-one. `resources/list` advertises this document and
+still holds thirty-two. `resources/list` advertises this document and
 `resources/read` serves it.
 
 ## Reporting a fault

@@ -38,6 +38,7 @@ export const CATEGORY_TYPE_LABELS: Record<string, string> = {
   preservation: 'Preservation',
   texture: 'Texture',
   ingredient_class: 'Ingredient class',
+  pattern: 'Pattern',
 };
 
 /**

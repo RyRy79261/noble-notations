@@ -17,6 +17,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { z } from 'zod';
 import {
+  addCorePatternSchema,
+  addCorePatternShape,
   addMassFlowSchema,
   addMassFlowShape,
   addNoteSchema,
@@ -88,6 +90,7 @@ import {
  */
 import { isDeletedRecipe, listDeleted } from '@/lib/queries/deleted';
 import {
+  addCorePattern,
   addMassFlow,
   addNote,
   ConflictError,
@@ -1116,6 +1119,73 @@ export function registerTools(server: McpServer): void {
       ),
   );
 
+  /**
+   * The core pattern: the plain structure under a dish, drawn as the Core
+   * tab. Add-once like `add_mass_flow`, for the same reason — an agent
+   * filling every recipe in a sweep must not overwrite one a person
+   * corrected — and `update_recipe { corePattern }` is the correction.
+   */
+  server.registerTool(
+    'add_core_pattern',
+    {
+      title: 'Add the core pattern',
+      description:
+        'Add the core pattern to a recipe that is already stored. The core ' +
+        'pattern is the plain idea under the dish, without the research and ' +
+        'the precision. Dan dan noodles are "nut-paste sauce + noodles + ' +
+        'crisp fried mince". Laab is "lightly cooked mince + sour-salty ' +
+        'dressing + herbs". The page shows it on its own tab, for a cook ' +
+        'who wants to make the idea with what they have.\n\n' +
+        'Read the recipe with get_recipe first. Read the steps, the notes ' +
+        'and the rationale of each version. Take every fact from the ' +
+        'recipe. Do not invent an amount, a temperature or a swap that the ' +
+        'recipe and its notes do not support. Copy each number exactly.\n\n' +
+        '`family` names the pattern family. It becomes a tag of the type ' +
+        '"pattern", so a reader can find every dish with the same pattern. ' +
+        'Call list_categories with categoryType "pattern" first. Use a ' +
+        'family that is there when it fits. The tool adds this one tag and ' +
+        'changes no other tag.\n\n' +
+        '`roles` are the parts of the pattern: the sauce, the starch, the ' +
+        'protein, the acid. For each role, say what this recipe uses, why ' +
+        'the role is there and whether the dish needs it. Then give the ' +
+        'swaps: what a cook can use instead, and what changes. Put a swap ' +
+        'on the role, also when it replaces several ingredients or changes ' +
+        'the method.\n\n' +
+        'Set `safety` on a swap that touches food safety: a cure, an acid ' +
+        'share, a salt rate, bottle pressure or raw meat. Name the exact ' +
+        'product and the amount.\n\n' +
+        '`method` is the bare method in 2 to 8 steps, for a beginner.\n\n' +
+        'A recipe takes one core pattern. The tool refuses a second one. ' +
+        'To correct it, call update_recipe and send `corePattern`. A ' +
+        'variation without a pattern shows the pattern of the dish it ' +
+        'varies. Add one to a variation only when its pattern is different. ' +
+        'A research record has no core pattern.' +
+        PLAIN_ENGLISH,
+      inputSchema: addCorePatternShape,
+    },
+    async (args, extra) =>
+      runTool(
+        extra as AuthCtx,
+        'add_core_pattern',
+        { slug: args.slug },
+        async (principal) => {
+          requireWrite(principal);
+          const input = addCorePatternSchema.parse(args);
+          const result = await addCorePattern(input);
+          return {
+            ...result,
+            url: `/recipes/${result.slug}`,
+            message: followUpMessage(
+              `Added the core pattern, in the family pattern/${result.family}. ` +
+                'No version was made. To correct it, call update_recipe and ' +
+                'send `corePattern`.',
+              result,
+            ),
+          };
+        },
+      ),
+  );
+
   server.registerTool(
     'describe_mechanism',
     {
@@ -1403,7 +1473,12 @@ export function registerTools(server: McpServer): void {
         'correct a wrong parent — to CREATE a variation, call ' +
         'create_variant.\n\n' +
         '`currentRevisionNumber` moves the recipe to another stored ' +
-        'version. People then read that version. Every version stays.',
+        'version. People then read that version. Every version stays.\n\n' +
+        '`corePattern` replaces the core pattern, with all its roles and ' +
+        'swaps. Send null to remove it. To add a pattern where there is ' +
+        'none, call add_core_pattern. To change the pattern family, send ' +
+        'the `pattern` tag in `categories`.' +
+        PLAIN_ENGLISH,
       inputSchema: updateRecipeShape,
     },
     async (args, extra) =>

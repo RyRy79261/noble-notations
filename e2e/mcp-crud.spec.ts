@@ -1284,6 +1284,19 @@ test('a write that appends to or corrects a deleted record is refused and names 
         ],
       },
     ],
+    [
+      'add_core_pattern',
+      {
+        slug,
+        family: 'a deleted family',
+        formula: 'a + b',
+        roles: [
+          { role: 'a', uses: 'A.', purpose: 'The first part.' },
+          { role: 'b', uses: 'B.', purpose: 'The second part.' },
+        ],
+        method: ['Do a.', 'Do b.'],
+      },
+    ],
     ['update_recipe', { slug, title: 'A corrected title' }],
     ['update_revision', { slug, revisionNumber: 1, servings: 2 }],
     ['update_note', { noteId: note.noteId, body: 'A corrected body.' }],

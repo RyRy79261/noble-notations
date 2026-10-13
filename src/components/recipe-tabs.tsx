@@ -180,6 +180,7 @@ import { FOCUS_RING } from './f/button';
 const LABELS = {
   ingredients: 'Ingredients',
   method: 'Method',
+  core: 'Core',
   science: 'Science',
   revisions: 'Revisions',
   variations: 'Variations',
@@ -430,6 +431,7 @@ const PANEL_SHOWN: Partial<Record<TabKey, string>> = {
     'group-data-[active=method]/panels:flex',
     'recipe:group-data-[active=ingredients]/panels:flex',
   ),
+  core: 'group-data-[active=core]/panels:flex',
   science: 'group-data-[active=science]/panels:flex',
   revisions: 'group-data-[active=revisions]/panels:flex',
   variations: 'group-data-[active=variations]/panels:flex',
@@ -464,6 +466,7 @@ const ASIDE = cn(
 export function RecipeTabs({
   ingredients,
   method,
+  core,
   science,
   revisions,
   variations,
@@ -476,6 +479,13 @@ export function RecipeTabs({
    */
   ingredients?: ReactNode;
   method: ReactNode;
+  /**
+   * The core pattern: the plain idea under the dish, its roles and what a
+   * cook can swap. Beside Method because it is the other way to read the
+   * same dish. Omitted when neither this recipe nor the dish it varies has
+   * one (R-SCR-27).
+   */
+  core?: ReactNode;
   science?: ReactNode;
   revisions?: ReactNode;
   /**
@@ -512,6 +522,7 @@ export function RecipeTabs({
   const panels: { key: TabKey; content: ReactNode }[] = [];
   if (ingredients) panels.push({ key: 'ingredients', content: ingredients });
   panels.push({ key: 'method', content: method });
+  if (core) panels.push({ key: 'core', content: core });
   if (science) panels.push({ key: 'science', content: science });
   if (revisions) panels.push({ key: 'revisions', content: revisions });
   if (variations) panels.push({ key: 'variations', content: variations });

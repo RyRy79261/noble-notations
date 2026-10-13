@@ -112,6 +112,8 @@ const CATEGORY_TYPE_BLURBS: Record<string, string> = {
   texture: 'How it feels to eat, once it is finished and served.',
   ingredient_class:
     'What an ingredient is in kind, so that like can be swapped for like.',
+  pattern:
+    'The plain idea under a dish. Dishes with the same pattern cook the same way.',
 };
 
 /** `SIX TAGS`, `ONE TAG`, `NO TAGS`. The design writes the count as a word. */
@@ -204,7 +206,7 @@ export default async function ClassesPage() {
     [],
   );
 
-  /* The ten types in the order `CATEGORY_TYPE_LABELS` declares them, which
+  /* The types in the order `CATEGORY_TYPE_LABELS` declares them, which
      is the order the design draws them in. Reading the map rather than the
      rows is what keeps a type with no tags on the page at all — the design
      draws `Ingredient class` with `NO TAGS` and an empty state, and a group
