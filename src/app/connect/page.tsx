@@ -43,7 +43,7 @@ export const metadata: Metadata = {
  * THE TOOL LISTS ARE THE REAL ONES. The design draws four read tools and
  * three write tools with invented names — `search_entries`, `add_state`.
  * This list is the one a person reads before approving write access, so it
- * names every tool the scope grants and not a sample: twelve, eighteen and
+ * names every tool the scope grants and not a sample: twelve, nineteen and
  * the one that is in neither scope, from `src/lib/mcp/tools.ts`.
  * `docs/mcp-connector.md` §Tools and that file are the other two places the
  * set is written down; all three move together, and `TOOLS` in
@@ -318,7 +318,7 @@ const READ_TOOLS: Tool[] = [
 ];
 
 /**
- * The eighteen the write scope grants. Approving it grants all of them.
+ * The nineteen the write scope grants. Approving it grants all of them.
  *
  * TWO OF THEM ARE CONDITIONAL, and this page lists them anyway.
  * `upload_image` and `request_image_upload` are registered only where
@@ -354,6 +354,10 @@ const WRITE_TOOLS: Tool[] = [
   {
     name: 'describe_mechanism',
     text: 'The conditions a stored science note holds under. Once only.',
+  },
+  {
+    name: 'add_core_pattern',
+    text: 'The plain pattern under a stored dish, and what a cook can swap. Once only.',
   },
   {
     name: 'reattach_note',
@@ -402,7 +406,7 @@ const WRITE_TOOLS: Tool[] = [
 ];
 
 /**
- * The thirty-first tool, and the only one in neither scope.
+ * The thirty-second tool, and the only one in neither scope.
  *
  * It is listed on its own because neither of the two lists above is true of
  * it: it needs no scope, and its effect lands outside this system. Reading
@@ -428,7 +432,7 @@ const REPORT_TOOLS: Tool[] = [
  * ingredient name is 14px Geist, the description is Geist where the alias is
  * serif italic, the scope is a 9px tracked label where the count is 12px
  * mono — so reusing it would mean three new props on a shared component for
- * one screen. A list is also the truer shape: this is twelve or eighteen
+ * one screen. A list is also the truer shape: this is twelve or nineteen
  * things of one kind, not a record with four fields, and a screen reader
  * announces the count.
  *

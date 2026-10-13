@@ -36,6 +36,9 @@ import {
   ingredients,
   noteSources,
   notes,
+  recipeCorePatternRoles,
+  recipeCorePatternSwaps,
+  recipeCorePatterns,
   recipeIngredients,
   recipeLinks,
   recipeMassFlowStages,
@@ -63,6 +66,7 @@ import {
   splitQualifiedUse,
 } from '@/lib/domain/schemas';
 import type {
+  AddCorePatternInput,
   AddMassFlowInput,
   AddNoteInput,
   AttachToInput,
@@ -80,6 +84,7 @@ import type {
   StepInput,
   CategoryType,
   CategoriesInput,
+  CorePatternInput,
   UpdateNoteInput,
   UpdateRecipeInput,
   UpdateRevisionInput,
@@ -924,6 +929,69 @@ async function replaceMassFlow(
     .where(eq(recipeMassFlows.revisionId, revisionId));
   if (!massFlow) return null;
   return insertMassFlow(tx, revisionId, massFlow);
+}
+
+/**
+ * Write a recipe's core pattern with its roles and swaps, with no opinion
+ * about what was there before. `addCorePattern` refuses first;
+ * `replaceCorePattern` deletes first.
+ */
+async function insertCorePattern(
+  tx: Tx,
+  recipeId: string,
+  pattern: CorePatternInput,
+): Promise<string> {
+  const row = await tx
+    .insert(recipeCorePatterns)
+    .values({
+      recipeId,
+      formula: pattern.formula,
+      method: pattern.method,
+      fullRecipeAdds: pattern.fullRecipeAdds ?? null,
+    })
+    .returning({ id: recipeCorePatterns.id });
+  const patternId = row[0]!.id;
+
+  for (const [index, role] of pattern.roles.entries()) {
+    const roleRow = await tx
+      .insert(recipeCorePatternRoles)
+      .values({
+        patternId,
+        position: index,
+        role: role.role,
+        uses: role.uses,
+        purpose: role.purpose,
+        essential: role.essential ?? true,
+      })
+      .returning({ id: recipeCorePatternRoles.id });
+    for (const [position, swap] of (role.swaps ?? []).entries()) {
+      await tx.insert(recipeCorePatternSwaps).values({
+        roleId: roleRow[0]!.id,
+        position,
+        use: swap.use,
+        tradeoff: swap.tradeoff,
+        safety: swap.safety ?? false,
+      });
+    }
+  }
+
+  return patternId;
+}
+
+/**
+ * Replace a recipe's core pattern, or remove it. Roles and swaps go with
+ * the pattern by FK cascade: they are children, and a caller removes one by
+ * sending the pattern without it. Only `update_recipe` reaches this.
+ */
+async function replaceCorePattern(
+  tx: Tx,
+  recipeId: string,
+  pattern: CorePatternInput | null,
+): Promise<void> {
+  await tx
+    .delete(recipeCorePatterns)
+    .where(eq(recipeCorePatterns.recipeId, recipeId));
+  if (pattern) await insertCorePattern(tx, recipeId, pattern);
 }
 
 /**
@@ -2115,6 +2183,122 @@ export async function addMassFlow(
     // current revision pointer, not a single stored column. The same
     // restraint `backfillRevision` keeps, and for the same reason.
     return { slug: input.slug, revisionNumber, massFlowId };
+  });
+}
+
+/**
+ * Give a stored recipe its core pattern, and tag it with its family.
+ *
+ * Add-once, the shape `addMassFlow` has: the read below says what is
+ * stored, and `uq_core_pattern_recipe` catches the race the read cannot.
+ * The refusal names `update_recipe`, which replaces a pattern.
+ *
+ * The family tag is ADDED, never swapped in for the list. `applyTaxonomy`
+ * replaces every tag a recipe has, which is right for a caller that sends
+ * the whole list and wrong here: this caller sent one name. It is the
+ * primary pattern tag only when the recipe has none yet.
+ *
+ * A research record is refused. The dry run over the store found that a
+ * record with no ingredients and no steps gets a pattern that is invented
+ * from nothing — swaps nobody tested, a method nobody wrote.
+ */
+export async function addCorePattern(
+  input: AddCorePatternInput,
+): Promise<WriteResult & { patternId: string; family: string }> {
+  return withTransaction(async (tx) => {
+    const found = await tx
+      .select({
+        id: recipes.id,
+        title: recipes.title,
+        kind: recipes.kind,
+        currentRevisionId: recipes.currentRevisionId,
+        deletedAt: recipes.deletedAt,
+      })
+      .from(recipes)
+      .where(eq(recipes.slug, input.slug))
+      .limit(1);
+    const recipe = found[0];
+    if (!recipe) throw new NotFoundError(`No recipe "${input.slug}".`);
+    if (recipe.deletedAt) {
+      throw new ConflictError(
+        deletedRefusal(`${recipe.title} (${input.slug})`),
+      );
+    }
+    if (recipe.kind === 'research') {
+      throw new ConflictError(
+        `"${recipe.title}" is a research record. It has no ingredients and ` +
+          'no steps, so it has no core pattern to describe.',
+      );
+    }
+    if (!recipe.currentRevisionId) {
+      throw new ConflictError(
+        `Recipe "${input.slug}" has no version yet. Add one with ` +
+          'revise_recipe first.',
+      );
+    }
+
+    const existing = await tx
+      .select({ createdAt: recipeCorePatterns.createdAt })
+      .from(recipeCorePatterns)
+      .where(eq(recipeCorePatterns.recipeId, recipe.id))
+      .limit(1);
+    if (existing[0]) {
+      throw new ConflictError(
+        `"${recipe.title}" already has a core pattern, recorded on ` +
+          `${existing[0].createdAt.toISOString().slice(0, 10)}. This tool ` +
+          'does not replace one. To correct it, call update_recipe and ' +
+          'send `corePattern`.',
+      );
+    }
+
+    const patternId = await insertCorePattern(tx, recipe.id, input);
+
+    const termId = await resolveTermId(tx, 'pattern', input.family);
+    const hasPrimary = await tx
+      .select({ termId: recipeTerms.termId })
+      .from(recipeTerms)
+      .innerJoin(taxonomyTerms, eq(recipeTerms.termId, taxonomyTerms.id))
+      .where(
+        and(
+          eq(recipeTerms.recipeId, recipe.id),
+          eq(taxonomyTerms.facet, 'pattern'),
+          eq(recipeTerms.isPrimary, true),
+          isNull(taxonomyTerms.deletedAt),
+        ),
+      )
+      .limit(1);
+    await tx
+      .insert(recipeTerms)
+      .values({ recipeId: recipe.id, termId, isPrimary: !hasPrimary[0] })
+      .onConflictDoNothing();
+
+    // The search vector folds tag labels in by trigger on `recipe_terms`,
+    // so the family name is searchable with nothing more done here.
+    await tx
+      .update(recipes)
+      .set({ updatedAt: new Date() })
+      .where(eq(recipes.id, recipe.id));
+
+    const rev = await tx
+      .select({ revisionNumber: recipeRevisions.revisionNumber })
+      .from(recipeRevisions)
+      .where(eq(recipeRevisions.id, recipe.currentRevisionId))
+      .limit(1);
+
+    return {
+      slug: input.slug,
+      revisionNumber: rev[0]!.revisionNumber,
+      recipeId: recipe.id,
+      revisionId: recipe.currentRevisionId,
+      unresolvedLinks: [],
+      needsDescription: await collectNeedsDescription(
+        tx,
+        recipe.id,
+        recipe.currentRevisionId,
+      ),
+      patternId,
+      family: slugify(input.family.trim()),
+    };
   });
 }
 
@@ -3637,6 +3821,7 @@ export async function updateRecipe(
       .select({
         id: recipes.id,
         title: recipes.title,
+        kind: recipes.kind,
         currentRevisionId: recipes.currentRevisionId,
         variantOfId: recipes.variantOfId,
         deletedAt: recipes.deletedAt,
@@ -3704,6 +3889,18 @@ export async function updateRecipe(
     const unresolvedLinks = input.links
       ? await applyLinks(tx, recipe.id, input.links)
       : [];
+
+    // Absent leaves the pattern alone; null removes it; an object replaces
+    // it whole, roles and swaps with it.
+    if (input.corePattern !== undefined) {
+      if (input.corePattern && (input.kind ?? recipe.kind) === 'research') {
+        throw new ConflictError(
+          `"${recipe.title}" is a research record, so it has no core ` +
+            'pattern to describe.',
+        );
+      }
+      await replaceCorePattern(tx, recipe.id, input.corePattern ?? null);
+    }
 
     /**
      * The three states of `variantOf`, which are three different sentences:

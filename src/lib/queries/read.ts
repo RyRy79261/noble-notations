@@ -62,6 +62,9 @@ import {
   ingredientsLive,
   noteSources,
   notesLive,
+  recipeCorePatternRoles,
+  recipeCorePatternSwaps,
+  recipeCorePatterns,
   recipeIngredients,
   recipeLinks,
   recipeMassFlowStages,
@@ -264,6 +267,28 @@ export interface VariantNodeView {
   self: boolean;
 }
 
+/**
+ * The core pattern of a dish, as the Core tab draws it. See
+ * `recipe_core_patterns` in `src/db/schema.ts` for why it is on the recipe.
+ */
+export interface CorePatternView {
+  formula: string;
+  roles: {
+    role: string;
+    uses: string;
+    purpose: string;
+    essential: boolean;
+    swaps: { use: string; tradeoff: string; safety: boolean }[];
+  }[];
+  method: string[];
+  fullRecipeAdds: string | null;
+  /**
+   * Set when this recipe has no pattern of its own and shows the one of the
+   * dish it varies. The tab says so, and links there.
+   */
+  inheritedFrom: { slug: string; title: string } | null;
+}
+
 export interface RecipeView extends RecipeSummaryView {
   id: string;
   originNote: string | null;
@@ -333,6 +358,8 @@ export interface RecipeView extends RecipeSummaryView {
    * variation: this one" is nothing.
    */
   variantFamily: VariantNodeView[];
+  /** The dish's core pattern, its own or its parent's. Null when neither has one. */
+  corePattern: CorePatternView | null;
   links: { kind: string; note: string | null; recipe: RecipeSummaryView }[];
   backlinks: { kind: string; recipe: RecipeSummaryView }[];
   experiments: { slug: string; title: string; startedAt: string | null }[];
@@ -940,6 +967,105 @@ async function noteSourcesByNote(
   return byNote;
 }
 
+/**
+ * The core pattern a recipe page shows: its own, or else the nearest one up
+ * its variation line.
+ *
+ * The climb reads `recipes_live`, so a deleted parent ends it — the same
+ * rule `variantFamily` keeps, for the same reason: a deleted recipe is not
+ * a node, and its pattern is not shown through a child. Bounded by
+ * `VARIANT_DEPTH_LIMIT` so a cycle somebody wrote by hand is a page with no
+ * pattern rather than a page that hangs.
+ */
+async function corePatternFor(
+  recipeId: string,
+  variantOfId: string | null,
+): Promise<CorePatternView | null> {
+  let current: { id: string; variantOfId: string | null } = {
+    id: recipeId,
+    variantOfId,
+  };
+  let inheritedFrom: CorePatternView['inheritedFrom'] = null;
+
+  for (let depth = 0; depth < VARIANT_DEPTH_LIMIT; depth += 1) {
+    const head = await db
+      .select({
+        id: recipeCorePatterns.id,
+        formula: recipeCorePatterns.formula,
+        method: recipeCorePatterns.method,
+        fullRecipeAdds: recipeCorePatterns.fullRecipeAdds,
+      })
+      .from(recipeCorePatterns)
+      .where(eq(recipeCorePatterns.recipeId, current.id))
+      .limit(1);
+
+    if (head[0]) {
+      const pattern = head[0];
+      const roleRows = await db
+        .select({
+          id: recipeCorePatternRoles.id,
+          role: recipeCorePatternRoles.role,
+          uses: recipeCorePatternRoles.uses,
+          purpose: recipeCorePatternRoles.purpose,
+          essential: recipeCorePatternRoles.essential,
+        })
+        .from(recipeCorePatternRoles)
+        .where(eq(recipeCorePatternRoles.patternId, pattern.id))
+        .orderBy(asc(recipeCorePatternRoles.position));
+      const swapRows =
+        roleRows.length > 0
+          ? await db
+              .select({
+                roleId: recipeCorePatternSwaps.roleId,
+                use: recipeCorePatternSwaps.use,
+                tradeoff: recipeCorePatternSwaps.tradeoff,
+                safety: recipeCorePatternSwaps.safety,
+              })
+              .from(recipeCorePatternSwaps)
+              .where(
+                inArray(
+                  recipeCorePatternSwaps.roleId,
+                  roleRows.map((r) => r.id),
+                ),
+              )
+              .orderBy(asc(recipeCorePatternSwaps.position))
+          : [];
+
+      return {
+        formula: pattern.formula,
+        method: pattern.method,
+        fullRecipeAdds: pattern.fullRecipeAdds,
+        roles: roleRows.map((role) => ({
+          role: role.role,
+          uses: role.uses,
+          purpose: role.purpose,
+          essential: role.essential,
+          swaps: swapRows
+            .filter((swap) => swap.roleId === role.id)
+            .map(({ use, tradeoff, safety }) => ({ use, tradeoff, safety })),
+        })),
+        inheritedFrom,
+      };
+    }
+
+    if (!current.variantOfId) return null;
+    const parent = await db
+      .select({
+        id: recipesLive.id,
+        slug: recipesLive.slug,
+        title: recipesLive.title,
+        variantOfId: recipesLive.variantOfId,
+      })
+      .from(recipesLive)
+      .where(eq(recipesLive.id, current.variantOfId))
+      .limit(1);
+    if (!parent[0]) return null;
+    current = { id: parent[0].id, variantOfId: parent[0].variantOfId };
+    inheritedFrom = { slug: parent[0].slug, title: parent[0].title };
+  }
+  return null;
+}
+
 export async function getRecipeBySlug(
   slug: string,
   revisionNumber?: number,
@@ -1190,12 +1316,13 @@ export async function getRecipeBySlug(
       .orderBy(desc(experimentsLive.startedAt)),
   ]);
 
-  const [linkedTerms, linkedParents, family] = await Promise.all([
+  const [linkedTerms, linkedParents, family, corePattern] = await Promise.all([
     attachTerms([...linkRows, ...backlinkRows]),
     // The recipe itself rides along, so its own parent is resolved in the
     // same query as its links' parents rather than in one more of its own.
     attachVariantOf([recipe, ...linkRows, ...backlinkRows]),
     variantFamily(recipe.id),
+    corePatternFor(recipe.id, recipe.variantOfId),
   ]);
 
   return {
@@ -1312,6 +1439,7 @@ export async function getRecipeBySlug(
           }
         : null,
     variantFamily: family,
+    corePattern,
     links: linkRows.map((row) => ({
       kind: row.linkKind,
       note: row.linkNote,

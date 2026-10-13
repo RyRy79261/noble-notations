@@ -139,6 +139,7 @@ test('the instructions state the rule the whole repository is built on', async (
   expect(instructions).toContain('backfill_revision');
   expect(instructions).toContain('add_mass_flow');
   expect(instructions).toContain('describe_mechanism');
+  expect(instructions).toContain('add_core_pattern');
   // And the instruction that makes the read tools worth having.
   expect(instructions).toContain('search_recipes');
   expect(instructions).toContain('get_started');
@@ -263,6 +264,8 @@ test('the guide, the instructions and the write tools state the writing rule', a
     'log_experiment',
     'upsert_category',
     'upsert_ingredient',
+    'add_core_pattern',
+    'update_recipe',
   ];
   const advertised = await mcp.listToolSchemas();
   for (const name of WRITES_PROSE) {
@@ -297,6 +300,7 @@ test('every section of the guide is present and says something', async () => {
     'ingredients',
     'mechanismConditions',
     'massFlow',
+    'corePattern',
     // The two the CRUD surface added. Which tool owns which record, what a
     // delete takes with it, why a restore is refused and why a number is
     // never given again all live here rather than in the instructions,
@@ -503,6 +507,16 @@ const CALLS: Record<string, Record<string, unknown>> = {
     noteId: '00000000-0000-0000-0000-000000000000',
     conditions: ['1 °C'],
   },
+  add_core_pattern: {
+    slug: GHOST,
+    family: 'a scope sweep',
+    formula: 'a + b',
+    roles: [
+      { role: 'a', uses: 'A.', purpose: 'A sweep.' },
+      { role: 'b', uses: 'B.', purpose: 'A sweep.' },
+    ],
+    method: ['Do a.', 'Do b.'],
+  },
   upsert_ingredient: { name: 'Bay leaf', slug: 'black-pepper' },
   upsert_category: {
     categoryType: 'technique',
@@ -550,6 +564,7 @@ const WRITE_TOOLS = [
   'add_note',
   'add_mass_flow',
   'describe_mechanism',
+  'add_core_pattern',
   'upsert_ingredient',
   'upsert_category',
   'log_experiment',

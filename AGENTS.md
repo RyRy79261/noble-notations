@@ -273,6 +273,28 @@ a backend; `variantFamily` carries `VARIANT_DEPTH_LIMIT` for the same
 reason, because a loop there is a page that hangs rather than a page that is
 wrong.
 
+## The core pattern
+
+Each recipe can carry a **core pattern**: the plain idea under the dish,
+for a reader who finds the research and the precision too much. Dan dan
+noodles are "nut-paste sauce + noodles + crisp fried mince". It is drawn on
+the recipe's **Core** tab: a one-line formula, the roles (sauce, starch,
+acid…) with what this dish uses and what a cook can swap in, a bare method,
+and what the full recipe adds.
+
+- **It is on the recipe, not the revision** (`recipe_core_patterns`). A new
+  version does not change what the dish is, so it never owes a new pattern.
+- **A variation with none shows its parent's**, and says so. It may store
+  its own when its pattern differs.
+- **Swaps hang off a role, not an ingredient line.** Most real swaps
+  replace several lines or change the method. A swap with `safety` set
+  draws as a warning.
+- **The family is a tag** of the `pattern` category type, so `/classes`
+  lists every dish that shares one.
+- `add_core_pattern` is fill-once and adds only its family tag;
+  `update_recipe { corePattern }` replaces the pattern whole or removes it
+  with `null`. A research record has none.
+
 ## Delete is soft, and it is called delete
 
 The connector has full CRUD. Every record an agent can create it can now

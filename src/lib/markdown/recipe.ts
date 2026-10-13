@@ -140,6 +140,38 @@ export function recipeToMarkdown(
     }
   }
 
+  /**
+   * The core pattern — the Core tab. A safety swap keeps its mark in words,
+   * because the screen draws it as a warning and the export has no colour.
+   */
+  if (recipe.corePattern) {
+    const pattern = recipe.corePattern;
+    body.push('## Core pattern', '', `**${pattern.formula}**`, '');
+    if (pattern.inheritedFrom) {
+      body.push(
+        `The pattern of ${pattern.inheritedFrom.title} ` +
+          `(\`${pattern.inheritedFrom.slug}\`), the dish this one varies.`,
+        '',
+      );
+    }
+    for (const role of pattern.roles) {
+      const optional = role.essential ? '' : ' (optional)';
+      body.push(
+        `- **${role.role}**${optional}: ${role.uses} — ${role.purpose}`,
+      );
+      for (const swap of role.swaps) {
+        const safety = swap.safety ? ' **Safety.**' : '';
+        body.push(`  - Swap: ${swap.use}.${safety} ${swap.tradeoff}`);
+      }
+    }
+    body.push('');
+    pattern.method.forEach((step, index) => {
+      body.push(`${index + 1}. ${step}`);
+    });
+    body.push('');
+    if (pattern.fullRecipeAdds) body.push(pattern.fullRecipeAdds, '');
+  }
+
   if (recipe.terms.length > 0) {
     body.push('## Categories', '');
     const byType = new Map<string, string[]>();

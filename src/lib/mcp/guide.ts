@@ -55,7 +55,7 @@ import { issueReportingConfigured } from '@/lib/github/config';
  *
  * It also moves a COUNT, which `report_issue` does not: `upload_image` and
  * `request_image_upload` are write tools, so the sentence naming how many
- * write tools there are is sixteen or eighteen depending on this. `e2e/auth-guide.spec.ts` measures
+ * write tools there are is seventeen or nineteen depending on this. `e2e/auth-guide.spec.ts` measures
  * that against the live registry and fails on a mismatch, which is how the
  * number was caught being wrong before.
  */
@@ -93,12 +93,14 @@ the items and observations of a run.
 You can add an older version that you find later. Call backfill_revision.
 This adds history. It does not change the recipe that people read.
 
-Two fields were added after the store was full, so two tools fill them on
-a record that is already stored. Call add_mass_flow to say what a dish
-weighs at each stage. Call describe_mechanism to give a science note its
-conditions. Each of these two tools writes its field one time. Neither
-replaces a value. To correct a value that is already stored, call
-update_revision or update_note.
+Three fields were added after the store was full, so three tools fill
+them on a record that is already stored. Call add_mass_flow to say what a
+dish weighs at each stage. Call describe_mechanism to give a science note
+its conditions. Call add_core_pattern to give a recipe its core pattern:
+the plain idea under the dish, and what a cook can swap. Each of these
+tools writes its field one time. None replaces a value. To correct a
+value that is already stored, call update_revision, update_note or
+update_recipe.
 
 A note can move to another record. Call reattach_note. The text of the
 note does not change. Only the record that holds it changes. Use it when
@@ -166,7 +168,8 @@ export function serverInstructions(
  *
  * `upload_image` is a write tool and is registered only where the blob store
  * is configured, so this number is not a constant. That is new: the count
- * used to be one, then `create_variant` made it sixteen, and a CONDITIONAL
+ * used to be one, then `create_variant` made it sixteen, `add_core_pattern`
+ * made it seventeen, and a CONDITIONAL
  * write tool makes it a pair. It is spelled out rather than computed because
  * the registry is built in `tools.ts` and importing it here would make the
  * guide depend on the thing that documents it; `e2e/auth-guide.spec.ts`
@@ -174,7 +177,7 @@ export function serverInstructions(
  * matters and the one that has caught this sentence being wrong before.
  */
 function writeToolCountWord(uploadConfigured: boolean): string {
-  return uploadConfigured ? 'eighteen' : 'sixteen';
+  return uploadConfigured ? 'nineteen' : 'seventeen';
 }
 
 function scopesParagraph(
@@ -414,7 +417,7 @@ const GUIDE = {
     'Call search_notes before you write a note. Find out if the store already says it.',
     'Call add_note for each thing that you learned that is not an instruction.',
     'Call log_experiment after you cook a batch and measure it.',
-    'Call add_mass_flow or describe_mechanism only for a record that is already stored.',
+    'Call add_mass_flow, describe_mechanism or add_core_pattern only for a record that is already stored.',
     'If a note sits on the wrong record, call reattach_note. Do not write the note again.',
     'If the record is wrong and the food did not change, call update_recipe, update_revision or update_note.',
     'If a record is a duplicate or a mistake, call delete_record and give a reason. Call restore_record if you were wrong.',
@@ -447,7 +450,9 @@ const GUIDE = {
     'word can be in two types: "air-drying" is a technique, and it is also ' +
     'a preservation method. These are two different tags. The types are: ' +
     'cuisine, course, technique, diet, season, equipment, occasion, ' +
-    'preservation, texture and ingredient_class. When you add a tag to a ' +
+    'preservation, texture, ingredient_class and pattern. A pattern tag ' +
+    'names the core pattern of a dish; add_core_pattern sets it. When you ' +
+    'add a tag to a ' +
     'recipe, the system makes the tag if it does not exist. The new tag has ' +
     'no explanation, so call upsert_category to add one.\n\n' +
     'The categories field holds all the tags of a recipe. create_recipe and ' +
@@ -565,6 +570,30 @@ const GUIDE = {
     'add_mass_flow. A version takes one figure and then refuses another. ' +
     'To correct a figure that is wrong, call update_revision.',
 
+  corePattern:
+    'The core pattern is the plain idea under a dish. Dan dan noodles are ' +
+    '"nut-paste sauce + noodles + crisp fried mince". Laab is "lightly ' +
+    'cooked mince + sour-salty dressing + herbs". The site shows it on the ' +
+    'Core tab. It is for a reader who finds the full recipe too much and ' +
+    'wants to cook the idea with what they have.\n\n' +
+    'A pattern has a formula in one line, a list of roles, a bare method ' +
+    'and a line that says what the full recipe adds. A role is a job in ' +
+    'the dish: the sauce, the starch, the protein, the acid. Each role says ' +
+    'what this recipe uses, why the role is there and what a cook can use ' +
+    'instead. Use the same role word for the same job in every recipe.\n\n' +
+    'Take every fact from the recipe, its notes and its rationales. Copy ' +
+    'each number exactly. Do not invent a swap that nothing supports. Mark ' +
+    'a swap with safety when it touches a cure, an acid share, a salt rate, ' +
+    'bottle pressure or raw meat, and name the exact product and amount.\n\n' +
+    'The pattern belongs to the recipe, not to a version, because a new ' +
+    'version does not change what the dish is. A variation with no pattern ' +
+    'shows the pattern of the dish it varies. A research record has none.\n\n' +
+    'The family of the pattern is a tag of the type "pattern", such as ' +
+    '"dressed noodles". Call list_categories with categoryType "pattern" ' +
+    'and use a family that is there when it fits. add_core_pattern adds ' +
+    'the pattern and its family tag one time. To correct the pattern, call ' +
+    'update_recipe and send corePattern.',
+
   /**
    * Replaced when `upload_image` is registered — see `IMAGES_WITH_UPLOAD`.
    *
@@ -612,11 +641,12 @@ const GUIDE = {
 
   /**
    * The count was "six" and the registry held seven, because
-   * `backfill_revision` was added and this line was not. It is eighteen now
+   * `backfill_revision` was added and this line was not. It is nineteen now
    * — nine, plus `reattach_note`, the three corrections, the delete, the
-   * restore, `create_variant`, `upload_image` and `request_image_upload` —
+   * restore, `create_variant`, `add_core_pattern`, `upload_image` and
+   * `request_image_upload` —
    * and the number is worth keeping true: an agent that reads "six" and
-   * counts eighteen has no way to tell which nine it must not trust.
+   * counts nineteen has no way to tell which nine it must not trust.
    *
    * `list_deleted` is a READ and is counted as one. It reports rows the site
    * does not show, which is why that looks wrong at first glance — but the
@@ -625,8 +655,8 @@ const GUIDE = {
    *
    * SIX OTHER PLACES STATE A COUNT and must move together: `scopesParagraph`
    * above, four docs in `src/app/connect/page.tsx` and the total in
-   * `docs/mcp-connector.md`. The registry holds thirty-one tools: twelve
-   * read, eighteen write, and `report_issue` in neither scope.
+   * `docs/mcp-connector.md`. The registry holds thirty-two tools: twelve
+   * read, nineteen write, and `report_issue` in neither scope.
    *
    * THREE OF THOSE ARE CONDITIONAL, so the count is a range and not a number.
    * `report_issue` needs `GITHUB_ISSUE_TOKEN` and is in neither scope, so it

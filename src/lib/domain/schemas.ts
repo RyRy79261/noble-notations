@@ -78,6 +78,7 @@ export const CATEGORY_TYPES = [
   'preservation',
   'texture',
   'ingredient_class',
+  'pattern',
 ] as const;
 export type CategoryType = (typeof CATEGORY_TYPES)[number];
 
@@ -714,6 +715,118 @@ export const massFlowSchema = z.object({
     .describe('Where the numbers came from. Not shown on the page.'),
 });
 export type MassFlowInput = z.infer<typeof massFlowSchema>;
+
+// ─────────────────────────────────────────────────────────────────────────
+// Core pattern — the plain structure under a dish
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Something a cook can put in a role's place. Every field carries a
+ * `.describe()` for the reason `massFlowStageSchema` gives: a comment never
+ * reaches the wire.
+ */
+export const corePatternSwapSchema = z.object({
+  use: z
+    .string()
+    .min(1)
+    .max(200)
+    .describe('What to use instead: "Peanut butter", "Cold brine".'),
+  tradeoff: z
+    .string()
+    .min(1)
+    .max(600)
+    .describe(
+      'What changes when you use it, said honestly: "Sweeter and thicker. ' +
+        'Thin it with a little hot water."',
+    ),
+  safety: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe(
+      'Set this when the swap touches food safety: a cure, an acid share, ' +
+        'a salt rate, bottle pressure or raw meat. Name the exact product ' +
+        'and amount in `tradeoff`. The page draws it as a caution.',
+    ),
+});
+export type CorePatternSwapInput = z.infer<typeof corePatternSwapSchema>;
+
+export const corePatternRoleSchema = z.object({
+  role: z
+    .string()
+    .min(1)
+    .max(60)
+    .describe(
+      'The job in the dish, in lower case: "sauce", "starch", "protein", ' +
+        '"acid", "aromatics", "fat", "crunch", "herbs". Use the same word ' +
+        'for the same job in every recipe.',
+    ),
+  uses: z
+    .string()
+    .min(1)
+    .max(300)
+    .describe(
+      'What this recipe uses for the role, short: "Chinese sesame paste ' +
+        'and peanut butter". Copy the amounts from the recipe or leave ' +
+        'them out. Do not invent them.',
+    ),
+  purpose: z
+    .string()
+    .min(1)
+    .max(600)
+    .describe('Why the role is in the dish, in one or two sentences.'),
+  essential: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe(
+      'false when the dish is still itself without this role: a garnish, ' +
+        'a baste, a side.',
+    ),
+  swaps: z
+    .array(corePatternSwapSchema)
+    .max(6)
+    .optional()
+    .default([])
+    .describe(
+      'What a cook can use in its place, best first. Give only swaps that ' +
+        'work. An empty list is correct for a role that has none.',
+    ),
+});
+export type CorePatternRoleInput = z.infer<typeof corePatternRoleSchema>;
+
+export const corePatternSchema = z.object({
+  formula: z
+    .string()
+    .min(1)
+    .max(300)
+    .describe(
+      'The pattern in one line, joined with "+": "nut-paste sauce + ' +
+        'noodles + crisp fried mince + crunchy toppings".',
+    ),
+  roles: z
+    .array(corePatternRoleSchema)
+    .min(2)
+    .max(12)
+    .describe('The parts of the pattern, in the order the formula names them.'),
+  method: z
+    .array(z.string().min(1).max(400))
+    .min(2)
+    .max(8)
+    .describe(
+      'The bare method, 2 to 8 steps. Each step is one instruction to a ' +
+        'beginner. It cooks the pattern, not the full recipe.',
+    ),
+  fullRecipeAdds: z
+    .string()
+    .max(1500)
+    .nullish()
+    .describe(
+      'What the full recipe adds to the pattern, and why it is worth it: ' +
+        'the ratios, the temperatures, the techniques.',
+    ),
+});
+export type CorePatternInput = z.infer<typeof corePatternSchema>;
 
 /**
  * The same three rules the database checks, applied at the boundary so a
@@ -1711,6 +1824,34 @@ export type AddMassFlowArgs = z.input<typeof addMassFlowSchema>;
 export type AddMassFlowInput = z.infer<typeof addMassFlowSchema>;
 
 /**
+ * Give a recipe that is already stored its core pattern.
+ *
+ * Add-once, the shape `add_mass_flow` has: `uq_core_pattern_recipe` and
+ * the read in `addCorePattern` both refuse a second one, and the refusal
+ * names `update_recipe`, which replaces it.
+ *
+ * `family` is required, because a pattern with no family is one nobody can
+ * browse to, and it is a tag rather than a column so `/classes` draws it
+ * with nothing new. It ADDS the tag and touches no other one — unlike
+ * `categories`, which replaces every tag a recipe has, and which an agent
+ * filling 26 recipes would have had to echo back 26 times without a slip.
+ */
+export const addCorePatternShape = {
+  slug: z.string().min(1).max(120).describe('Which recipe.'),
+  family: tagLabel.describe(
+    'The name of the pattern family, as a tag of the type "pattern": ' +
+      '"dressed noodles", "warm meat salad", "quick fridge pickle". Call ' +
+      'list_categories with categoryType "pattern" first, and use a name ' +
+      'that is there when it fits.',
+  ),
+  ...corePatternSchema.shape,
+};
+
+export const addCorePatternSchema = z.object(addCorePatternShape);
+export type AddCorePatternArgs = z.input<typeof addCorePatternSchema>;
+export type AddCorePatternInput = z.infer<typeof addCorePatternSchema>;
+
+/**
  * Give a science note that was written before this field existed its
  * conditions.
  *
@@ -2455,6 +2596,16 @@ export const updateRecipeShape = {
   originNote: recipeBodyShape.originNote,
   heroImageUrl: recipeBodyShape.heroImageUrl,
   heroImageAlt: recipeBodyShape.heroImageAlt,
+  /**
+   * The core pattern, replaced whole — roles and swaps are children and are
+   * sent with it. `null` removes it. Absent leaves it alone.
+   */
+  corePattern: corePatternSchema
+    .nullish()
+    .describe(
+      'Replace the core pattern, with all its roles and swaps. Send null ' +
+        'to remove it. To add one where there is none, call add_core_pattern.',
+    ),
   /**
    * Move the recipe to another stored version. Every version stays; this
    * decides which one people read.

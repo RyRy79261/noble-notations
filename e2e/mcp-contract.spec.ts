@@ -66,6 +66,7 @@ const ALIAS_SPELLING = 'Glutinous rice for the table';
  * is drift, and this is the line that says so.
  */
 const TOOLS = [
+  'add_core_pattern',
   'add_mass_flow',
   'add_note',
   'backfill_revision',
