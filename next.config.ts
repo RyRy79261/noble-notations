@@ -41,6 +41,11 @@ const csp = [
 const nextConfig: NextConfig = {
   reactStrictMode: true,
 
+  // `e2e/page-cache.spec.ts` builds a second copy of the site, with the
+  // page cache on, while the suite's own server still runs from `.next`.
+  // Unset everywhere else.
+  distDir: process.env.NOBLE_DIST_DIR || '.next',
+
   // `@vercel/blob` retries a request that fails at the network ten times
   // with backoff, which is about seventeen minutes, and says nothing while
   // it does. On the upload page that was a button frozen at "Sending… 0%".

@@ -13,8 +13,11 @@ import { PageHead, PageHero } from '@/components/f/page-head';
 import { CardGrid, IndexCard } from '@/components/f/recipe-card';
 import { Markdown } from '@/components/markdown';
 import { DatabaseNotice } from '@/components/database-notice';
+import { cacheablePage } from '@/lib/page-cache';
 
-export const dynamic = 'force-dynamic';
+// Cached until a write expires it. See src/lib/page-cache.ts.
+export const revalidate = 86400;
+export { generateStaticParams } from '@/lib/page-cache';
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -66,6 +69,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 }
 
 export default async function ScienceStudyPage({ params }: Params) {
+  await cacheablePage();
   const { slug } = await params;
   const { data, configured, failed } = await safeRead(
     () => getScienceStudy(slug),

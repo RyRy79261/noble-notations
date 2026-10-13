@@ -13,8 +13,10 @@ import { listCategories, type TermWithCount } from '@/lib/queries/cached';
 import { safeRead } from '@/lib/safe';
 import { CATEGORY_TYPE_LABELS, cardinal, roman } from '@/lib/site';
 import { cn } from '@/lib/utils';
+import { cacheablePage } from '@/lib/page-cache';
 
-export const dynamic = 'force-dynamic';
+// Cached until a write expires it. See src/lib/page-cache.ts.
+export const revalidate = 86400;
 
 export const metadata: Metadata = {
   title: 'Classification',
@@ -201,6 +203,7 @@ function TypeRow({
 }
 
 export default async function ClassesPage() {
+  await cacheablePage();
   const { data, configured, failed } = await safeRead(
     () => listCategories(),
     [],

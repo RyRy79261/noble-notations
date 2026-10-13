@@ -18,8 +18,10 @@ import {
   roman,
   shopOrder,
 } from '@/lib/site';
+import { cacheablePage } from '@/lib/page-cache';
 
-export const dynamic = 'force-dynamic';
+// Cached until a write expires it. See src/lib/page-cache.ts.
+export const revalidate = 86400;
 
 export const metadata: Metadata = {
   title: 'Ingredients',
@@ -59,6 +61,7 @@ export const metadata: Metadata = {
  * one ordering, so the two screens cannot drift.
  */
 export default async function IngredientsPage() {
+  await cacheablePage();
   const { data, configured, failed } = await safeRead(listIngredients, []);
 
   const ordered = shopOrder(data);

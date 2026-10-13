@@ -24,8 +24,11 @@ import {
   variationCode,
 } from '@/lib/site';
 import { cn } from '@/lib/utils';
+import { cacheablePage } from '@/lib/page-cache';
 
-export const dynamic = 'force-dynamic';
+// Cached until a write expires it. See src/lib/page-cache.ts.
+export const revalidate = 86400;
+export { generateStaticParams } from '@/lib/page-cache';
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -137,6 +140,7 @@ function Counts({ children }: { children: ReactNode }) {
 }
 
 export default async function CuisinePage({ params }: Params) {
+  await cacheablePage();
   const { slug } = await params;
   const { data, configured, failed } = await safeRead(
     () => getTerm('cuisine', slug),

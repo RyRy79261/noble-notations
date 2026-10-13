@@ -11,8 +11,10 @@ import { cardinal, roman } from '@/lib/site';
 
 import { BatchLedger, BatchLogRows, spent } from './batch-log-parts';
 import { monthYear, runSpan } from './run-dates';
+import { cacheablePage } from '@/lib/page-cache';
 
-export const dynamic = 'force-dynamic';
+// Cached until a write expires it. See src/lib/page-cache.ts.
+export const revalidate = 86400;
 
 export const metadata: Metadata = {
   title: 'Batch logs',
@@ -48,6 +50,7 @@ export const metadata: Metadata = {
  * `batch-log-parts.tsx` carries the same note beside `spent()`.
  */
 export default async function BatchLogsPage() {
+  await cacheablePage();
   const { data, configured, failed } = await safeRead(listExperiments, []);
 
   /* The query gives newest first; the design draws oldest first. */

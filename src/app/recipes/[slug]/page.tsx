@@ -8,8 +8,11 @@ import { recipeJsonLd } from '@/lib/jsonld';
 import { JsonLd } from '@/components/json-ld';
 import { PageHead } from '@/components/f/page-head';
 import { site } from '@/lib/site';
+import { cacheablePage } from '@/lib/page-cache';
 
-export const dynamic = 'force-dynamic';
+// Cached until a write expires it. See src/lib/page-cache.ts.
+export const revalidate = 86400;
+export { generateStaticParams } from '@/lib/page-cache';
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -48,6 +51,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 }
 
 export default async function RecipePage({ params }: Params) {
+  await cacheablePage();
   const { slug } = await params;
   const {
     data: recipe,

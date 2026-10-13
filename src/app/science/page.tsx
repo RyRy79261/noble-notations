@@ -14,8 +14,10 @@ import { PageHead, PageHero } from '@/components/f/page-head';
 import { CardGrid, IndexCard } from '@/components/f/recipe-card';
 import { Markdown } from '@/components/markdown';
 import { DatabaseNotice } from '@/components/database-notice';
+import { cacheablePage } from '@/lib/page-cache';
 
-export const dynamic = 'force-dynamic';
+// Cached until a write expires it. See src/lib/page-cache.ts.
+export const revalidate = 86400;
 
 export const metadata: Metadata = {
   title: 'Science',
@@ -71,6 +73,7 @@ export const metadata: Metadata = {
  * batch-log row (`SOURCE · Baumy Biltong`).
  */
 export default async function SciencePage() {
+  await cacheablePage();
   const { data, configured, failed } = await safeRead(listScienceIndex, {
     studies: [],
     mechanisms: [],

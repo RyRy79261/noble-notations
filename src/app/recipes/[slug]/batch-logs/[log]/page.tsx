@@ -6,8 +6,11 @@ import { DatabaseNotice } from '@/components/database-notice';
 import { Breadcrumb } from '@/components/f/breadcrumb';
 import { PageHead } from '@/components/f/page-head';
 import { BatchLogDetail } from '@/app/batch-logs/batch-log-detail';
+import { cacheablePage } from '@/lib/page-cache';
 
-export const dynamic = 'force-dynamic';
+// Cached until a write expires it. See src/lib/page-cache.ts.
+export const revalidate = 86400;
+export { generateStaticParams } from '@/lib/page-cache';
 
 type Params = { params: Promise<{ slug: string; log: string }> };
 
@@ -53,6 +56,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 }
 
 export default async function RecipeBatchLogPage({ params }: Params) {
+  await cacheablePage();
   const { slug, log } = await params;
   const { data, configured, failed } = await safeRead(
     () => getExperiment(log),

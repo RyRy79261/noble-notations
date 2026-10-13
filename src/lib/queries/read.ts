@@ -1460,8 +1460,8 @@ export async function getRecipeBySlug(
  * but issues about twelve — the revisions, the ingredients, the steps, the
  * notes, their sources, the step uses, the links, the backlinks, the runs
  * and the terms twice — and a page that draws a heading and a grid of runs
- * should not pay for all of it, least of all on a `force-dynamic` route
- * that reads once in `generateMetadata` and again in the page.
+ * should not pay for all of it, least of all on a route that reads once
+ * in `generateMetadata` and again in the page.
  *
  * There is no status filter, matching `getRecipeBySlug`: an archived recipe
  * still answers at its own address.
@@ -2648,8 +2648,8 @@ const noteRecipeId = sql<string | null>`COALESCE(
  * every disjunct a correlated subquery evaluated per row, so Postgres reads
  * all of `notes` and neither `idx_notes_recipe` nor `idx_notes_revision` can
  * help. This states the same four paths as comparisons on the indexed
- * columns themselves, which is what `getScienceStudy` wants: it runs on a
- * `force-dynamic` page, twice per render.
+ * columns themselves, which is what `getScienceStudy` wants: it runs
+ * twice per render of its page.
  *
  * Change one of these and change the other. They encode one rule.
  */

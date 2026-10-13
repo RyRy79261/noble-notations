@@ -30,8 +30,11 @@ import {
 } from '@/lib/site';
 import { CATEGORY_TYPES, type CategoryType } from '@/lib/domain/schemas';
 import { cn } from '@/lib/utils';
+import { cacheablePage } from '@/lib/page-cache';
 
-export const dynamic = 'force-dynamic';
+// Cached until a write expires it. See src/lib/page-cache.ts.
+export const revalidate = 86400;
+export { generateStaticParams } from '@/lib/page-cache';
 
 type Params = { params: Promise<{ type: string; slug: string }> };
 
@@ -274,6 +277,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 }
 
 export default async function TermPage({ params }: Params) {
+  await cacheablePage();
   const { type, slug } = await params;
   const parsed = asCategoryType(type);
   if (!parsed) notFound();
