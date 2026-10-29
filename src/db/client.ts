@@ -134,6 +134,9 @@ export const SITE_DATA_TAG = 'site-data';
 /**
  * Expire the site's cached reads after a committed write.
  *
+ * The cached PAGES go with them: each one read through `cached.ts`, so
+ * each carries this tag — see `src/lib/page-cache.ts`.
+ *
  * Every write is a `withTransaction`, so this is the one place a write can
  * reach. `expire: 0` rather than `'max'`: the next page load must show the
  * write, not serve the old page once and refresh behind it. Outside a

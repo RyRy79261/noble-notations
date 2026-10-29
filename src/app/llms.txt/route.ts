@@ -6,8 +6,9 @@
  * most questions, in the order a reader needs them: what this is, how to
  * read a recipe, then the recipes themselves.
  *
- * It is built per request for the same reason the sitemap is: recipes
- * arrive through the MCP connector between deploys.
+ * It is not fixed at build time, for the same reason the sitemap is not:
+ * recipes arrive through the MCP connector between deploys. It is kept in
+ * the page cache, and a write expires it with the pages.
  *
  * The last section is the important one. An agent that only reads this file
  * will scrape pages one at a time; an agent that connects over MCP can
@@ -22,15 +23,23 @@ import {
   listRecipes,
 } from '@/lib/queries/cached';
 import { safeRead } from '@/lib/safe';
+import { cacheableRoute } from '@/lib/page-cache';
 
-export const dynamic = 'force-dynamic';
+// Cached until a write expires it. See src/lib/page-cache.ts.
+export const revalidate = 86400;
 
 export async function GET() {
+  const cached = await cacheableRoute();
   const [recipes, categories, ingredients] = await Promise.all([
     safeRead(() => listRecipes({ limit: 500 }), []),
     safeRead(() => listCategories(), []),
     safeRead(listIngredients, []),
   ]);
+
+  // A map with the recipes missing would be kept for a day.
+  if (cached && [recipes, categories, ingredients].some((r) => r.failed)) {
+    throw new Error('llms.txt: a database read failed');
+  }
 
   const lines: string[] = [
     `# ${site.name}`,

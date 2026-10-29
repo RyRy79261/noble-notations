@@ -13,21 +13,26 @@ import { getRecipeBySlug } from '@/lib/queries/cached';
 import { safeRead } from '@/lib/safe';
 import { cardinal, revisionOrdinal } from '@/lib/site';
 import { cn } from '@/lib/utils';
+import { cacheablePage } from '@/lib/page-cache';
 
 type Params = { params: Promise<{ slug: string[] }> };
 
 /*
- * THIS ROUTE USED TO BE PRERENDERED, and it stops being so here.
+ * NOTHING HERE IS RENDERED AT BUILD TIME.
  *
- * The right-hand column reads the recipe the note was read into, and a
- * prerendered page would bake whatever the database said at BUILD time —
- * which is "nothing at all" on a build with no `DATABASE_URL` and a snapshot
- * of the current revision on one that has it, so the same commit would
- * deploy two different pages. The note itself is still read off disk at
- * every render, so R-SCR-25 is untouched: with no database this screen draws
- * the note, the path and the breadcrumb and simply omits the reading.
+ * The right-hand column reads the recipe the note was read into, and a page
+ * rendered at build would bake whatever the database said then — which is
+ * "nothing at all" on a build with no `DATABASE_URL` and a snapshot of the
+ * current revision on one that has it, so the same commit would deploy two
+ * different pages. So `generateStaticParams` names no note: each one renders
+ * the first time it is asked for, and a write expires it with every other
+ * page (`src/lib/page-cache.ts`). R-SCR-25 is untouched: with no database
+ * this screen draws the note, the path and the breadcrumb and simply omits
+ * the reading.
  */
-export const dynamic = 'force-dynamic';
+// Cached until a write expires it. See src/lib/page-cache.ts.
+export const revalidate = 86400;
+export { generateStaticParams } from '@/lib/page-cache';
 
 /** `Main`. `list-search-archive-1280.html:4314`. */
 const MAIN = cn(
@@ -80,6 +85,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
  * than by data — the archive is frozen, and D-03 and §10.8 both say so.
  */
 export default async function ArchiveDocumentPage({ params }: Params) {
+  await cacheablePage();
   const { slug } = await params;
   const doc = await getArchiveDocument(slug);
   if (!doc) notFound();

@@ -86,6 +86,7 @@ src/
                           module that sees deleted rows), cached.ts
                           (read.ts behind the data cache, for the site)
     mcp/                  tools, OAuth primitives, admin session
+    page-cache.ts         which public pages are cached whole, and when
     utils.ts              cn(), the class merger shadcn/ui expects
 components.json           shadcn/ui configuration (css: src/app/theme.css)
 postcss.config.mjs        runs @tailwindcss/postcss
@@ -150,6 +151,17 @@ And two relationships between recipes: **links**, four editorial edges in
   `pnpm ingest`, runs outside a request and cannot expire the cache: it
   reaches the site within a day or at the next deploy. The cache is on
   only on Vercel; set `NOBLE_READ_CACHE=on` or `off` to change that.
+- **A public read page is cached whole, and a write expires it.** Each
+  page a crawler reads exports `revalidate = 86400` and calls
+  `cacheablePage()` from `src/lib/page-cache.ts` first; a page with a
+  dynamic segment also re-exports its `generateStaticParams`. The same
+  committed write that expires the reads expires the pages. The switch is
+  the read cache's, read at BUILD time: off, `cacheablePage()` makes the
+  page dynamic again, which is what CI and the e2e suite's own server get.
+  `e2e/page-cache.spec.ts` builds the cached site by itself. A page that
+  reads `searchParams`, `cookies()` or `headers()`, or serves one person,
+  stays `force-dynamic` and does not call it. A new public read page does
+  call it — or it renders on every request a crawler makes.
 - **Adding a revision is how a dish changes. Correcting a record is a
   different act, and the connector has both.** `revise_recipe` when the food
   changed; `update_recipe`, `update_revision`, `update_note` when the record
