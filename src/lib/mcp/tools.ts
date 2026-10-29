@@ -13,8 +13,7 @@ import 'server-only';
  * Every tool: validates with Zod, checks scope, calls a query function,
  * writes an audit row, and returns JSON as text content.
  */
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
+import type { McpServer, ServerContext } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import {
   addCorePatternSchema,
@@ -129,14 +128,12 @@ import { agentGuide } from '@/lib/mcp/guide';
 import { writeMcpAudit } from '@/lib/mcp/audit';
 import { hasScope, WRITE_SCOPE } from '@/lib/mcp/scopes';
 
-interface AuthCtx {
-  authInfo?: AuthInfo;
-  /**
-   * The HTTP request the call arrived on. Read by `request_image_upload`
-   * only, to write the link on the host the connector actually reached.
-   */
-  requestInfo?: { headers?: Record<string, string | string[] | undefined> };
-}
+/**
+ * What a tool handler is given besides its arguments. The token is on
+ * `http.authInfo`; `request_image_upload` also reads `http.req`, to write
+ * the link on the host the connector actually reached.
+ */
+type AuthCtx = ServerContext;
 
 interface Principal {
   userId: string;
@@ -145,7 +142,7 @@ interface Principal {
 }
 
 function getPrincipal(ctx: AuthCtx): Principal {
-  const info = ctx.authInfo;
+  const info = ctx.http?.authInfo;
   const extra = info?.extra as
     { userId?: string; clientId?: string; scope?: string } | undefined;
   if (!extra?.userId || !extra.clientId) {
@@ -411,10 +408,10 @@ export function registerTools(server: McpServer): void {
         'to write, because the most common mistake — creating a second ' +
         'recipe for a dish that already exists — comes from not knowing ' +
         'the repository is revision-first.',
-      inputSchema: {},
+      inputSchema: z.object({}),
     },
-    async (_args, extra) =>
-      runTool(extra as AuthCtx, 'get_started', {}, async () => agentGuide()),
+    async (_args, ctx) =>
+      runTool(ctx, 'get_started', {}, async () => agentGuide()),
   );
 
   server.registerTool(
@@ -430,18 +427,13 @@ export function registerTools(server: McpServer): void {
         'rule things out ("dan dan noodles without sesame paste"). If a result ' +
         'is the dish you were asked about, fetch it with get_recipe and revise ' +
         'it — do not create a second recipe for the same dish.',
-      inputSchema: searchRecipesShape,
+      inputSchema: z.object(searchRecipesShape),
     },
-    async (args, extra) =>
-      runTool(
-        extra as AuthCtx,
-        'search_recipes',
-        { query: args.query },
-        async () => {
-          const input = searchRecipesSchema.parse(args);
-          return searchRecipes(input);
-        },
-      ),
+    async (args, ctx) =>
+      runTool(ctx, 'search_recipes', { query: args.query }, async () => {
+        const input = searchRecipesSchema.parse(args);
+        return searchRecipes(input);
+      }),
   );
 
   server.registerTool(
@@ -460,7 +452,7 @@ export function registerTools(server: McpServer): void {
         'are shown. It is empty when this dish has no family. Read it ' +
         'before adding a variation — the one you are about to write may ' +
         'already be there.',
-      inputSchema: {
+      inputSchema: z.object({
         slug: z.string().min(1).max(120),
         revisionNumber: z
           .number()
@@ -468,10 +460,10 @@ export function registerTools(server: McpServer): void {
           .positive()
           .optional()
           .describe('Defaults to the current revision'),
-      },
+      }),
     },
-    async (args, extra) =>
-      runTool(extra as AuthCtx, 'get_recipe', { slug: args.slug }, async () => {
+    async (args, ctx) =>
+      runTool(ctx, 'get_recipe', { slug: args.slug }, async () => {
         const recipe = await getRecipeBySlug(args.slug, args.revisionNumber);
         if (!recipe) {
           // A numbered read of a LIVE recipe misses when that one version is
@@ -520,13 +512,13 @@ export function registerTools(server: McpServer): void {
         'how you read the hierarchy, and how you check a parent that you ' +
         'set with upsert_category.\n\n' +
         'Do not give categoryType if you want all the tags.',
-      inputSchema: {
+      inputSchema: z.object({
         categoryType: z.enum(CATEGORY_TYPES).optional(),
-      },
+      }),
     },
-    async (args, extra) =>
+    async (args, ctx) =>
       runTool(
-        extra as AuthCtx,
+        ctx,
         'list_categories',
         { categoryType: args.categoryType },
         async () =>
@@ -543,12 +535,10 @@ export function registerTools(server: McpServer): void {
         'name the repository already uses for something before adding a new ' +
         'one — "coriander" and "cilantro" should be one ingredient with an ' +
         'alias, not two.',
-      inputSchema: {},
+      inputSchema: z.object({}),
     },
-    async (_args, extra) =>
-      runTool(extra as AuthCtx, 'list_ingredients', null, async () =>
-        listIngredients(),
-      ),
+    async (_args, ctx) =>
+      runTool(ctx, 'list_ingredients', null, async () => listIngredients()),
   );
 
   server.registerTool(
@@ -560,19 +550,14 @@ export function registerTools(server: McpServer): void {
         'substitutes, and any notes attached to it. This is the referential ' +
         'lookup: "what have I made with gochujang", "what can stand in for ' +
         'tandoori masala".',
-      inputSchema: { slug: z.string().min(1).max(120) },
+      inputSchema: z.object({ slug: z.string().min(1).max(120) }),
     },
-    async (args, extra) =>
-      runTool(
-        extra as AuthCtx,
-        'get_ingredient',
-        { slug: args.slug },
-        async () => {
-          const found = await getIngredient(args.slug);
-          if (!found) throw new NotFoundError(`No ingredient "${args.slug}".`);
-          return found;
-        },
-      ),
+    async (args, ctx) =>
+      runTool(ctx, 'get_ingredient', { slug: args.slug }, async () => {
+        const found = await getIngredient(args.slug);
+        if (!found) throw new NotFoundError(`No ingredient "${args.slug}".`);
+        return found;
+      }),
   );
 
   server.registerTool(
@@ -585,12 +570,10 @@ export function registerTools(server: McpServer): void {
         'experiment is what happened when it met reality.\n\n' +
         'The website calls these batch logs. Every run is listed at ' +
         '/batch-logs.',
-      inputSchema: {},
+      inputSchema: z.object({}),
     },
-    async (_args, extra) =>
-      runTool(extra as AuthCtx, 'list_experiments', null, async () =>
-        listExperiments(),
-      ),
+    async (_args, ctx) =>
+      runTool(ctx, 'list_experiments', null, async () => listExperiments()),
   );
 
   server.registerTool(
@@ -606,19 +589,14 @@ export function registerTools(server: McpServer): void {
         '/batch-logs/<slug>. A run that names a recipe is also at ' +
         '/recipes/<recipe>/batch-logs/<slug>. The address /batch-logs/<slug> ' +
         'always answers.',
-      inputSchema: { slug: z.string().min(1).max(120) },
+      inputSchema: z.object({ slug: z.string().min(1).max(120) }),
     },
-    async (args, extra) =>
-      runTool(
-        extra as AuthCtx,
-        'get_experiment',
-        { slug: args.slug },
-        async () => {
-          const found = await getExperiment(args.slug);
-          if (!found) throw new NotFoundError(`No experiment "${args.slug}".`);
-          return found;
-        },
-      ),
+    async (args, ctx) =>
+      runTool(ctx, 'get_experiment', { slug: args.slug }, async () => {
+        const found = await getExperiment(args.slug);
+        if (!found) throw new NotFoundError(`No experiment "${args.slug}".`);
+        return found;
+      }),
   );
 
   server.registerTool(
@@ -646,11 +624,11 @@ export function registerTools(server: McpServer): void {
         '`bodyLength` says how long the whole body is. `sourceCount` says ' +
         'how many sources the note cites. The `id` on a result is the one ' +
         'describe_mechanism asks for.',
-      inputSchema: searchNotesShape,
+      inputSchema: z.object(searchNotesShape),
     },
-    async (args, extra) =>
+    async (args, ctx) =>
       runTool(
-        extra as AuthCtx,
+        ctx,
         'search_notes',
         { query: args.query, kind: args.kind },
         async () => {
@@ -674,18 +652,13 @@ export function registerTools(server: McpServer): void {
         'become 1.8 kg, but three cloves and two heads stay two lines. ' +
         'Lines with no quantity are flagged rather than guessed at, so ' +
         'report them as-is instead of inventing an amount.',
-      inputSchema: buildShoppingListShape,
+      inputSchema: z.object(buildShoppingListShape),
     },
-    async (args, extra) =>
-      runTool(
-        extra as AuthCtx,
-        'build_shopping_list',
-        { slugs: args.slugs },
-        async () => {
-          const input = buildShoppingListSchema.parse(args);
-          return buildShoppingList(input.slugs);
-        },
-      ),
+    async (args, ctx) =>
+      runTool(ctx, 'build_shopping_list', { slugs: args.slugs }, async () => {
+        const input = buildShoppingListSchema.parse(args);
+        return buildShoppingList(input.slugs);
+      }),
   );
 
   server.registerTool(
@@ -696,12 +669,10 @@ export function registerTools(server: McpServer): void {
         'Counts of recipes, revisions, ingredients, tags, notes and ' +
         'experiments. A cheap way to confirm the connector is reading the ' +
         'right database.',
-      inputSchema: {},
+      inputSchema: z.object({}),
     },
-    async (_args, extra) =>
-      runTool(extra as AuthCtx, 'get_repository_stats', null, async () =>
-        getStats(),
-      ),
+    async (_args, ctx) =>
+      runTool(ctx, 'get_repository_stats', null, async () => getStats()),
   );
 
   /**
@@ -728,18 +699,13 @@ export function registerTools(server: McpServer): void {
         'Each row also gives the arguments for restore_record, ready to ' +
         'send. A row that must wait names the record to restore first.\n\n' +
         'Give `kind` to see one kind only.',
-      inputSchema: listDeletedShape,
+      inputSchema: z.object(listDeletedShape),
     },
-    async (args, extra) =>
-      runTool(
-        extra as AuthCtx,
-        'list_deleted',
-        { kind: args.kind },
-        async () => {
-          const input = listDeletedSchema.parse(args);
-          return listDeleted(input);
-        },
-      ),
+    async (args, ctx) =>
+      runTool(ctx, 'list_deleted', { kind: args.kind }, async () => {
+        const input = listDeletedSchema.parse(args);
+        return listDeleted(input);
+      }),
   );
 
   // ───────────────────────────────────────────────────────────────────────
@@ -779,11 +745,11 @@ export function registerTools(server: McpServer): void {
         'Give `conditions` to a science note in `notes`. Conditions are ' +
         'the values the note holds under, such as a temperature and a time.' +
         PLAIN_ENGLISH,
-      inputSchema: createRecipeShape,
+      inputSchema: z.object(createRecipeShape),
     },
-    async (args, extra) =>
+    async (args, ctx) =>
       runTool(
-        extra as AuthCtx,
+        ctx,
         'create_recipe',
         { slug: args.slug, title: args.title },
         async (principal) => {
@@ -825,11 +791,11 @@ export function registerTools(server: McpServer): void {
         'them. Give `variantNote` one line for what makes this one ' +
         'different: "With shiitake instead of pork".' +
         PLAIN_ENGLISH,
-      inputSchema: createVariantShape,
+      inputSchema: z.object(createVariantShape),
     },
-    async (args, extra) =>
+    async (args, ctx) =>
       runTool(
-        extra as AuthCtx,
+        ctx,
         'create_variant',
         { slug: args.slug, title: args.title, variantOf: args.variantOf },
         async (principal) => {
@@ -904,27 +870,22 @@ export function registerTools(server: McpServer): void {
         'update_revision. It corrects the stored version. It makes no new ' +
         'version and it moves no number.' +
         PLAIN_ENGLISH,
-      inputSchema: reviseRecipeShape,
+      inputSchema: z.object(reviseRecipeShape),
     },
-    async (args, extra) =>
-      runTool(
-        extra as AuthCtx,
-        'revise_recipe',
-        { slug: args.slug },
-        async (principal) => {
-          requireWrite(principal);
-          const input = reviseRecipeSchema.parse(args);
-          const result = await reviseRecipe(input, 'mcp');
-          return {
-            ...result,
-            url: `/recipes/${result.slug}`,
-            message: followUpMessage(
-              `Revision ${result.revisionNumber} created.`,
-              result,
-            ),
-          };
-        },
-      ),
+    async (args, ctx) =>
+      runTool(ctx, 'revise_recipe', { slug: args.slug }, async (principal) => {
+        requireWrite(principal);
+        const input = reviseRecipeSchema.parse(args);
+        const result = await reviseRecipe(input, 'mcp');
+        return {
+          ...result,
+          url: `/recipes/${result.slug}`,
+          message: followUpMessage(
+            `Revision ${result.revisionNumber} created.`,
+            result,
+          ),
+        };
+      }),
   );
 
   server.registerTool(
@@ -954,11 +915,11 @@ export function registerTools(server: McpServer): void {
         'stage. Do not copy the figure from a later version. That would ' +
         'record a measurement that nobody took.' +
         PLAIN_ENGLISH,
-      inputSchema: backfillRevisionShape,
+      inputSchema: z.object(backfillRevisionShape),
     },
-    async (args, extra) =>
+    async (args, ctx) =>
       runTool(
-        extra as AuthCtx,
+        ctx,
         'backfill_revision',
         { slug: args.slug, occurredAt: args.occurredAt },
         async (principal) => {
@@ -1009,11 +970,11 @@ export function registerTools(server: McpServer): void {
         'them into a sentence. To add conditions to a note that is already ' +
         'stored, call describe_mechanism.' +
         PLAIN_ENGLISH,
-      inputSchema: addNoteShape,
+      inputSchema: z.object(addNoteShape),
     },
-    async (args, extra) =>
+    async (args, ctx) =>
       runTool(
-        extra as AuthCtx,
+        ctx,
         'add_note',
         {
           kind: args.kind,
@@ -1095,11 +1056,11 @@ export function registerTools(server: McpServer): void {
         'numbers record a batch that a person weighed. To record a ' +
         'different batch, call revise_recipe and send `massFlow` with it. ' +
         'To correct a figure that is wrong, call update_revision.',
-      inputSchema: addMassFlowShape,
+      inputSchema: z.object(addMassFlowShape),
     },
-    async (args, extra) =>
+    async (args, ctx) =>
       runTool(
-        extra as AuthCtx,
+        ctx,
         'add_mass_flow',
         { slug: args.slug, revisionNumber: args.revisionNumber },
         async (principal) => {
@@ -1161,11 +1122,11 @@ export function registerTools(server: McpServer): void {
         'varies. Add one to a variation only when its pattern is different. ' +
         'A research record has no core pattern.' +
         PLAIN_ENGLISH,
-      inputSchema: addCorePatternShape,
+      inputSchema: z.object(addCorePatternShape),
     },
-    async (args, extra) =>
+    async (args, ctx) =>
       runTool(
-        extra as AuthCtx,
+        ctx,
         'add_core_pattern',
         { slug: args.slug },
         async (principal) => {
@@ -1207,11 +1168,11 @@ export function registerTools(server: McpServer): void {
         'call add_note with the kind "correction" and say what is wrong.\n\n' +
         'When you write a new note, send `conditions` to add_note instead. ' +
         'This tool is for a note that was written before.',
-      inputSchema: describeMechanismShape,
+      inputSchema: z.object(describeMechanismShape),
     },
-    async (args, extra) =>
+    async (args, ctx) =>
       runTool(
-        extra as AuthCtx,
+        ctx,
         'describe_mechanism',
         { noteId: args.noteId },
         async (principal) => {
@@ -1255,11 +1216,11 @@ export function registerTools(server: McpServer): void {
         'get_recipe, get_ingredient and get_experiment give the id of ' +
         'every note they return. So does search_notes. A moved note takes ' +
         'the last place in the list of its new record.',
-      inputSchema: reattachNoteShape,
+      inputSchema: z.object(reattachNoteShape),
     },
-    async (args, extra) =>
+    async (args, ctx) =>
       runTool(
-        extra as AuthCtx,
+        ctx,
         'reattach_note',
         {
           noteId: args.noteId,
@@ -1318,11 +1279,11 @@ export function registerTools(server: McpServer): void {
         '`densityGPerMl` lets you compare a volume in one recipe with grams ' +
         'in another.' +
         PLAIN_ENGLISH,
-      inputSchema: upsertIngredientShape,
+      inputSchema: z.object(upsertIngredientShape),
     },
-    async (args, extra) =>
+    async (args, ctx) =>
       runTool(
-        extra as AuthCtx,
+        ctx,
         'upsert_ingredient',
         { name: args.name, slug: args.slug },
         async (principal) => {
@@ -1372,11 +1333,11 @@ export function registerTools(server: McpServer): void {
         'Use this after creating a recipe that introduced new tags, so the ' +
         'repository does not accumulate bare, unexplained labels.' +
         PLAIN_ENGLISH,
-      inputSchema: upsertCategoryShape,
+      inputSchema: z.object(upsertCategoryShape),
     },
-    async (args, extra) =>
+    async (args, ctx) =>
       runTool(
-        extra as AuthCtx,
+        ctx,
         'upsert_category',
         { categoryType: args.categoryType, label: args.label },
         async (principal) => {
@@ -1418,11 +1379,11 @@ export function registerTools(server: McpServer): void {
         'calls a run a batch log. A run with no `recipeSlug` keeps its own ' +
         'address at /batch-logs/<slug>.' +
         PLAIN_ENGLISH,
-      inputSchema: logExperimentShape,
+      inputSchema: z.object(logExperimentShape),
     },
-    async (args, extra) =>
+    async (args, ctx) =>
       runTool(
-        extra as AuthCtx,
+        ctx,
         'log_experiment',
         { slug: args.slug, title: args.title, recipeSlug: args.recipeSlug },
         async (principal) => {
@@ -1479,28 +1440,23 @@ export function registerTools(server: McpServer): void {
         'none, call add_core_pattern. To change the pattern family, send ' +
         'the `pattern` tag in `categories`.' +
         PLAIN_ENGLISH,
-      inputSchema: updateRecipeShape,
+      inputSchema: z.object(updateRecipeShape),
     },
-    async (args, extra) =>
-      runTool(
-        extra as AuthCtx,
-        'update_recipe',
-        { slug: args.slug },
-        async (principal) => {
-          requireWrite(principal);
-          const input = updateRecipeSchema.parse(args);
-          const result = await updateRecipe(input);
-          return {
-            ...result,
-            url: `/recipes/${result.slug}`,
-            // The same follow-up text `create_recipe` gets, for the same
-            // reason: `categories` replaces the whole list and names what it
-            // creates, so a correction can mint a bare tag exactly as a
-            // creation can, and it owes the same description.
-            message: followUpMessage('Corrected.', result),
-          };
-        },
-      ),
+    async (args, ctx) =>
+      runTool(ctx, 'update_recipe', { slug: args.slug }, async (principal) => {
+        requireWrite(principal);
+        const input = updateRecipeSchema.parse(args);
+        const result = await updateRecipe(input);
+        return {
+          ...result,
+          url: `/recipes/${result.slug}`,
+          // The same follow-up text `create_recipe` gets, for the same
+          // reason: `categories` replaces the whole list and names what it
+          // creates, so a correction can mint a bare tag exactly as a
+          // creation can, and it owes the same description.
+          message: followUpMessage('Corrected.', result),
+        };
+      }),
   );
 
   server.registerTool(
@@ -1522,11 +1478,11 @@ export function registerTools(server: McpServer): void {
         '`occurredAt` says when this version existed. The history is ' +
         'ordered by it, so the history re-orders.\n\n' +
         'You do not need to give a reason.',
-      inputSchema: updateRevisionShape,
+      inputSchema: z.object(updateRevisionShape),
     },
-    async (args, extra) =>
+    async (args, ctx) =>
       runTool(
-        extra as AuthCtx,
+        ctx,
         'update_revision',
         { slug: args.slug, revisionNumber: args.revisionNumber },
         async (principal) => {
@@ -1562,11 +1518,11 @@ export function registerTools(server: McpServer): void {
         'get_recipe gives the id of each note on a recipe. Use that id ' +
         'here.\n\n' +
         'You do not need to give a reason.',
-      inputSchema: updateNoteShape,
+      inputSchema: z.object(updateNoteShape),
     },
-    async (args, extra) =>
+    async (args, ctx) =>
       runTool(
-        extra as AuthCtx,
+        ctx,
         'update_note',
         { noteId: args.noteId },
         async (principal) => {
@@ -1639,11 +1595,11 @@ export function registerTools(server: McpServer): void {
         'Delete a duplicate. Delete a record that somebody wrote by ' +
         'mistake. Do not delete a version because the dish changed: call ' +
         'revise_recipe for that.',
-      inputSchema: deleteRecordShape,
+      inputSchema: z.object(deleteRecordShape),
     },
-    async (args, extra) =>
+    async (args, ctx) =>
       runTool(
-        extra as AuthCtx,
+        ctx,
         'delete_record',
         // The audit rule holds: identifying primitives only. `reason` is
         // free-form text the caller wrote, so it is not logged here — it is
@@ -1695,11 +1651,11 @@ export function registerTools(server: McpServer): void {
         'Call list_deleted to see what is still in the bin.\n\n' +
         'You cannot restore a record while the record it belongs to is ' +
         'still deleted. The refusal names what to restore first.',
-      inputSchema: restoreRecordShape,
+      inputSchema: z.object(restoreRecordShape),
     },
-    async (args, extra) =>
+    async (args, ctx) =>
       runTool(
-        extra as AuthCtx,
+        ctx,
         'restore_record',
         {
           kind: args.kind,
@@ -1816,11 +1772,11 @@ export function registerTools(server: McpServer): void {
           'and the id this returns. It stops being visible everywhere at ' +
           'once, and restore_record brings it back. There is no ' +
           'delete_image: this repository has one delete and it is soft.',
-        inputSchema: uploadImageShape,
+        inputSchema: z.object(uploadImageShape),
       },
-      async (args, extra) =>
+      async (args, ctx) =>
         runTool(
-          extra as AuthCtx,
+          ctx,
           'upload_image',
           // The audit rule: identifying primitives only. `data` is the image
           // itself and `alt` and `caption` are free-form text the caller
@@ -1947,11 +1903,11 @@ export function registerTools(server: McpServer): void {
           'The same rules as upload_image hold for what the picture does: a ' +
           'hero image makes no version; a step picture is a correction to ' +
           'the version people read now.',
-        inputSchema: requestImageUploadShape,
+        inputSchema: z.object(requestImageUploadShape),
       },
-      async (args, extra) =>
+      async (args, ctx) =>
         runTool(
-          extra as AuthCtx,
+          ctx,
           'request_image_upload',
           // Identifying primitives only, as for upload_image. The alt and
           // the caption are free text; the token is a credential and is
@@ -1975,9 +1931,7 @@ export function registerTools(server: McpServer): void {
               caption: input.caption,
               attachTo: input.attachTo,
             });
-            const origin = getPublicOriginFromHeaders(
-              (extra as AuthCtx).requestInfo?.headers,
-            );
+            const origin = getPublicOriginFromHeaders(ctx.http?.req?.headers);
             const link = `${origin}/upload/${created.token}`;
             return {
               link,
@@ -2070,11 +2024,11 @@ export function registerTools(server: McpServer): void {
           'comment to the report that is already filed. It does not file a ' +
           'second one. The tool adds three comments for one fault. Then it ' +
           'refuses, and you must stop.',
-        inputSchema: reportIssueShape,
+        inputSchema: z.object(reportIssueShape),
       },
-      async (args, extra) =>
+      async (args, ctx) =>
         runTool(
-          extra as AuthCtx,
+          ctx,
           'report_issue',
           // The audit rule holds here as everywhere: no free-form text. The
           // kind and the tool name are identifying primitives; the title,

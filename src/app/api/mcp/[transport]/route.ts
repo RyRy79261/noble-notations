@@ -2,8 +2,10 @@
  * The MCP endpoint — Streamable HTTP transport.
  *
  * Served at `/api/mcp/mcp`. The doubled "mcp" is correct and not a typo:
- * `basePath: '/api/mcp'` plus the `[transport]` segment resolving to "mcp".
+ * this file is `api/mcp/[transport]/route.ts` and the segment is "mcp".
  * That full URL is what goes into claude.ai's custom-connector dialog.
+ * mcp-handler 2 does not read the path, so `isMcpPath` below is what keeps
+ * every other segment a 404, as it was under 1.x.
  *
  * Auth is a bearer token minted by the OAuth flow in ../oauth/. On failure
  * `withMcpAuth` returns 401 with a `WWW-Authenticate: Bearer
@@ -11,7 +13,7 @@
  * authorise.
  */
 import { createMcpHandler, withMcpAuth } from 'mcp-handler';
-import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
+import type { AuthInfo } from '@modelcontextprotocol/server';
 import { NextResponse } from 'next/server';
 import { lookupAccessToken } from '@/lib/mcp/oauth';
 import { registerTools } from '@/lib/mcp/tools';
@@ -43,10 +45,6 @@ const baseHandler = createMcpHandler(
     // running instance does not change under it, and a change to
     // `GITHUB_ISSUE_TOKEN` redeploys.
     instructions: serverInstructions(),
-  },
-  {
-    basePath: '/api/mcp',
-    disableSse: true,
     verboseLogs: process.env.NODE_ENV !== 'production',
   },
 );
@@ -64,7 +62,7 @@ async function verifyToken(
     clientId: lookup.clientId,
     scopes: lookup.scope.split(/\s+/).filter(Boolean),
     expiresAt: Math.floor(lookup.expiresAt / 1000),
-    // Carried through to every tool handler via `extra.authInfo.extra`.
+    // Carried through to every tool handler via `ctx.http.authInfo.extra`.
     extra: {
       userId: lookup.userId,
       clientId: lookup.clientId,
@@ -78,7 +76,15 @@ const authedHandler = withMcpAuth(baseHandler, verifyToken, {
   resourceMetadataPath: '/.well-known/oauth-protected-resource',
 });
 
+/** Only `/api/mcp/mcp` is the endpoint. */
+function isMcpPath(request: Request): boolean {
+  return new URL(request.url).pathname.replace(/\/$/, '') === '/api/mcp/mcp';
+}
+
+const notFound = () => withCors(new NextResponse(null, { status: 404 }));
+
 async function handle(request: Request) {
+  if (!isMcpPath(request)) return notFound();
   const res = await authedHandler(request);
   // claude.ai calls this from another origin, so the CORS headers have to be
   // layered on after mcp-handler has produced its response.
@@ -101,6 +107,7 @@ async function handle(request: Request) {
  * left alone.
  */
 async function handlePost(request: Request) {
+  if (!isMcpPath(request)) return notFound();
   const res = await authedHandler(request);
   const body = res.body ? await res.arrayBuffer() : null;
   return withCors(

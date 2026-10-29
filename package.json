@@ -26,7 +26,7 @@
     "export": "NODE_OPTIONS=--conditions=react-server tsx scripts/export-markdown.ts"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.32.1",
+    "@modelcontextprotocol/server": "^2.4.0",
     "@neondatabase/auth": "0.7.0-beta",
     "@neondatabase/serverless": "^1.2.0",
     "@radix-ui/react-dialog": "1.2.0",
@@ -36,7 +36,7 @@
     "clsx": "2.1.1",
     "drizzle-orm": "^0.45.4",
     "gray-matter": "^4.0.3",
-    "mcp-handler": "^1.1.0",
+    "mcp-handler": "^2.3.0",
     "next": "16.4.3",
     "pg": "^8.23.1",
     "react": "19.3.1",

@@ -11,9 +11,11 @@ is the short version for setting it up.
 https://noble-notations.ryanjnoble.dev/api/mcp/mcp
 ```
 
-The doubled `mcp` is correct: `mcp-handler` is mounted with
-`basePath: '/api/mcp'` and the route file sits at `[transport]/route.ts`, so
-the transport segment resolves to `mcp`.
+The doubled `mcp` is correct: the route file sits at
+`src/app/api/mcp/[transport]/route.ts`, and the transport segment is `mcp`.
+Any other segment answers 404. `mcp-handler` 2 does not read the path
+itself, so the route keeps the address that every connector was added
+with.
 
 ## Why OAuth and not a bearer token
 
