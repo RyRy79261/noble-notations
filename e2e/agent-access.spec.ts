@@ -10,15 +10,31 @@ import { test, expect } from '@playwright/test';
  * (the Markdown twin).
  */
 
-test('robots.txt allows agent crawlers and points at the sitemap', async ({
+/** The block of rules robots.txt gives one user agent. */
+function rulesFor(body: string, userAgent: string): string {
+  const blocks = body.split(/\n\s*\n/);
+  const block = blocks.find((b) =>
+    b.split('\n').some((line) => line.trim() === `User-Agent: ${userAgent}`),
+  );
+  expect(block, `no robots.txt block for ${userAgent}`).toBeDefined();
+  return block!;
+}
+
+test('robots.txt allows agents that read for a person, refuses training crawlers, and points at the sitemap', async ({
   request,
 }) => {
   const response = await request.get('/robots.txt');
   expect(response.status()).toBe(200);
   const body = await response.text();
 
-  expect(body).toContain('User-Agent: ClaudeBot');
-  expect(body).toContain('User-Agent: GPTBot');
+  for (const agent of ['Claude-User', 'Claude-SearchBot', 'ChatGPT-User']) {
+    const rules = rulesFor(body, agent);
+    expect(rules).toContain('Allow: /');
+    expect(rules).not.toMatch(/^Disallow: \/$/m);
+  }
+  for (const crawler of ['ClaudeBot', 'GPTBot']) {
+    expect(rulesFor(body, crawler)).toMatch(/^Disallow: \/$/m);
+  }
   expect(body).toMatch(/Sitemap: https?:\/\/\S+\/sitemap\.xml/);
 
   // The Markdown twins must stay fetchable — they are the point.
