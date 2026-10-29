@@ -470,7 +470,7 @@ test('alt text is required, and the schema says so before any byte is read', asy
     // body runs, so this refusal is the transport's and not `runTool`'s.
     // Asserting the field name is what makes it a test of `alt` being
     // required rather than of validation existing.
-  ).rejects.toThrow(/validation error.*at alt/s);
+  ).rejects.toThrow(/validation error.*\balt:/s);
 });
 
 // ═════════════════════════════════════════════════════════════════════════

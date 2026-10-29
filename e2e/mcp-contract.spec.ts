@@ -2304,7 +2304,7 @@ test.describe('MCP contract', () => {
           note([{ citation: '' }, { title: 'Escoffier, Le Guide Culinaire' }]),
         ),
       ),
-    ).toMatch(/sources\[0\]/);
+    ).toMatch(/sources\.0/);
 
     // And the accepted shape is unchanged: one title, no url, still enough.
     await expect(
@@ -2340,7 +2340,7 @@ test.describe('MCP contract', () => {
         ],
       }),
     );
-    expect(message).toMatch(/notes\[0\]\.sources\[0\]/);
+    expect(message).toMatch(/notes\.0\.sources\.0/);
 
     // Nothing was written. The refusal happens before the transaction.
     await expect(
@@ -3134,7 +3134,7 @@ test.describe('MCP contract', () => {
         steps: [{ instruction: 'Sear the duck breast skin-side down.' }],
       }),
     );
-    expect(tagged).toMatch(/categories\.diet\[0\]/);
+    expect(tagged).toMatch(/categories\.diet\.0/);
     await expect(
       mcp.call('get_recipe', { slug: 'mcp-contract-tagged-with-nothing' }),
     ).rejects.toThrow(/No recipe/i);
@@ -3488,7 +3488,7 @@ test.describe('MCP contract', () => {
           ],
         }),
       ),
-    ).toMatch(/notes\[0\]\.sources/);
+    ).toMatch(/notes\.0\.sources/);
 
     // The run path.
     expect(
@@ -3504,7 +3504,7 @@ test.describe('MCP contract', () => {
           ],
         }),
       ),
-    ).toMatch(/notes\[0\]\.sources/);
+    ).toMatch(/notes\.0\.sources/);
     await expect(
       mcp.call('get_experiment', { slug: 'mcp-contract-unsourced-run' }),
     ).rejects.toThrow(/No experiment/i);

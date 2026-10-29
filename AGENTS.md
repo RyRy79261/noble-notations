@@ -35,7 +35,7 @@ history is ordered by the latter.
 - **Tailwind CSS v4** (configured in CSS, no `tailwind.config.*`) with
   **shadcn/ui** primitives; tokens live in `src/app/theme.css`
 - **Postgres** via **Drizzle ORM** — Neon in production, plain Postgres locally
-- **MCP** via `mcp-handler` + `@modelcontextprotocol/sdk`, OAuth 2.1 + DCR
+- **MCP** via `mcp-handler` 2 + `@modelcontextprotocol/server` 2, OAuth 2.1 + DCR
 - **pnpm** is the package manager
 - Deployed on **Vercel**; CI is GitHub Actions
 

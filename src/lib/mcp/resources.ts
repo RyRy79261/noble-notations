@@ -34,8 +34,7 @@
  * needs. A connector with no scope at all never reaches this code: the
  * bearer token is checked by `withMcpAuth` before the request is routed.
  */
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { agentGuide } from '@/lib/mcp/guide';
 import { hasScope, READ_SCOPE } from '@/lib/mcp/scopes';
 
@@ -78,7 +77,7 @@ export function registerResources(server: McpServer): void {
         'note or a rationale.',
       mimeType: 'text/markdown',
     },
-    (uri, extra) => {
+    (uri, ctx) => {
       /*
        * The scope check is here rather than in a wrapper because a resource
        * read is not a tool call: it does not go through `runTool`, it writes
@@ -87,7 +86,7 @@ export function registerResources(server: McpServer): void {
        * states a writing rule discloses nothing about the archive, so the
        * read scope is the whole of the gate.
        */
-      const info = (extra as { authInfo?: AuthInfo }).authInfo;
+      const info = ctx.http?.authInfo;
       const scope = (info?.extra as { scope?: string } | undefined)?.scope;
       if (!scope || !hasScope(scope, READ_SCOPE)) {
         throw new Error(

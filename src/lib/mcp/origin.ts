@@ -45,18 +45,16 @@ export function getPublicOrigin(req?: NextRequest | Request): string {
 }
 
 /**
- * The same answer from the bare headers an MCP tool handler is given. A tool
- * has no `Request`, only `extra.requestInfo.headers`, and the upload link
- * `request_image_upload` returns has to name the host the connector reached
- * — a preview deployment's link must open the preview.
+ * The same answer from the headers of the request an MCP tool call arrived
+ * on, `ctx.http.req.headers`. The upload link `request_image_upload`
+ * returns has to name the host the connector reached — a preview
+ * deployment's link must open the preview.
  */
 export function getPublicOriginFromHeaders(
-  headers: Record<string, string | string[] | undefined> | undefined,
+  headers: Headers | undefined,
 ): string {
-  const get = (name: string): string | undefined => {
-    const value = headers?.[name];
-    return Array.isArray(value) ? value[0] : value;
-  };
+  const get = (name: string): string | undefined =>
+    headers?.get(name) ?? undefined;
   const override = process.env.MCP_PUBLIC_URL?.trim();
   if (override) return override.replace(/\/$/, '');
   const fwdHost = get('x-forwarded-host');
@@ -80,7 +78,7 @@ export function buildOAuthUrls(origin: string) {
     resource: `${origin}${MCP_BASE_PATH}`,
     authServerMetadata: `${origin}/.well-known/oauth-authorization-server`,
     resourceMetadata: `${origin}/.well-known/oauth-protected-resource`,
-    // basePath + the [transport] segment value; the doubled "mcp" is correct.
+    // The route is app/api/mcp/[transport]; the doubled "mcp" is correct.
     mcpEndpoint: `${origin}${MCP_BASE_PATH}/mcp`,
   };
 }
