@@ -36,6 +36,7 @@ const DIST_DIR = path.join('.next', 'page-cache');
 const CACHED_ROUTES = [
   '/',
   '/recipes/[slug]',
+  '/recipes/[slug]/md',
   '/recipes/[slug]/revisions/[number]',
   '/recipes/[slug]/batch-logs',
   '/recipes/[slug]/batch-logs/[log]',
@@ -241,6 +242,29 @@ test('a write through the connector shows on the next load of every page it chan
   await mcp.call('update_recipe', { slug, title: `CACHE ${slug} corrected` });
   const corrected = await load(`/recipes/${slug}`);
   expect(corrected.body).toContain(`CACHE ${slug} corrected`);
+});
+
+test('the Markdown twin is kept too, and a correction shows on the next load', async () => {
+  // Agents fetch this address more than the page itself. It was
+  // force-dynamic, so each fetch ran a function.
+  const mcp = rw();
+  const slug = `cache-${stamp()}`;
+  await mcp.call('create_recipe', {
+    title: `CACHE ${slug}`,
+    slug,
+    rationale: 'Written by e2e/page-cache.spec.ts.',
+    ingredients: [{ name: `CACHE salt ${slug}`, quantity: 5, unit: 'g' }],
+    steps: [{ instruction: 'Salt the meat.' }],
+  });
+
+  const first = await load(`/recipes/${slug}/md`);
+  expect(first.status).toBe(200);
+  expect(first.body).toContain(`# CACHE ${slug}`);
+  expect((await load(`/recipes/${slug}/md`)).cache).toBe('HIT');
+
+  await mcp.call('update_recipe', { slug, title: `CACHE ${slug} corrected` });
+  const corrected = await load(`/recipes/${slug}/md`);
+  expect(corrected.body).toContain(`# CACHE ${slug} corrected`);
 });
 
 test('the connector reads the database, not the cache', () => {
