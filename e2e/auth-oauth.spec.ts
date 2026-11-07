@@ -204,6 +204,28 @@ test('a token that is not a token is refused, not answered and not a 500', async
   expect(response.headers.get('www-authenticate')).toContain('Bearer');
 });
 
+test('a GET is refused at once, never held open as a stream', async () => {
+  // mcp-handler 2 opens a standalone SSE stream for a GET and leaves it
+  // open until `maxDuration`. Every connected client then kept a function
+  // running around the clock, and Fluid compute billed all of it: the Hobby
+  // allowance went in a week and the deployment was paused (Nov 2026). The
+  // route answers GET itself; this holds it to that across upgrades. The
+  // timeout is the point: a stream would not answer within it.
+  const response = await fetch(`${BASE}/api/mcp/mcp`, {
+    method: 'GET',
+    headers: {
+      accept: 'text/event-stream',
+      authorization: 'Bearer mcp_at_this-token-was-never-issued-by-anything',
+    },
+    signal: AbortSignal.timeout(5_000),
+  });
+  expect(response.status).toBe(405);
+  expect(response.headers.get('allow')).toContain('POST');
+  expect(response.headers.get('content-type') ?? '').not.toContain(
+    'text/event-stream',
+  );
+});
+
 // ─────────────────────────────────────────────────────────────────────────
 // 2. CORS — claude.ai calls every one of these from another origin
 // ─────────────────────────────────────────────────────────────────────────

@@ -103,8 +103,8 @@ async function handle(request: Request) {
  * the handler returns, so an expiry that came later was dropped, and the
  * site went on showing the page from before the write. Reading the body
  * here keeps the tool inside the handler. A POST answer is one JSON-RPC
- * message, so nothing is lost by holding it; GET, the long-lived stream, is
- * left alone.
+ * message, so nothing is lost by holding it. GET never streams: see
+ * `handleGet`.
  */
 async function handlePost(request: Request) {
   if (!isMcpPath(request)) return notFound();
@@ -115,7 +115,36 @@ async function handlePost(request: Request) {
   );
 }
 
-export const GET = handle;
+/**
+ * GET is refused at once, never held open as a stream.
+ *
+ * In Streamable HTTP a GET opens a standalone server-to-client SSE stream
+ * for notifications the server sends unprompted. This server sends none:
+ * every answer rides on the POST that asked for it. mcp-handler 1.x
+ * answered GET with 405 itself; 2.x hands it to the SDK, which opens the
+ * stream and leaves it open. A connected client then held a function idle
+ * until `maxDuration` cut it off, reconnected, and did it again, every
+ * minute, for as long as the connector was loaded anywhere. Fluid compute
+ * bills that idle time, and each reconnect looked the bearer token up in
+ * Neon. Across this app and intake-tracker it exhausted the Hobby plan's
+ * monthly allowance in a week, and the deployment was paused (Nov 2026).
+ *
+ * The spec makes 405 the answer for a server that offers no GET stream,
+ * and clients carry on with POST alone. No auth check first: there is
+ * nothing here to protect, and a 401 would invite the client to authorise
+ * and try again.
+ */
+function handleGet(request: Request) {
+  if (!isMcpPath(request)) return notFound();
+  return withCors(
+    new NextResponse(null, {
+      status: 405,
+      headers: { Allow: 'POST, DELETE, OPTIONS' },
+    }),
+  );
+}
+
+export const GET = handleGet;
 export const POST = handlePost;
 export const DELETE = handle;
 
